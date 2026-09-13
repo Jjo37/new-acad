@@ -2,6 +2,8 @@
 
 > Draft, edit, model and quantify in AutoCAD / Civil 3D with natural language — AI palette + MCP server + C3D plugin
 
+ <img width="2559" height="1518" alt="image" src="https://github.com/user-attachments/assets/7d0d09a2-1e50-424d-ba16-2508bd3ee6cc" />
+
 [中文](README.md) | **English**
 
 Install a palette into Civil 3D, plug in your own LLM API key, and just talk to it — in Chinese or English.

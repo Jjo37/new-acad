@@ -2,6 +2,9 @@
 
 > 在 AutoCAD / Civil 3D 里用自然语言画图、改图、建模、出量 —— AI 面板 + MCP 服务器 + C3D 插件
 
+ <img width="2559" height="1518" alt="image" src="https://github.com/user-attachments/assets/7d0d09a2-1e50-424d-ba16-2508bd3ee6cc" />
+
+
 **中文** | [English](README_EN.md)
 
 装一个面板进 Civil 3D，填入自己的 LLM API Key，然后用中文或英文直接下指令。

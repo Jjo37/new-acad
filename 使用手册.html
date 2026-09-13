@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>new-acad 使用手册 — Civil 3D AI 数据桥</title>
+<style>
+  body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; max-width: 860px; margin: 0 auto; padding: 24px 20px 60px; color: #2b2b2b; line-height: 1.7; background: #fafafa; }
+  h1 { font-size: 26px; border-bottom: 3px solid #1890ff; padding-bottom: 10px; }
+  h2 { font-size: 20px; color: #1890ff; margin-top: 36px; border-left: 4px solid #1890ff; padding-left: 10px; }
+  h3 { font-size: 16px; color: #333; }
+  code { background: #eef3f8; padding: 2px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 13px; }
+  pre { background: #1e1e2e; color: #d4d4d4; padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #d9d9d9; padding: 8px 12px; text-align: left; font-size: 14px; }
+  th { background: #f0f7ff; }
+  .tip { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .warn { background: #fff2f0; border: 1px solid #ffccc7; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .step { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+  .step b { color: #1890ff; }
+</style>
+</head>
+<body>
+
+<h1>🖥️ new-acad 使用手册</h1>
+<p><b>版本 v1.3.3</b> ｜ 让 AI 直接帮你操作 AutoCAD / Civil 3D</p>
+
+<div class="tip">
+<b>一句话说明：</b>在 Civil 3D 里选中图元 → 打开面板 → 用文字指挥 AI 帮你改图、画图、查数据。<b>AI 由本软件内置驱动</b>，只需配置一次你自己的模型 API Key，无需安装任何编程环境。
+</div>
+
+<h2>一、安装（4 步）</h2>
+
+<div class="step">
+<b>第 1 步：解压</b><br>
+把压缩包解压到任意目录（<b>建议路径不含中文</b>，例如 <code>D:\new-acad-release</code>）。
+</div>
+
+<div class="step">
+<b>第 2 步：运行安装脚本</b><br>
+双击 <code>install.bat</code>（推荐，自动绕过执行策略），或右键 <code>install.ps1</code> → 选择「使用 PowerShell 运行」。<br>
+看到 <code>结果: N/通过 0/失败 0/警告</code> 即安装成功。<br>
+如仍被拦截，手动执行：
+<pre>Set-ExecutionPolicy Bypass -Scope Process</pre>
+</div>
+
+<div class="step">
+<b>第 3 步：打开 Civil 3D 并配置 AI</b><br>
+正常启动 C3D，插件自动加载。命令行输入 <code>HANK_SHOW</code> 调出面板。<br>
+面板顶部是<b>模型配置区</b>：
+<pre>选择模型 [服务商下拉] [模型下拉]
+[API Key 输入] [显示]
+[操作上限 20] [保存]</pre>
+① 选服务商（DeepSeek / OpenAI / 通义 / Kimi / 智谱 / MiniMax / OpenRouter / xAI / 自定义）<br>
+② 选模型<br>
+③ 填你的 API Key（点"显示"可看明文；以后只改其他配置无需重填）<br>
+④ <b>操作上限</b>：AI 单次任务自动执行的步数上限，默认 20；填 <b>0</b> 表示不限（AI 连续执行直到任务完成，可随时点「取消任务」停止）。点输入框会弹说明气泡<br>
+⑤ 点<b>保存</b>——立即生效，无需重启<br>
+保存后状态栏显示 <code>● 在线 | llm/服务商/模型 | CAD</code> 即配置完成。
+</div>
+
+<div class="step">
+<b>第 4 步：开始使用</b><br>
+在面板下方输入框打字 → 回车发送 → AI 操作 CAD → 结果回面板。
+</div>
+
+<div class="warn">
+<b>API Key 说明：</b>Key 只保存在本机 config.json，不会上传任何服务器，也不会随软件分发。更换模型随时回面板顶部改。
+</div>
+
+<h2>二、日常使用</h2>
+
+<h3>面板操作流程</h3>
+<pre>在 CAD 里框选图元 → 切到面板 → 打字发消息 → AI 操作 CAD → 结果回面板</pre>
+
+<h3>面板按钮</h3>
+<p>输入框下方一行：<b>发送 / 取消任务 / 清理会话 / 更多清理</b>；状态栏右侧是<b>重启服务</b>。</p>
+<table>
+<tr><th>按钮</th><th>作用</th></tr>
+<tr><td>发送</td><td>发送输入框内容（回车也可发送）</td></tr>
+<tr><td>取消任务</td><td>取消排队中/处理中的 AI 任务（结果不再回显，AI 停止响应本次请求）</td></tr>
+<tr><td>清理会话</td><td>清空当前对话与消息队列（AI 短期记忆重置；<b>长期记忆不受影响</b>）</td></tr>
+<tr><td>更多清理</td><td>打开清理菜单：<b>清理日志 / 清理缓存文件 / 清理 MISSING 报告 / 全部清理</b>。只清运行产生的临时文件，<b>长期记忆（AI 记住的规则偏好）永远不在清理范围内</b>，你导出的报告/数据文件也永远不会被清理</td></tr>
+<tr><td>重启服务</td><td>状态栏右侧：relay 掉线/异常时一键重启（自动拉起守护进程，约 3~5 秒自动恢复）</td></tr>
+</table>
+<div class="tip"><b>输入栏：</b>支持多行自动换行；拖动输入区上方的分隔条可自由调整输入栏高度。</div>
+
+<h3>操作示例</h3>
+<table>
+<tr><th>你在面板里说</th><th>AI 会做</th></tr>
+<tr><td>"选中图元变成红色"</td><td>改颜色（1=红）</td></tr>
+<tr><td>"我选了什么东西"</td><td>读类型、图层、属性</td></tr>
+<tr><td>"在 0,0 画根 2000 的线"</td><td>画线</td></tr>
+<tr><td>"画个 100×50×30 的盒子"</td><td>创建 3D 实体</td></tr>
+<tr><td>"帮我算曲面面积"</td><td>查询曲面数据</td></tr>
+<tr><td>"这两个实体合并"</td><td>3D 布尔并集</td></tr>
+<tr><td>"帮我看 D:\xx.png 里有什么"</td><td>读取图片并查看（<b>需模型支持视觉</b>，如 gpt-4o / qwen-vl；不支持时会提示换模型）</td></tr>
+</table>
+
+<h3>AI 能力边界</h3>
+<div class="tip">
+内置 AI 通过受控接口操作 CAD，安全边界（2026-08-13 版）：<br>
+<b>读</b>：AI 能读你明确指定的本地文件（文本/CSV/Word/Excel/PPT/压缩包/图纸，看文件夹清单）——<b>敏感文件自动拦截</b>（配置文件/密钥/凭据类，如 config.json、.env），读到的内容会发送给 AI 模型服务商处理<br>
+<b>写</b>：AI 只能<b>新建</b>文件（需你明确指定保存位置），<b>不能修改/覆盖/删除你的已有文件</b>；可执行/脚本文件（.exe/.bat/.ps1 等）一律禁写<br>
+遇到软件不支持的指令，AI 会明确回复 <code>[MISSING] 功能缺失说明</code>，不会瞎编或乱操作。
+</div>
+
+<h3>项目文件夹（可选，多工程管理）</h3>
+<div class="tip">
+<b>按工程隔离数据</b>：如果你同时做好几个工程（路桥/管网/市政...），可以给每个工程建一个项目文件夹，AI 在这个工程里的临时文件、选择记忆互不串。
+<pre>配置区最下面一行「项目名」：
+- 下拉选已有项目 = 直接切换（点一下就过去）
+- 输新名字 + 点「建立」 = 新建项目文件夹并切换
+- 「打开」 = 在资源管理器里看这个项目的文件夹
+- 「清理」 = 删掉这个项目的全部数据（确认后不可恢复）
+- 不填 = 全局模式，所有图纸数据放一起（和以前一样）</pre>
+<b>适合场景</b>：以项目为单位干活时用（比如“甲路项目”“乙桥项目”）；随手画小图不填也行。
+</div>
+
+<h3>AI 记忆（长期记忆）</h3>
+<div class="tip">
+AI 有<b>长期记忆</b>（保存在 <code>server\memory\agent-memory.md</code>，重启软件不丢）：
+<pre>"记住：我习惯用米制单位"
+"以后出图默认比例 1:500"
+"算量前先跟我确认范围线"</pre>
+记忆<b>只存规则、偏好、方法</b>；具体任务和图纸数据不会写入（防污染）。点"清理会话"只清当前对话，<b>不影响长期记忆</b>。
+</div>
+
+<h3>本地文件读写（导出报告 / 读取数据）</h3>
+<div class="tip">
+<b>AI 可以帮你新建文件到任意指定位置</b>——导出报告、生成数据文件（CSV/JSON/文本等，格式不限）：
+<pre>"把曲面体积报告导出到桌面"
+"生成桩号数据 CSV 到 D:\报告\"
+"读一下这个文件的内容"
+"看看 D:\xx文件夹 里有什么"</pre>
+<b>AI 能读取的文件</b>：文本（txt/csv/json）、Word（docx）、Excel（xlsx）、PPT（pptx）、压缩包（zip 看清单）、CAD 图纸（自动打开查看）——老版 .doc/.xls/扫描版 PDF 读不了，让 AI 引导你转格式即可。
+</div>
+<div class="warn">
+<b>安全红线（保护你的数据）：</b><br>
+- AI <b>只能新建</b>文件——已存在的文件<b>不允许修改/覆盖</b>（防止误覆盖重要数据）<br>
+- AI <b>不能删除</b>你的任何文件——删除文件需你手动操作<br>
+- <b>敏感文件读不了</b>：配置文件/密钥/凭据类（config.json、.env、证书等）自动拦截<br>
+- 可执行/脚本文件（.exe/.bat/.ps1 等）一律禁写<br>
+- 读到的文件内容会发送给 AI 模型服务商处理，敏感数据请自行斟酌
+- 如需更新已有文件内容：让 AI 新建一个新文件（如 xxx_v2.csv），原文件保持不变
+</div>
+
+<h3>大数据量任务怎么用（批量 / 文件通道）</h3>
+<div class="tip">
+处理<b>大量图元或大数据文件</b>（几百上千个点、整图层批量改、CSV 导入等）时，<b>你不需要任何特殊操作</b>——AI 会自动走高效通道，不再一个一个慢慢处理：
+<pre>"把这 2000 个点全部加到曲面"
+"把 D:\data\points.csv 里的点导入 Cogo"
+"选中图层 0 的所有图元改成红色"
+"把我选中的东西导出成 JSON 文件"</pre>
+<b>AI 自动判断的规则：</b><br>
+① <b>批量优先</b>——复数对象用批量方法（一次处理 N 个），禁止逐个调用<br>
+② <b>文件通道</b>——数据量 &gt;500 条自动改走文件导入/导出（任意文本格式都能读，AI 自己判断分隔符/列序）<br>
+③ <b>先出计划</b>——大规模任务（选中 ≥20 个或含"批量/csv/大量"等词）AI 会先告诉你"用什么方式、预计几轮完成"，再动手<br>
+④ <b>中途预警</b>——处理轮数过多时 AI 会主动提示改走批量方式<br>
+⑤ <b>方法清单自动缓存</b>——AI 首次查询方法清单后缓存 5 分钟，之后秒回，不再反复扫描
+</div>
+
+<h2>三、能做什么</h2>
+
+<table>
+<tr><th>类别</th><th>功能</th></tr>
+<tr><td>图元操作</td><td>选中查属性 / 改颜色 / 删除 / 移动 / 复制 / 旋转 / 缩放 / 镜像 / 偏移 / 打断 / 炸开 / 合并；<b>批量</b>改色 / 移动 / 删除（一次处理 N 个）</td></tr>
+<tr><td>画图</td><td>线 / 多段线 / 圆 / 文字 / 多行文字 / 3D 实体（盒、圆柱、球、圆锥、楔体、圆环）</td></tr>
+<tr><td>图层</td><td>创建 / 开关 / 冻结 / 锁定 / 孤立 / 匹配；<b>按图层 / 按块枚举图元</b>（带坐标）</td></tr>
+<tr><td>块与参照</td><td>建块 / 插入 / 写块 / 炸块 / 外部参照</td></tr>
+<tr><td>标注</td><td>线性 / 对齐 / 半径 / 直径 / 角度</td></tr>
+<tr><td>3D 建模</td><td>拉伸 / 旋转 / 扫掠 / 布尔并差 / 切片 / 阵列 / 干涉检查 / 赋材质；<b>视觉样式切换</b>（线框/真实等）</td></tr>
+<tr><td>C3D 专业</td><td>曲面（创建/加点/断裂线/体积/坡向）、路线、纵断、廊道、管网、压力管网、放坡、地块、横断面、测量、汇水区、标签样式、工程量、质检；曲面/点可<b>从文件批量导入</b>（任意文本格式）</td></tr>
+<tr><td>自定义道路部件</td><td><b>描述需求 → AI 自动生成 SAC 部件</b>（像 Subassembly Composer 一样）：比如“做个 3m 路肩 + 1:4 放坡”“带圆角的路缘石”——AI 写部件代码、打包、导入 C3D，直接进装配/廊道用（8-16 新增）</td></tr>
+<tr><td>项目文件夹</td><td><b>按工程隔离</b>：项目名下拉切换，AI 临时文件/选择记忆按项目分开，互不串（8-17 新增）</td></tr>
+<tr><td>跨图缓存</td><td>切图不丢选中集——选中集完整几何自动缓存，跨图纸操作仍可用（用几何重建，不在旧图复制）</td></tr>
+</table>
+
+<h2>四、模型服务商怎么选（API Key 从哪来）</h2>
+
+<div class="tip">
+<b>内置 AI 支持所有主流大模型服务商</b>（OpenAI 兼容协议）。选一个你常用的，去对应官网注册并获取 API Key 即可。
+</div>
+
+<table>
+<tr><th>服务商</th><th>获取 Key</th><th>参考模型</th></tr>
+<tr><td>DeepSeek（国内，便宜）</td><td>platform.deepseek.com</td><td>deepseek-chat / deepseek-reasoner</td></tr>
+<tr><td>OpenAI</td><td>platform.openai.com</td><td>gpt-4o-mini / gpt-4o</td></tr>
+<tr><td>通义千问（国内）</td><td>阿里云百炼 dashscope</td><td>qwen-plus / qwen-max</td></tr>
+<tr><td>Kimi（国内）</td><td>platform.moonshot.cn</td><td>moonshot-v1-8k</td></tr>
+<tr><td>智谱 GLM（国内）</td><td>open.bigmodel.cn</td><td>glm-4-flash / glm-4-plus</td></tr>
+<tr><td>MiniMax</td><td>api.minimax.chat</td><td>abab6.5s-chat</td></tr>
+<tr><td>OpenRouter（聚合）</td><td>openrouter.ai</td><td>deepseek/deepseek-chat</td></tr>
+<tr><td>xAI</td><td>api.x.ai</td><td>grok-2-latest</td></tr>
+<tr><td>自定义</td><td>任意 OpenAI 兼容接口</td><td>填 BaseURL + 模型名</td></tr>
+</table>
+
+<div class="warn">
+<b>提示：</b>Key 由模型服务商收费，与 new-acad 无关。国内用户推荐 DeepSeek（价格低、速度快、无需特殊网络）。
+</div>
+
+<h2>五、常见问题</h2>
+
+<table>
+<tr><th>现象</th><th>解决</th></tr>
+<tr><td>面板不显示</td><td>C3D 命令行输 <code>HANK_SHOW</code></td></tr>
+<tr><td>面板显示"未配置 AI"</td><td>面板顶部选服务商/模型 → 填 API Key → 保存</td></tr>
+<tr><td>面板显示"离线"</td><td>双击 <code>server\start-relay.bat</code>，或重跑 install.ps1</td></tr>
+<tr><td>AI 说"连接不到 CAD"</td><td>确认 C3D 已打开、插件已加载（命令行输入 <code>C3DMCPSTATUS</code> 查看）</td></tr>
+<tr><td>选中图元但 AI 读不到</td><td>发消息时面板已自动捕获选择集；仍读不到 → 先按 ESC 取消选择，重新框选后再发消息</td></tr>
+<tr><td>AI 回复 [MISSING]</td><td>该功能暂不支持——如实报告，不会瞎操作；可反馈给软件作者安排开发</td></tr>
+<tr><td>复杂任务 AI 处理超时</td><td>复杂任务（算量/曲面/批量修改）耗时较长属正常；频繁超时可在 <code>config.json</code> 的 <code>llm</code> 段调大 <code>timeoutMs</code>（默认 120000 毫秒）后重启 relay</td></tr>
+<tr><td>relay 服务异常/面板离线</td><td>点面板状态栏右侧<b>「重启服务」</b>一键修复；或双击 <code>server\start-relay.bat</code>。relay 由守护启动器托管：崩溃自动重启（连崩 5 次冷却 60 秒防死循环）；排查看 <code>server\relay-launcher.log</code>（守护）和 <code>server\relay-crash.log</code>（崩溃原因）</td></tr>
+<tr><td>保存模型后没反应</td><td>确认 Key 正确；换服务商后需重新保存（服务商切换时模型列表会刷新）</td></tr>
+<tr><td>AI 能改/删我的文件吗？</td><td>不能。AI 只能<b>新建</b>文件（导出报告/数据），不能修改或删除已有文件——安全红线，防误覆盖</td></tr>
+<tr><td>导出的文件去哪了？</td><td>AI 会回复文件完整路径（你说放哪就放哪，如桌面/指定文件夹），按路径去取即可</td></tr>
+<tr><td>C3D 崩溃</td><td>重启 C3D 自动恢复；插件会在启动时重新加载</td></tr>
+</table>
+
+<h2>六、日志与卸载</h2>
+
+<h3>日志位置</h3>
+<pre>插件日志: %LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log
+中转日志: 解压目录\server\relay.log
+守护日志: 解压目录\server\relay-launcher.log（relay 启动/崩溃自动重启记录）
+崩溃兜底: 解压目录\server\relay-crash.log（未捕获异常落盘，供排查）
+AI 记忆:  解压目录\server\memory\agent-memory.md（长期记忆，可手动编辑）</pre>
+
+<h3>卸载</h3>
+<pre>一键卸载: 运行解压目录下的 uninstall.ps1（自动移除自动加载/自启/进程/运行态）
+
+或手动:
+1. 删除解压目录
+2. 删除 %APPDATA%\Autodesk\C3D &lt;年份&gt;\chs\Support\ 下的 acad.lsp 和 Hank.lsp
+3. 删除计划任务 AcBridge-Relay（Win+R 输入 taskschd.msc → 任务计划程序库）</pre>
+
+<h2>七、技术构成与运行环境</h2>
+
+<div class="tip">
+<b>重要：最终用户无需安装任何编程环境。</b>运行时只有两样——本包自带的 node.exe + 你本来就有的 Civil 3D。
+</div>
+
+<table>
+<tr><th>语言</th><th>在项目里的角色</th><th>你需要做什么</th></tr>
+<tr><td>C# (.NET 8)</td><td>CAD 插件核心（数百个操作方法，数量以软件内清单为准）</td><td>什么都不用做（C3D 自动加载，自带运行库）</td></tr>
+<tr><td>JavaScript (Node.js)</td><td>AI 通信桥 / MCP 服务器 / 面板中转</td><td>什么都不用做（包内已带 node.exe）</td></tr>
+<tr><td>PowerShell</td><td>安装脚本 install.ps1 / 卸载脚本 uninstall.ps1</td><td>右键运行一次（Windows 自带）</td></tr>
+<tr><td>AutoLISP</td><td>启动时自动加载插件</td><td>什么都不用做（C3D 原生支持）</td></tr>
+</table>
+
+<h3>运行环境要求</h3>
+<pre>操作系统: Windows 10 / 11
+CAD 软件: Civil 3D 2024 / 2025 / 2026（自动检测版本）
+模型 API: 任一 OpenAI 兼容服务商的 Key（面板内配置）
+无需: Node.js / Python / .NET SDK / 任何编程环境</pre>
+
+<h2>八、技术支持</h2>
+<p>版本 v1.3.3 ｜ 数百个 CAD 方法（以软件内清单为准）/ 270 个 MCP 工具 ｜ 支持 C3D 2024 / 2025 / 2026（自动检测）</p>
+
+<hr>
+<div style="color:#888;font-size:12px;text-align:center;padding:8px 0">
+  致谢：MCP 服务器基于开源项目
+  <a href="https://github.com/Sacred-G/Civil3D-mcp">Civil3D-mcp</a>
+  （MIT License）二次开发。版权信息以 server/mcp/LICENSE 为准。
+</div>
+</body>
+</html>

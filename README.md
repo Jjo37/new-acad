@@ -1,3 +1,4 @@
+<img width="1088" height="1232" alt="3b75bd0f902e322afbb06826a66a1fe8" src="https://github.com/user-attachments/assets/bcfe0b76-fa67-4ee9-a7bd-d0f3f3600d77" />
 # new-acad
 
 > 在 AutoCAD / Civil 3D 里用自然语言画图、改图、建模、出量 —— AI 面板 + MCP 服务器 + C3D 插件

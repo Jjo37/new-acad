@@ -1,0 +1,16 @@
+# Normalize line endings for cross-platform clones
+* text=auto
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.csproj text eol=crlf
+*.sln text eol=crlf
+*.lsp text eol=crlf
+*.exe binary
+*.dll binary
+*.pdb binary
+*.pkt binary
+*.xls binary
+*.docx binary
+*.xlsx binary
+*.zip binary

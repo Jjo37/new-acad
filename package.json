@@ -1,0 +1,16 @@
+﻿{
+  "name": "new-acad",
+  "version": "1.5.0",
+  "private": true,
+  "description": "AutoCAD / Civil 3D AI 数据桥",
+  "scripts": {
+    "build:plugin": "powershell -ExecutionPolicy Bypass -File build-plugin.ps1",
+    "relay:start": "node server\\panel-relay.js",
+    "sacred:start": "node server\\sacred-mcp.js",
+    "status": "node -e \"fetch('http://127.0.0.1:19876/health').then(r=>r.json()).then(j=>console.log(JSON.stringify(j,null,2))).catch(e=>console.log('Relay not running:',e.message))\""
+  },
+  "dependencies": {}
+}
+
+
+

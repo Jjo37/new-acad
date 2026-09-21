@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Civil3DReferencesPath Condition="'$(Civil3DReferencesPath)' == ''">..\C_References</Civil3DReferencesPath>
+  </PropertyGroup>
+  <Import Project="GeneratedVersion.props" />
+
+  <Target Name="ValidateCivil3DReferences" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(Civil3DReferencesPath)\accoremgd.dll') Or !Exists('$(Civil3DReferencesPath)\AcDbMgd.dll') Or !Exists('$(Civil3DReferencesPath)\acmgd.dll') Or !Exists('$(Civil3DReferencesPath)\AecBaseMgd.dll') Or !Exists('$(Civil3DReferencesPath)\AeccDbMgd.dll') Or !Exists('$(Civil3DReferencesPath)\AeccPressurePipesMgd.dll')"
+      Text="Civil 3D 2026 managed references were not found at '$(Civil3DReferencesPath)'. Set /p:Civil3DReferencesPath=&lt;licensed Civil 3D/ObjectARX reference directory&gt;. Autodesk assemblies must not be committed." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>$(Civil3DReferencesPath)\accoremgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Acdbmgd">
+      <HintPath>$(Civil3DReferencesPath)\AcDbMgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Acmgd">
+      <HintPath>$(Civil3DReferencesPath)\acmgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="AecBaseMgd">
+      <HintPath>$(Civil3DReferencesPath)\AecBaseMgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="AeccDbMgd">
+      <HintPath>$(Civil3DReferencesPath)\AeccDbMgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="AeccPressurePipesMgd">
+      <HintPath>$(Civil3DReferencesPath)\AeccPressurePipesMgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Subassembly.WorkflowEngine">
+      <HintPath>D:\Program Files\Autodesk\AutoCAD 2025\C3D\SACRuntime\Subassembly.WorkflowEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Subassembly.ActivityLibrary">
+      <HintPath>D:\Program Files\Autodesk\AutoCAD 2025\C3D\SACRuntime\Subassembly.ActivityLibrary.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Subassembly.API">
+      <HintPath>D:\Program Files\Autodesk\AutoCAD 2025\C3D\SACRuntime\Subassembly.API.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.IO.Packaging">
+      <HintPath>C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\8.0.10\System.IO.Packaging.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

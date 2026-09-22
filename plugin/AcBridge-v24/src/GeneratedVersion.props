@@ -1,0 +1,9 @@
+<Project>
+  <!-- Generated from package.json by scripts/sync-version.mjs. -->
+  <PropertyGroup>
+    <Version>1.6.0</Version>
+    <AssemblyVersion>1.6.0.0</AssemblyVersion>
+    <FileVersion>1.6.0.0</FileVersion>
+    <InformationalVersion>1.6.0</InformationalVersion>
+  </PropertyGroup>
+</Project>

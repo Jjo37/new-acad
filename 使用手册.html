@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>new-acad 使用手册 — Civil 3D AI 数据桥</title>
+<style>
+  body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; max-width: 860px; margin: 0 auto; padding: 24px 20px 60px; color: #2b2b2b; line-height: 1.7; background: #fafafa; }
+  h1 { font-size: 26px; border-bottom: 3px solid #1890ff; padding-bottom: 10px; }
+  h2 { font-size: 20px; color: #1890ff; margin-top: 36px; border-left: 4px solid #1890ff; padding-left: 10px; }
+  h3 { font-size: 16px; color: #333; }
+  code { background: #eef3f8; padding: 2px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 13px; }
+  pre { background: #1e1e2e; color: #d4d4d4; padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #d9d9d9; padding: 8px 12px; text-align: left; font-size: 14px; }
+  th { background: #f0f7ff; }
+  .tip { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .warn { background: #fff2f0; border: 1px solid #ffccc7; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .step { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+  .step b { color: #1890ff; }
+  .langbar { text-align: right; font-size: 14px; margin: -8px 0 12px; }
+  .langbar span { cursor: pointer; padding: 3px 10px; border-radius: 5px; color: #1890ff; }
+  .langbar span.on { background: #1890ff; color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="langbar"><span id="btn-cn" class="on">中文</span><span id="btn-en">English</span></div>
+
+<!-- ======================= 中文 ======================= -->
+<div id="lang-cn">
+
+<h1>🖥️ new-acad 使用手册</h1>
+<p><b>版本 v1.6.0</b> ｜ 让 AI 直接帮你操作 AutoCAD / Civil 3D</p>
+
+<div class="tip">
+<b>这不是"给 AI 套一层 CAD 工具"。</b>new-acad 是装在 CAD 里的<b>内置 AI 工程助手</b>：大脑（AI 判断逻辑）内置在软件里，<b>不依赖任何外部平台</b>——不用注册我们的账号、不用装其他客户端，你只需要填一个自己的模型 API Key。
+</div>
+
+<div class="tip">
+<b>一句话说明：</b>在 Civil 3D 里选中图元 → 打开面板 → 用文字指挥 AI 帮你改图、画图、查数据。<b>AI 由本软件内置驱动</b>，只需配置一次你自己的模型 API Key，无需安装任何编程环境。
+</div>
+
+<h2>一、安装（4 步）</h2>
+
+<div class="step">
+<b>第 1 步：解压</b><br>
+把压缩包解压到任意目录（<b>建议路径不含中文</b>，例如 <code>D:\new-acad-release</code>）。
+</div>
+
+<div class="step">
+<b>第 2 步：运行安装脚本</b><br>
+双击 <code>install.bat</code>（推荐，自动绕过执行策略），或右键 <code>install.ps1</code> → 选择「使用 PowerShell 运行」。<br>
+看到 <code>结果: N/通过 0/失败 0/警告</code> 即安装成功。<br>
+如仍被拦截，手动执行：
+<pre>Set-ExecutionPolicy Bypass -Scope Process</pre>
+</div>
+
+<div class="step">
+<b>第 3 步：打开 Civil 3D 并配置 AI</b><br>
+正常启动 C3D，插件自动加载。命令行输入 <code>HANK_SHOW</code> 调出面板。<br>
+面板顶部是<b>模型配置区</b>：
+<pre>选择模型 [服务商下拉] [模型下拉]
+[API Key 输入] [显示]
+[操作上限 20] [保存]</pre>
+① 选服务商（DeepSeek / OpenAI / 通义 / Kimi / 智谱 / MiniMax / OpenRouter / xAI / 自定义）<br>
+② 选模型<br>
+③ 填你的 API Key（点"显示"可看明文；以后只改其他配置无需重填）<br>
+④ <b>操作上限</b>：AI 单次任务自动执行的步数上限，默认 20；填 <b>0</b> 表示不限（AI 连续执行直到任务完成，可随时点「取消任务」停止）。点输入框会弹说明气泡<br>
+⑤ <b>界面语言</b>：自动（跟随系统）/ 中文 / English —— 选中立即切换并记住<br>
+⑥ 点<b>保存</b>——立即生效，无需重启<br>
+保存后状态栏显示 <code>● 在线 | llm/服务商/模型 | CAD</code> 即配置完成。
+</div>
+
+<div class="step">
+<b>第 4 步：开始使用</b><br>
+在面板下方输入框打字 → 回车发送 → AI 操作 CAD → 结果回面板。
+</div>
+
+<div class="warn">
+<b>API Key 说明：</b>Key 只保存在本机 config.json，不会上传任何服务器，也不会随软件分发。更换模型随时回面板顶部改。
+</div>
+
+<h2>二、日常使用</h2>
+<h3>上传文件 / 图片 → CAD（v1.6.0 新增）</h3>
+<p>点「上传文件」选本地文件（可多选）——它<strong>不是粘贴图片</strong>，只是把文件路径告诉 AI，AI 自己去读。图片可直接描成 CAD 线条；文档（Word / Excel / PPT / 文本）可直接解析。</p>
+<p><strong>描摹图片</strong>：选图后说"画进 CAD"即可。不指定模式时 AI 按图片类型自动选——扁平 / 纯色 / 卡通 / logo / 矢量壁纸用「色块区域」（线最少、最好看），线稿 / 手绘 / 照片用「圆弧拟合」。想自己指定就说：色块区域 / 圆弧拟合 / 骨架细线（便于继续编辑）/ 描边（保笔画粗细）。</p>
+<p><strong>图上有尺寸标注时</strong>：AI 不会照像素描，而是先读标注列成尺寸表 → 自检（分段和 = 总长）→ 有拿不准的数字会问你 → 再按真实尺寸画出来，画完回读对账。</p>
+<p><strong>图里没有尺寸时</strong>：AI 只会问你一次"图上有没有哪一段长度你知道？哪怕一个"，并给你三个选择：①按图比例画（形状准，实际尺寸未知）②你给一个参考尺寸（自动换算成真实尺寸）③你给一个目标总尺寸。<strong>它不会瞎猜尺寸。</strong></p>
+<h3>聊天记录与项目隔离</h3>
+<p>面板对话按天落盘：全局模式在 <code>exchange\panel-chat-日期.jsonl</code>；选中项目后，该项目的对话单独存到项目目录里，<strong>切换项目不会串对话</strong>，重启也不丢。「清理会话」只清当前作用域的记录（会先弹确认框）。</p>
+
+<h3>面板操作流程</h3>
+<pre>在 CAD 里框选图元 → 切到面板 → 打字发消息 → AI 操作 CAD → 结果回面板</pre>
+
+<h3>面板按钮</h3>
+<p>输入框下方一行：<b>发送 / 取消任务 / 清理会话 / 更多清理</b>；状态栏右侧是<b>重启服务</b>。配置区（点状态栏最右 <b>▼</b> 展开）里有<b>界面语言</b>下拉。</p>
+<table>
+<tr><th>按钮</th><th>作用</th></tr>
+<tr><td>发送</td><td>发送输入框内容（回车也可发送）</td></tr>
+<tr><td>取消任务</td><td>取消排队中/处理中的 AI 任务（结果不再回显，AI 停止响应本次请求）</td></tr>
+<tr><td>清理会话</td><td>清空当前对话与消息队列（AI 短期记忆重置；<b>长期记忆不受影响</b>）</td></tr>
+<tr><td>更多清理</td><td>打开清理菜单：<b>清理日志 / 清理缓存文件 / 清理 MISSING 报告 / 全部清理</b>。只清运行产生的临时文件，<b>长期记忆（AI 记住的规则偏好）永远不在清理范围内</b>，你导出的报告/数据文件也永远不会被清理</td></tr>
+<tr><td>重启服务</td><td>状态栏右侧：relay 掉线/异常时一键重启（自动拉起守护进程，约 3~5 秒自动恢复）</td></tr>
+<tr><td>界面语言</td><td>配置区下拉（<b>自动（跟随系统）/ 中文 / English</b>）：切换面板与端口诊断对话框的语言。选中立即生效并记住，下次打开仍是该语言</td></tr>
+</table>
+<div class="tip"><b>界面语言：</b>安装向导选「English」装出来就是英文界面（选中文同理）；装完也能随时用配置区的 <b>界面语言</b> 下拉切换，选择保存在 <code>config.json</code> 的 <code>locale</code>（<code>auto</code> = 跟随系统）。</div>
+<div class="tip"><b>实时进度：</b>状态栏会<b>实时</b>显示 AI 当前在做什么（推送，不是定时刷新）；任务结束自动回落。</div>
+<div class="tip"><b>输入栏：</b>支持多行自动换行；拖动输入区上方的分隔条可自由调整输入栏高度。</div>
+
+<h3>操作示例</h3>
+<table>
+<tr><th>你在面板里说</th><th>AI 会做</th></tr>
+<tr><td>"选中图元变成红色"</td><td>改颜色（1=红）</td></tr>
+<tr><td>"我选了什么东西"</td><td>读类型、图层、属性</td></tr>
+<tr><td>"在 0,0 画根 2000 的线"</td><td>画线</td></tr>
+<tr><td>"画个 100×50×30 的盒子"</td><td>创建 3D 实体</td></tr>
+<tr><td>"帮我算曲面面积"</td><td>查询曲面数据</td></tr>
+<tr><td>"这两个实体合并"</td><td>3D 布尔并集</td></tr>
+<tr><td>"帮我看 D:\xx.png 里有什么"</td><td>读取图片并查看（<b>需模型支持视觉</b>，如 gpt-4o / qwen-vl；不支持时会提示换模型）</td></tr>
+</table>
+
+<h3>AI 是怎么"想"的（决策链）</h3>
+<div class="tip">
+内置 AI 不是把几百个 CAD 方法一股脑丢给模型让它猜，而是有一套<b>工程判断</b>（这也是本软件和别家最大的不同）：
+<pre>① 先查再调   不确定方法名 → 先查软件内实时方法清单，禁止瞎猜
+② 识别规模   命中"算量/曲面/廊道/批量/报告"或选中≥20个 → 先给你 1-2 行计划
+③ 选通道     单个 → 直接调 ｜ 多个同类 → 批量一次处理 N 个
+             ｜ 数据 >500 条 → 走文件通道 ｜ 重操作 → 后台任务排队（不卡界面）
+④ 遇阻不硬撞 主程序忙/后台任务占用 → 不反复重试同一方法，改走别的路子或问你
+⑤ 诚实边界   同一方法失败 3 次 → 停手；做不到就明说，不瞎操作</pre>
+<b>对用户的意义</b>：你只管说要什么，通道怎么走由它判断——大批量任务不会一个个磨，长任务不会卡死界面。
+</div>
+
+<h3>AI 能力边界</h3>
+<div class="tip">
+内置 AI 通过受控接口操作 CAD，安全边界（2026-08-13 版）：<br>
+<b>读</b>：AI 能读你明确指定的本地文件（文本/CSV/Word/Excel/PPT/压缩包/图纸，看文件夹清单）——<b>敏感文件自动拦截</b>（配置文件/密钥/凭据类，如 config.json、.env），读到的内容会发送给 AI 模型服务商处理<br>
+<b>写</b>：AI 只能<b>新建</b>文件（需你明确指定保存位置），<b>不能修改/覆盖/删除你的已有文件</b>；可执行/脚本文件（.exe/.bat/.ps1 等）一律禁写<br>
+遇到软件不支持的指令，AI 会明确回复 <code>[MISSING] 功能缺失说明</code>，不会瞎编或乱操作。
+</div>
+
+<h3>项目文件夹（可选，多工程管理）</h3>
+<div class="tip">
+<b>按工程隔离数据</b>：如果你同时做好几个工程（路桥/管网/市政...），可以给每个工程建一个项目文件夹，AI 在这个工程里的临时文件、选择记忆互不串。
+<pre>配置区「项目名」一行：
+- 下拉选已有项目 = 直接切换（点一下就过去）
+- 输新名字 + 点「建立」 = 新建项目文件夹并切换
+- 「打开」 = 在资源管理器里看这个项目的文件夹
+- 「清理」 = 删掉这个项目的全部数据（确认后不可恢复）
+- 不填 = 全局模式，所有图纸数据放一起（和以前一样）</pre>
+<b>适合场景</b>：以项目为单位干活时用（比如"甲路项目""乙桥项目"）；随手画小图不填也行。
+</div>
+
+<h3>AI 记忆（长期记忆）</h3>
+<div class="tip">
+AI 有<b>长期记忆</b>（保存在 <code>server\memory\agent-memory.md</code>，重启软件不丢）：
+<pre>"记住：我习惯用米制单位"
+"以后出图默认比例 1:500"
+"算量前先跟我确认范围线"</pre>
+记忆<b>只存规则、偏好、方法</b>；具体任务和图纸数据不会写入（防污染）。点"清理会话"只清当前对话，<b>不影响长期记忆</b>。
+</div>
+
+<h3>本地文件读写（导出报告 / 读取数据）</h3>
+<div class="tip">
+<b>AI 可以帮你新建文件到任意指定位置</b>——导出报告、生成数据文件（CSV/JSON/文本等，格式不限）：
+<pre>"把曲面体积报告导出到桌面"
+"生成桩号数据 CSV 到 D:\报告\"
+"读一下这个文件的内容"
+"看看 D:\xx文件夹 里有什么"</pre>
+<b>AI 能读取的文件</b>：文本（txt/csv/json）、Word（docx）、Excel（xlsx）、PPT（pptx）、压缩包（zip 看清单）、CAD 图纸（自动打开查看）——老版 .doc/.xls/扫描版 PDF 读不了，让 AI 引导你转格式即可。
+</div>
+<div class="warn">
+<b>安全红线（保护你的数据）：</b><br>
+- AI <b>只能新建</b>文件——已存在的文件<b>不允许修改/覆盖</b>（防止误覆盖重要数据）<br>
+- AI <b>不能删除</b>你的任何文件——删除文件需你手动操作<br>
+- <b>敏感文件读不了</b>：配置文件/密钥/凭据类（config.json、.env、证书等）自动拦截<br>
+- 可执行/脚本文件（.exe/.bat/.ps1 等）一律禁写<br>
+- 读到的文件内容会发送给 AI 模型服务商处理，敏感数据请自行斟酌<br>
+- 如需更新已有文件内容：让 AI 新建一个新文件（如 xxx_v2.csv），原文件保持不变
+</div>
+
+<h3>大数据量任务怎么用（批量 / 文件通道）</h3>
+<div class="tip">
+处理<b>大量图元或大数据文件</b>（几百上千个点、整图层批量改、CSV 导入等）时，<b>你不需要任何特殊操作</b>——AI 会自动走高效通道，不再一个一个慢慢处理：
+<pre>"把这 2000 个点全部加到曲面"
+"把 D:\data\points.csv 里的点导入 Cogo"
+"选中图层 0 的所有图元改成红色"
+"把我选中的东西导出成 JSON 文件"</pre>
+<b>AI 自动判断的规则：</b><br>
+① <b>批量优先</b>——复数对象用批量方法（一次处理 N 个），禁止逐个调用<br>
+② <b>文件通道</b>——数据量 &gt;500 条自动改走文件导入/导出（任意文本格式都能读，AI 自己判断分隔符/列序）<br>
+③ <b>先出计划</b>——大规模任务（选中 ≥20 个或含"批量/csv/大量"等词）AI 会先告诉你"用什么方式、预计几轮完成"，再动手<br>
+④ <b>后台任务</b>——耗时长的重操作（廊道重建等）自动排队执行，不占用界面、不撞超时<br>
+⑤ <b>方法清单自动缓存</b>——AI 首次查询方法清单后缓存 5 分钟，之后秒回，不再反复扫描
+</div>
+
+<h2>三、能做什么</h2>
+
+<table>
+<tr><th>类别</th><th>功能</th></tr>
+<tr><td>图元操作</td><td>选中查属性 / 改颜色 / 删除 / 移动 / 复制 / 旋转 / 缩放 / 镜像 / 偏移 / 打断 / 炸开 / 合并；<b>批量</b>改色 / 移动 / 删除（一次处理 N 个）</td></tr>
+<tr><td>画图</td><td>线 / 多段线 / 圆 / 文字 / 多行文字 / 3D 实体（盒、圆柱、球、圆锥、楔体、圆环）</td></tr>
+<tr><td>图层</td><td>创建 / 开关 / 冻结 / 锁定 / 孤立 / 匹配；<b>按图层 / 按块枚举图元</b>（带坐标）</td></tr>
+<tr><td>块与参照</td><td>建块 / 插入 / 写块 / 炸块 / 外部参照</td></tr>
+<tr><td>标注</td><td>线性 / 对齐 / 半径 / 直径 / 角度</td></tr>
+<tr><td>3D 建模</td><td>拉伸 / 旋转 / 扫掠 / 布尔并差 / 切片 / 阵列 / 干涉检查 / 赋材质；<b>视觉样式切换</b>（线框/真实等）</td></tr>
+<tr><td>C3D 专业</td><td>曲面（创建/加点/断裂线/体积/坡向）、路线、纵断、廊道、管网、压力管网、放坡、地块、横断面、测量、汇水区、标签样式、工程量、质检；曲面/点可<b>从文件批量导入</b>（任意文本格式）</td></tr>
+<tr><td>自定义道路部件</td><td><b>描述需求 → AI 自动生成 SAC 部件</b>（像 Subassembly Composer 一样）：比如"做个 3m 路肩 + 1:4 放坡""带圆角的路缘石"——AI 写部件代码、打包、导入 C3D，直接进装配/廊道用</td></tr>
+<tr><td>项目文件夹</td><td><b>按工程隔离</b>：项目名下拉切换，AI 临时文件/选择记忆按项目分开，互不串</td></tr>
+<tr><td>跨图缓存</td><td>切图不丢选中集——选中集完整几何自动缓存，跨图纸操作仍可用（用几何重建，不在旧图复制）</td></tr>
+</table>
+
+<h2>四、模型服务商怎么选（API Key 从哪来）</h2>
+
+<div class="tip">
+<b>内置 AI 支持所有主流大模型服务商</b>（OpenAI 兼容协议）。选一个你常用的，去对应官网注册并获取 API Key 即可。
+</div>
+
+<table>
+<tr><th>服务商</th><th>获取 Key</th><th>参考模型</th></tr>
+<tr><td>DeepSeek（国内，便宜）</td><td>platform.deepseek.com</td><td>deepseek-chat / deepseek-reasoner</td></tr>
+<tr><td>OpenAI</td><td>platform.openai.com</td><td>gpt-4o-mini / gpt-4o</td></tr>
+<tr><td>通义千问（国内）</td><td>阿里云百炼 dashscope</td><td>qwen-plus / qwen-max</td></tr>
+<tr><td>Kimi（国内）</td><td>platform.moonshot.cn</td><td>moonshot-v1-8k</td></tr>
+<tr><td>智谱 GLM（国内）</td><td>open.bigmodel.cn</td><td>glm-4-flash / glm-4-plus</td></tr>
+<tr><td>MiniMax</td><td>api.minimax.chat</td><td>abab6.5s-chat</td></tr>
+<tr><td>OpenRouter（聚合）</td><td>openrouter.ai</td><td>deepseek/deepseek-chat</td></tr>
+<tr><td>xAI</td><td>api.x.ai</td><td>grok-2-latest</td></tr>
+<tr><td>自定义</td><td>任意 OpenAI 兼容接口</td><td>填 BaseURL + 模型名</td></tr>
+</table>
+
+<div class="warn">
+<b>提示：</b>Key 由模型服务商收费，与 new-acad 无关。国内用户推荐 DeepSeek（价格低、速度快、无需特殊网络）。
+</div>
+
+<h2>五、常见问题</h2>
+
+<table>
+<tr><th>现象</th><th>解决</th></tr>
+<tr><td>面板不显示</td><td>C3D 命令行输 <code>HANK_SHOW</code></td></tr>
+<tr><td>怎么换成英文界面？</td><td>面板配置区（点状态栏最右 <b>▼</b> 展开）的<b>界面语言</b>下拉选 <b>English</b>，立即生效并记住；安装时在安装向导选 English 也一样。<code>config.json</code> 的 <code>locale</code> 可手动改（<code>auto</code> = 跟随系统）</td></tr>
+<tr><td>这手册怎么看英文？</td><td>点右上角 <b>English</b>（会记住你的选择；网址后加 <code>#en</code> 也能直达英文）</td></tr>
+<tr><td>面板显示"未配置 AI"</td><td>面板顶部选服务商/模型 → 填 API Key → 保存</td></tr>
+<tr><td>面板显示"离线"</td><td>双击 <code>server\start-relay.bat</code>，或重跑 install.ps1</td></tr>
+<tr><td>AI 说"连接不到 CAD"</td><td>确认 C3D 已打开、插件已加载（命令行输入 <code>C3DMCPSTATUS</code> 查看）</td></tr>
+<tr><td>选中图元但 AI 读不到</td><td>发消息时面板已自动捕获选择集；仍读不到 → 先按 ESC 取消选择，重新框选后再发消息</td></tr>
+<tr><td>AI 回复 [MISSING]</td><td>该功能暂不支持——如实报告，不会瞎操作；可反馈给软件作者安排开发</td></tr>
+<tr><td>复杂任务 AI 处理超时</td><td>复杂任务（算量/曲面/批量修改）耗时较长属正常；频繁超时可在 <code>config.json</code> 的 <code>llm</code> 段调大 <code>timeoutMs</code>（默认 120000 毫秒）后重启 relay</td></tr>
+<tr><td>relay 服务异常/面板离线</td><td>点面板状态栏右侧<b>「重启服务」</b>一键修复；或双击 <code>server\start-relay.bat</code>。relay 由守护启动器托管：崩溃自动重启（连崩 5 次冷却 60 秒防死循环）；排查看 <code>server\relay-launcher.log</code>（守护）和 <code>server\relay-crash.log</code>（崩溃原因）</td></tr>
+<tr><td>保存模型后没反应</td><td>确认 Key 正确；换服务商后需重新保存（服务商切换时模型列表会刷新）</td></tr>
+<tr><td>AI 能改/删我的文件吗？</td><td>不能。AI 只能<b>新建</b>文件（导出报告/数据），不能修改或删除已有文件——安全红线，防误覆盖</td></tr>
+<tr><td>导出的文件去哪了？</td><td>AI 会回复文件完整路径（你说放哪就放哪，如桌面/指定文件夹），按路径去取即可</td></tr>
+<tr><td>C3D 崩溃</td><td>重启 C3D 自动恢复；插件会在启动时重新加载</td></tr>
+</table>
+
+<h2>六、日志与卸载</h2>
+
+<h3>日志位置</h3>
+<pre>插件日志: %LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log
+中转日志: 解压目录\server\relay.log
+守护日志: 解压目录\server\relay-launcher.log（relay 启动/崩溃自动重启记录）
+崩溃兜底: 解压目录\server\relay-crash.log（未捕获异常落盘，供排查）
+AI 记忆:  解压目录\server\memory\agent-memory.md（长期记忆，可手动编辑）</pre>
+
+<h3>卸载</h3>
+<pre>一键卸载: 运行解压目录下的 uninstall.ps1（自动移除自动加载/自启/进程/运行态）
+
+或手动:
+1. 删除解压目录
+2. 删除 %APPDATA%\Autodesk\C3D &lt;年份&gt;\chs\Support\ 下的 acad.lsp 和 Hank.lsp
+3. 删除计划任务 AcBridge-Relay（Win+R 输入 taskschd.msc → 任务计划程序库）</pre>
+
+<h2>七、技术构成与运行环境</h2>
+
+<div class="tip">
+<b>重要：最终用户无需安装任何编程环境。</b>运行时只有两样——本包自带的 node.exe + 你本来就有的 Civil 3D。
+</div>
+
+<table>
+<tr><th>语言</th><th>在项目里的角色</th><th>你需要做什么</th></tr>
+<tr><td>C# (.NET 8)</td><td>CAD 插件核心（<b>398 个操作方法</b>，数量以软件内清单为准）</td><td>什么都不用做（C3D 自动加载，自带运行库）</td></tr>
+<tr><td>JavaScript (Node.js)</td><td><b>内置 AI 大脑</b>（判断逻辑/上下文压缩/长期记忆）+ 通信桥 + MCP 兼容出口</td><td>什么都不用做（包内已带 node.exe）</td></tr>
+<tr><td>PowerShell</td><td>安装脚本 install.ps1 / 卸载脚本 uninstall.ps1</td><td>右键运行一次（Windows 自带）</td></tr>
+<tr><td>AutoLISP</td><td>启动时自动加载插件</td><td>什么都不用做（C3D 原生支持）</td></tr>
+</table>
+
+<h3>运行环境要求</h3>
+<pre>操作系统: Windows 10 / 11
+CAD 软件: Civil 3D 2024 / 2025 / 2026（自动检测版本）
+模型 API: 任一 OpenAI 兼容服务商的 Key（面板内配置）
+无需: Node.js / Python / .NET SDK / 任何编程环境</pre>
+
+<h2>八、技术支持</h2>
+<p>版本 v1.6.0 ｜ <b>400 个 CAD 方法</b>（以软件内清单为准）/ <b>274</b> 个 MCP 工具 ｜ 支持 C3D 2024 / 2025 / 2026（自动检测）｜ 界面语言 中文 / English</p>
+
+<hr>
+<div style="color:#888;font-size:12px;text-align:center;padding:8px 0">
+  致谢：MCP 服务器基于开源项目
+  <a href="https://github.com/Sacred-G/Civil3D-mcp">Civil3D-mcp</a>
+  （MIT License）二次开发。版权信息以 server/mcp/LICENSE 为准。
+</div>
+
+</div><!-- /lang-cn -->
+
+<!-- ======================= English ======================= -->
+<div id="lang-en" style="display:none">
+
+<h1>🖥️ new-acad User Guide</h1>
+<p><b>Version v1.6.0</b> ｜ Let an AI drive AutoCAD / Civil 3D for you</p>
+
+<div class="tip">
+<b>This is not "an AI wrapped around some CAD tools".</b> new-acad is a <b>built-in AI engineering assistant</b> living inside CAD: the brain (the AI's judgement logic) ships inside the software and <b>depends on no external platform</b> — no account with us, no extra client to install. You only bring your own model API key.
+</div>
+
+<div class="tip">
+<b>In one sentence:</b> select entities in Civil 3D → open the palette → type what you want and the AI edits, draws and queries for you. <b>The AI is driven by this software itself</b>; configure your own model API key once and you're set — no programming environment required.
+</div>
+
+<h2>1. Install (4 steps)</h2>
+
+<div class="step">
+<b>Step 1 — Unzip</b><br>
+Unzip the archive to any folder (<b>avoid non-ASCII characters in the path</b>, e.g. <code>D:\new-acad-release</code>).
+</div>
+
+<div class="step">
+<b>Step 2 — Run the installer script</b><br>
+Double-click <code>install.bat</code> (recommended; it bypasses the execution policy), or right-click <code>install.ps1</code> → "Run with PowerShell".<br>
+When you see <code>结果: N/通过 0/失败 0/警告</code> (N passed / 0 failed / 0 warnings) the install succeeded.<br>
+If it is still blocked, run this manually:
+<pre>Set-ExecutionPolicy Bypass -Scope Process</pre>
+</div>
+
+<div class="step">
+<b>Step 3 — Open Civil 3D and configure the AI</b><br>
+Start Civil 3D normally; the plugin loads itself. Type <code>HANK_SHOW</code> on the command line to bring up the palette.<br>
+The top of the palette is the <b>model config area</b>:
+<pre>Provider [dropdown] [model dropdown]
+[API Key input] [Show]
+[Step limit 20] [Save]</pre>
+① Pick a provider (DeepSeek / OpenAI / Qwen / Kimi / Zhipu / MiniMax / OpenRouter / xAI / custom)<br>
+② Pick a model<br>
+③ Paste your API key ("Show" reveals it; later changes to other settings don't require re-entering it)<br>
+④ <b>Step limit</b>: how many actions the AI may take per task, default 20; enter <b>0</b> for unlimited (it keeps going until done — hit "Cancel task" any time). Hovering the box shows a tooltip.<br>
+⑤ <b>Language</b>: Automatic (follow system) / 中文 / English — takes effect and is remembered immediately<br>
+⑥ Click <b>Save</b> — effective immediately, no restart.<br>
+The status bar then reads <code>● Online | llm/provider/model | CAD</code>.
+</div>
+
+<div class="step">
+<b>Step 4 — Start using it</b><br>
+Type in the input box at the bottom → press Enter → the AI operates CAD → the result comes back to the palette.
+</div>
+
+<div class="warn">
+<b>About the API key:</b> the key is stored only in the local <code>config.json</code>. It is never uploaded to any server and never shipped with the software. Change the model any time at the top of the palette.
+</div>
+
+<h2>2. Daily use</h2>
+<h3>Uploading files / images → CAD (new in v1.6.0)</h3>
+<p>Click <strong>Upload</strong> to pick local files (multi-select). It is <strong>not</strong> pasting an image — it just hands the file path to the AI, which reads it itself. Images can be traced into CAD linework; documents (Word / Excel / PowerPoint / text) can be parsed directly.</p>
+<p><strong>Tracing an image</strong>: pick the image and say "draw it into CAD". Without an explicit mode the AI picks by image type — flat / solid-colour / cartoon / logo / vector wallpaper use "colour regions" (fewest, cleanest lines); line art / sketches / photos use "arc fitting". You can also ask for: colour regions / arc fitting / centre-line skeleton (easy to keep editing) / outline (keeps stroke width).</p>
+<p><strong>When the drawing has dimension labels</strong>: the AI does not trace pixels. It first reads the labels into a dimension table → self-checks (segments must sum to the total) → asks you about any digit it is unsure of → then draws to true size and measures back to verify.</p>
+<p><strong>When there are no dimensions</strong>: the AI asks once — "is there any segment whose length you know, even one?" — and offers three choices: ①draw to image proportions (shape accurate, real size unknown) ②give one reference length (auto-converted to real size) ③give a target overall size. <strong>It will never guess dimensions.</strong></p>
+<h3>Chat history and project isolation</h3>
+<p>Panel chats are saved per day: global mode in <code>exchange\panel-chat-date.jsonl</code>; with a project selected the chat is stored inside that project folder — <strong>switching projects never mixes conversations</strong>, and nothing is lost on restart. "Clear chat" only clears the current scope, with a confirmation dialog first.</p>
+
+<h3>Typical flow</h3>
+<pre>Select entities in CAD → switch to the palette → type your message → AI operates CAD → result comes back</pre>
+
+<h3>Palette buttons</h3>
+<p>Below the input box: <b>Send / Cancel task / Clear chat / More</b>; on the right of the status bar: <b>Restart</b>. The config area (expand it with <b>▼</b> at the far right of the status bar) holds the <b>Language</b> dropdown.</p>
+<table>
+<tr><th>Button</th><th>What it does</th></tr>
+<tr><td>Send</td><td>Sends the input box contents (Enter works too)</td></tr>
+<tr><td>Cancel task</td><td>Cancels a queued/running AI task (its result is discarded; the AI stops working on this request)</td></tr>
+<tr><td>Clear chat</td><td>Clears the current conversation and message queue (short-term memory resets; <b>long-term memory is untouched</b>)</td></tr>
+<tr><td>More</td><td>Cleanup menu: <b>logs / cache files / MISSING reports / clean everything</b>. Only runtime temp files are removed — <b>long-term memory (the rules and preferences the AI remembers) is never touched</b>, and the reports/data files you exported are never deleted</td></tr>
+<tr><td>Restart</td><td>Right of the status bar: one-click restart when the relay drops or misbehaves (the daemon comes back in ~3-5 s)</td></tr>
+<tr><td>Language</td><td>Config-area dropdown (<b>Automatic (follow system) / 中文 / English</b>): switches the palette and the port-status dialog. Effective and remembered immediately</td></tr>
+</table>
+<div class="tip"><b>UI language:</b> pick English in the setup wizard and you get an English UI (same for Chinese); you can also switch any time from the <b>Language</b> dropdown. The choice is stored in <code>config.json</code> as <code>locale</code> (<code>auto</code> = follow the system).</div>
+<div class="tip"><b>Live progress:</b> the status bar shows what the AI is doing <b>in real time</b> (pushed, not polled), and falls back automatically when the task ends.</div>
+<div class="tip"><b>Input box:</b> wraps across multiple lines; drag the splitter bar above it to resize.</div>
+
+<h3>Examples</h3>
+<table>
+<tr><th>You say</th><th>The AI does</th></tr>
+<tr><td>"turn the selected entities red"</td><td>Changes the colour (1 = red)</td></tr>
+<tr><td>"what have I selected?"</td><td>Reports type, layer and properties</td></tr>
+<tr><td>"draw a 2000 line from 0,0"</td><td>Draws a line</td></tr>
+<tr><td>"draw a 100×50×30 box"</td><td>Creates a 3D solid</td></tr>
+<tr><td>"compute the surface area for me"</td><td>Queries surface data</td></tr>
+<tr><td>"union these two solids"</td><td>3D boolean union</td></tr>
+<tr><td>"what's in D:\xx.png?"</td><td>Reads and views the image (<b>needs a vision-capable model</b>, e.g. gpt-4o / qwen-vl; otherwise it tells you to switch models)</td></tr>
+</table>
+
+<h3>How the AI thinks (the decision chain)</h3>
+<div class="tip">
+The built-in AI does not get handed hundreds of CAD methods to guess from. It comes with <b>engineering judgement</b> — and this is the biggest difference from other approaches:
+<pre>1. Look up first   unsure of a method name → query the live method list; never guess
+2. Spot the scale  complex keywords or ≥20 selected → print a 1-2 line plan first
+3. Pick a channel  single → direct ｜ many of a kind → batch, N at once
+                   ｜ >500 records → file channel ｜ heavy op → background job (no UI freeze)
+4. Do not ram      CAD busy / job running → no repeated retries of the same method;
+                   take another route or ask you
+5. Honest boundary 3 failures of a method → stop; if it cannot do it, it says so</pre>
+<b>What it means for you:</b> you just say what you want — the AI decides how to route it. Large batches stop grinding one by one, and long operations don't freeze the UI.
+</div>
+
+<h3>What the AI may and may not do</h3>
+<div class="tip">
+The AI works through controlled interfaces (safety model as of 2026-08-13):<br>
+<b>Read</b>: it can read local files you explicitly point it to (text/CSV/Word/Excel/PPT/archives/drawings, and list folders) — <b>sensitive files are blocked</b> (config/key/credential files such as config.json or .env). Content it reads is sent to your AI model provider for processing.<br>
+<b>Write</b>: it can only <b>create new</b> files (you must specify where), and <b>cannot modify, overwrite or delete existing files</b>. Executable/script files (.exe/.bat/.ps1 …) can never be written.<br>
+If something is not supported it replies with an explicit <code>[MISSING]</code> note instead of improvising.
+</div>
+
+<h3>Project folders (optional — multi-project isolation)</h3>
+<div class="tip">
+<b>Keep data per project.</b> If you run several projects (roads/bridges/utilities…), give each one a project folder so the AI's temp files and selection memory never bleed across.
+<pre>Config-area "Project" row:
+- pick an existing project from the dropdown = switch to it
+- type a new name + "Create" = make the folder and switch
+- "Open" = reveal the project folder in Explorer
+- "Clear" = delete all data of that project (irreversible after confirming)
+- leave empty = global mode, everything shares one workspace (as before)</pre>
+<b>When to use it:</b> when you work project by project. For quick one-off drawings, leaving it empty is fine.
+</div>
+
+<h3>AI memory (long-term)</h3>
+<div class="tip">
+The AI has <b>long-term memory</b> (stored in <code>server\memory\agent-memory.md</code>; survives restarts):
+<pre>"remember: I work in metric units"
+"default plot scale 1:500 from now on"
+"confirm the boundary with me before quantity takeoff"</pre>
+It stores <b>rules, preferences and methods only</b> — never task or drawing data (to avoid pollution). "Clear chat" only clears the current conversation; <b>long-term memory is unaffected</b>.
+</div>
+
+<h3>Reading and writing local files</h3>
+<div class="tip">
+<b>The AI can create files wherever you tell it to</b> — reports, data files (CSV/JSON/text, any format):
+<pre>"export the surface volume report to my desktop"
+"write a CSV of the station data to D:\reports\"
+"read this file and summarise it"
+"what's in the folder D:\xx?"</pre>
+<b>Formats it can read</b>: text (txt/csv/json), Word (docx), Excel (xlsx), PowerPoint (pptx), archives (zip listings), CAD drawings (opens and inspects them). Legacy .doc/.xls and scanned PDFs are not supported — it will guide you to convert.
+</div>
+<div class="warn">
+<b>Safety red lines (protecting your data):</b><br>
+- The AI can only <b>create</b> files — existing files are <b>never modified or overwritten</b><br>
+- The AI <b>cannot delete</b> any of your files — you do that yourself<br>
+- <b>Sensitive files are unreadable</b>: config/key/credential files (config.json, .env, certificates…) are blocked<br>
+- Executable/script files (.exe/.bat/.ps1 …) can never be written<br>
+- Content it reads is sent to your AI model provider — judge accordingly for sensitive data<br>
+- To update an existing file, have the AI create a new one (e.g. xxx_v2.csv) and keep the original intact
+</div>
+
+<h3>Large tasks (batching and the file channel)</h3>
+<div class="tip">
+For <b>large entity sets or big data files</b> (thousands of points, whole-layer edits, CSV imports…) <b>you don't need to do anything special</b> — the AI automatically takes the efficient route instead of grinding one by one:
+<pre>"add these 2000 points to the surface"
+"import the points in D:\data\points.csv into Cogo"
+"make every entity on layer 0 red"
+"export my selection to a JSON file"</pre>
+<b>Rules the AI applies by itself:</b><br>
+① <b>Batch first</b> — batch methods and array parameters for many objects; calling one by one is forbidden<br>
+② <b>File channel</b> — above ~500 records it switches to file import/export (any text format; it figures out the delimiter and column order)<br>
+③ <b>Plan first</b> — for big tasks (≥20 selected, or words like "batch"/"csv"/"lots of") it states the approach and expected number of steps before starting<br>
+④ <b>Background jobs</b> — long operations (corridor rebuilds etc.) queue up without holding the UI or hitting timeouts<br>
+⑤ <b>Method list caching</b> — the method list is cached for 5 minutes after the first query, so later lookups are instant
+</div>
+
+<h2>3. What it can do</h2>
+
+<table>
+<tr><th>Area</th><th>Capabilities</th></tr>
+<tr><td>Entities</td><td>Inspect properties / change colour / delete / move / copy / rotate / scale / mirror / offset / break / explode / join; <b>batch</b> colour / move / delete (N at once)</td></tr>
+<tr><td>Drawing</td><td>Lines / polylines / circles / text / mtext / 3D primitives (box, cylinder, sphere, cone, wedge, torus)</td></tr>
+<tr><td>Layers</td><td>Create / on-off / freeze / lock / isolate / match; <b>enumerate entities by layer or block</b> (with coordinates)</td></tr>
+<tr><td>Blocks &amp; xrefs</td><td>Create / insert / wblock / explode / external references</td></tr>
+<tr><td>Dimensions</td><td>Linear / aligned / radius / diameter / angular</td></tr>
+<tr><td>3D modelling</td><td>Extrude / revolve / sweep / boolean union &amp; subtract / slice / array / interference check / materials; <b>visual style switching</b></td></tr>
+<tr><td>Civil 3D</td><td>Surfaces (create / add points / breaklines / volume / slope), alignments, profiles, corridors, pipe networks, pressure networks, grading, parcels, sections, survey, catchments, label styles, quantities, QC; surfaces and points can be <b>bulk-imported from files</b> (any text format)</td></tr>
+<tr><td>Custom subassemblies</td><td><b>Describe it → the AI generates a SAC subassembly</b> (like Subassembly Composer): e.g. "a 3 m shoulder with 1:4 grading" or "a kerb with a rounded corner" — it writes the code, packages it and imports it straight into C3D</td></tr>
+<tr><td>Project folders</td><td><b>Per-project isolation</b>: switch from the dropdown; temp files and selection memory stay separate</td></tr>
+<tr><td>Cross-drawing cache</td><td>Selection survives drawing switches — geometry is cached and rebuilt, not copied from the old drawing</td></tr>
+</table>
+
+<h2>4. Choosing a model provider (where to get an API key)</h2>
+
+<div class="tip">
+<b>All mainstream providers are supported</b> (OpenAI-compatible). Pick one you use and grab an API key from its site.
+</div>
+
+<table>
+<tr><th>Provider</th><th>Get a key</th><th>Example models</th></tr>
+<tr><td>DeepSeek (cheap, China)</td><td>platform.deepseek.com</td><td>deepseek-chat / deepseek-reasoner</td></tr>
+<tr><td>OpenAI</td><td>platform.openai.com</td><td>gpt-4o-mini / gpt-4o</td></tr>
+<tr><td>Qwen (China)</td><td>Alibaba Cloud DashScope</td><td>qwen-plus / qwen-max</td></tr>
+<tr><td>Kimi (China)</td><td>platform.moonshot.cn</td><td>moonshot-v1-8k</td></tr>
+<tr><td>Zhipu GLM (China)</td><td>open.bigmodel.cn</td><td>glm-4-flash / glm-4-plus</td></tr>
+<tr><td>MiniMax</td><td>api.minimax.chat</td><td>abab6.5s-chat</td></tr>
+<tr><td>OpenRouter (aggregator)</td><td>openrouter.ai</td><td>deepseek/deepseek-chat</td></tr>
+<tr><td>xAI</td><td>api.x.ai</td><td>grok-2-latest</td></tr>
+<tr><td>Custom</td><td>any OpenAI-compatible endpoint</td><td>fill in BaseURL + model</td></tr>
+</table>
+
+<div class="warn">
+<b>Note:</b> keys are billed by the model provider, not by new-acad. For users in China, DeepSeek is a good default (cheap, fast, no special network needed).
+</div>
+
+<h2>5. Troubleshooting</h2>
+
+<table>
+<tr><th>Symptom</th><th>Fix</th></tr>
+<tr><td>Palette doesn't show</td><td>Type <code>HANK_SHOW</code> on the Civil 3D command line</td></tr>
+<tr><td>How do I switch to the Chinese UI?</td><td>Open the config area (click <b>▼</b> at the far right of the status bar) and pick 中文 in the <b>Language</b> dropdown — effective and remembered immediately. Choosing Chinese in the setup wizard does the same. You can also edit <code>locale</code> in <code>config.json</code> (<code>auto</code> = follow system)</td></tr>
+<tr><td>How do I read this guide in Chinese?</td><td>Click <b>中文</b> at the top right (your choice is remembered; appending <code>#cn</code> to the URL also works)</td></tr>
+<tr><td>Palette says "not configured"</td><td>Pick provider/model at the top → paste API key → Save</td></tr>
+<tr><td>Palette says "offline"</td><td>Run <code>server\start-relay.bat</code>, or re-run install.ps1</td></tr>
+<tr><td>AI says it can't reach CAD</td><td>Make sure Civil 3D is open and the plugin loaded (type <code>C3DMCPSTATUS</code>)</td></tr>
+<tr><td>Selection isn't picked up</td><td>The palette snapshots your selection when you send. If it still fails: press ESC to clear the selection, select again, then send</td></tr>
+<tr><td>AI replies [MISSING]</td><td>That capability isn't supported yet — it reports honestly instead of improvising. Feel free to report it so it can be scheduled</td></tr>
+<tr><td>Complex tasks time out</td><td>Long operations (quantities/surfaces/bulk edits) taking a while is normal. If it happens often, raise <code>timeoutMs</code> in the <code>llm</code> section of <code>config.json</code> (default 120000 ms) and restart the relay</td></tr>
+<tr><td>Relay misbehaving / palette offline</td><td>Click <b>Restart</b> in the status bar, or run <code>server\start-relay.bat</code>. The relay runs under a supervising launcher: it restarts automatically after a crash (with a 60 s cooldown after 5 rapid crashes). Logs: <code>server\relay-launcher.log</code> and <code>server\relay-crash.log</code></td></tr>
+<tr><td>Nothing happens after saving the model</td><td>Check the key. After switching providers you must save again (the model list refreshes on switch)</td></tr>
+<tr><td>Can the AI modify or delete my files?</td><td>No. It can only <b>create</b> new files (reports/data). Existing files are never modified or deleted — a safety red line against accidental overwrites</td></tr>
+<tr><td>Where did the exported file go?</td><td>The AI replies with the full path (wherever you asked — desktop, a folder…). Just go there</td></tr>
+<tr><td>Civil 3D crashed</td><td>Restart Civil 3D; the plugin reloads itself</td></tr>
+</table>
+
+<h2>6. Logs and uninstall</h2>
+
+<h3>Log locations</h3>
+<pre>Plugin log:   %LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log
+Relay log:    <install dir>\server\relay.log
+Launcher log: <install dir>\server\relay-launcher.log  (start/auto-restart records)
+Crash dump:   <install dir>\server\relay-crash.log      (uncaught exceptions)
+AI memory:    <install dir>\server\memory\agent-memory.md  (editable)</pre>
+
+<h3>Uninstall</h3>
+<pre>One click: run uninstall.ps1 in the install dir
+           (removes autoload, autostart, processes and runtime state)
+
+Manual:
+1. delete the install directory
+2. delete acad.lsp and Hank.lsp under %APPDATA%\Autodesk\C3D <year>\chs\Support\
+3. delete the scheduled task AcBridge-Relay (Win+R → taskschd.msc → Task Scheduler Library)</pre>
+
+<h2>7. Under the hood</h2>
+
+<div class="tip">
+<b>End users need no programming environment.</b> At runtime there are only two things: the bundled node.exe and the Civil 3D you already have.
+</div>
+
+<table>
+<tr><th>Language</th><th>Role</th><th>What you must do</th></tr>
+<tr><td>C# (.NET 8)</td><td>The CAD plugin core (<b>398 operations</b>; the live list inside the software is authoritative)</td><td>Nothing (Civil 3D loads it; runtime is bundled)</td></tr>
+<tr><td>JavaScript (Node.js)</td><td><b>The built-in AI brain</b> (judgement, context compaction, long-term memory) + the comms bridge + the MCP compatibility exit</td><td>Nothing (node.exe is bundled)</td></tr>
+<tr><td>PowerShell</td><td>install.ps1 / uninstall.ps1</td><td>Run once (ships with Windows)</td></tr>
+<tr><td>AutoLISP</td><td>Loads the plugin at startup</td><td>Nothing (native to Civil 3D)</td></tr>
+</table>
+
+<h3>Requirements</h3>
+<pre>OS:        Windows 10 / 11
+CAD:       Civil 3D 2024 / 2025 / 2026 (auto-detected)
+Model API: any OpenAI-compatible provider key (configured in the palette)
+Not needed: Node.js / Python / .NET SDK / any programming environment</pre>
+
+<h2>8. Support</h2>
+<p>Version v1.6.0 ｜ <b>400 CAD methods</b> (the in-software list is authoritative) / <b>274</b> MCP tools ｜ Civil 3D 2024 / 2025 / 2026 (auto-detected) ｜ UI language: Chinese / English</p>
+
+<hr>
+<div style="color:#888;font-size:12px;text-align:center;padding:8px 0">
+  Credit: the MCP server is built on the open-source project
+  <a href="https://github.com/Sacred-G/Civil3D-mcp">Civil3D-mcp</a>
+  (MIT License). See server/mcp/LICENSE for licensing details.
+</div>
+
+</div><!-- /lang-en -->
+
+<script>
+(function () {
+  var cn = document.getElementById('lang-cn');
+  var en = document.getElementById('lang-en');
+  var bc = document.getElementById('btn-cn');
+  var be = document.getElementById('btn-en');
+  var TITLE_CN = 'new-acad 使用手册 — Civil 3D AI 数据桥';
+  var TITLE_EN = 'new-acad User Guide — Civil 3D AI bridge';
+  function set(l) {
+    var isEn = (l === 'en');
+    cn.style.display = isEn ? 'none' : 'block';
+    en.style.display = isEn ? 'block' : 'none';
+    bc.className = isEn ? '' : 'on';
+    be.className = isEn ? 'on' : '';
+    document.documentElement.lang = isEn ? 'en' : 'zh-CN';
+    document.title = isEn ? TITLE_EN : TITLE_CN;
+    try { localStorage.setItem('nac-lang', l); } catch (e) {}
+  }
+  bc.onclick = function () { set('cn'); };
+  be.onclick = function () { set('en'); };
+  var stored = null;
+  try { stored = localStorage.getItem('nac-lang'); } catch (e) {}
+  var initial;
+  if (location.hash === '#en') { initial = 'en'; }
+  else if (location.hash === '#cn') { initial = 'cn'; }
+  else if (stored) { initial = stored; }
+  else {
+    var nav = (navigator.language || '').toLowerCase();
+    initial = (nav.indexOf('zh') === 0) ? 'cn' : 'en';
+  }
+  set(initial);
+  window.addEventListener('hashchange', function () {
+    if (location.hash === '#en') { set('en'); }
+    else if (location.hash === '#cn') { set('cn'); }
+  });
+})();
+</script>
+</body>
+</html>

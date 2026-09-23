@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  new-acad 閳?Autodesk Autoloader bundle manifest
+  Install location (user scope; C:\ProgramData is obsolete since 2026):
+    %APPDATA%\Autodesk\ApplicationPlugins\new-acad.bundle\
+  Layout: see tools/build-bundle.ps1
+    Contents\Windows\   Civil3DMcpPlugin.dll (+ deps/runtimeconfig)
+    Contents\           node.exe + server\ (relay, built-in agent, MCP) + knowledge\ + tools\ + config.json
+    Contents\Help\      index.html (user guide), README.txt, icon.ico
+  ProductCode / UpgradeCode must never change after submission.
+-->
+<ApplicationPackage
+    SchemaVersion="1.0"
+    AutodeskProduct="AutoCAD"
+    Name="new-acad"
+    Description="In-app AI assistant for AutoCAD / Civil 3D 閳?talk to the drawing in plain language."
+    AppVersion="1.6.2"
+    ProductCode="{6DA652EC-AE9F-492F-8204-0CECB76A2D2C}"
+    UpgradeCode="{F641A245-0C7B-4D6A-8C6F-6373E79B4B18}"
+    Version="1.6.2"
+    Author="Jjo"
+    HelpFile="Contents\Help\index.html"
+    AppNameSpace="new-acad"
+    SupportedLocales="Enu,Chs"
+    OnlineDocumentation="https://github.com/Jjo37/new-acad">
+
+  <CompanyDetails
+      Name="new-acad"
+      Url="https://github.com/Jjo37/new-acad"
+      Email="167265596+Jjo37@users.noreply.github.com" />
+
+  <!-- AutoCAD 2025 = R25.0, AutoCAD 2026 = R25.1 ; Civil 3D is an AutoCAD-derived product -->
+  <RuntimeRequirements
+      OS="Win64"
+      Platform="AutoCAD*"
+      SeriesMin="R25.0"
+      SeriesMax="R25.1" />
+
+  <Components Description="new-acad plug-in (palette + TCP JSON-RPC bridge + built-in agent host)">
+    <RuntimeRequirements
+        OS="Win64"
+        Platform="AutoCAD*"
+        SeriesMin="R25.0"
+        SeriesMax="R25.1" />
+
+    <ComponentEntry
+        AppName="new-acad"
+        Version="1.6.2"
+        ModuleName="Contents\Windows\Civil3DMcpPlugin.dll"
+        AppDescription="AI assistant palette and CAD bridge for AutoCAD / Civil 3D"
+        LoadOnAutoCADStartup="True"
+        LoadOnCommandInvocation="False"
+        LoadOnAppearance="False"
+        AppType=".NET">
+      <Commands GroupName="NEWACAD">
+        <Command Global="HANK_SHOW" Local="HANK_SHOW" />
+        <Command Global="C3DMCPSTATUS" Local="C3DMCPSTATUS" />
+        <Command Global="C3DMCPSTART" Local="C3DMCPSTART" />
+        <Command Global="C3DMCPSTOP" Local="C3DMCPSTOP" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

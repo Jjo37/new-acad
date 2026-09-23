@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "Civil3DMcpPlugin/1.6.2": {
+        "runtime": {
+          "Civil3DMcpPlugin.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Civil3DMcpPlugin/1.6.2": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

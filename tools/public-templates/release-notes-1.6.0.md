@@ -23,4 +23,26 @@
 **要求**：Windows + 正版 AutoCAD / Civil 3D 2025 / 2026 + 一个 LLM API Key
 **License**：MIT ｜ 上游致谢：Civil3D-mcp
 
+
 ---
+
+### New in this release
+
+- **Bitmap -> CAD vector lines (tracing)**: pick an image with the panel's "Upload file" button and say "draw it into CAD". Four modes — **color regions** (best for flat / solid-color art, cartoons, logos, vector wallpapers: fewest lines, best look), **arc fitting** (line art / hand-drawn / photos), **skeleton centerlines** (easy to keep editing), **outline** (preserves stroke width). **Leave the mode empty and it auto-detects the image type.** Measured: a 1920x1080 cartoon wallpaper comes out as 6 contours, 0.5 s end-to-end (the old pipeline produced 83 fragmented lines for the same image).
+- **"Upload file" button in the palette**: no clipboard-image support by design — pick local file(s), the path is dropped into the input box, add a note and send. The AI reads them itself (images can be traced; documents — Word / Excel / PowerPoint / text — are parsed directly).
+- **Chat history persisted (per scope)**: panel conversations are saved per day (global `exchange\panel-chat-<date>.jsonl`; project mode stores them inside the project folder) and **survive restarts**. "Clear chat" really deletes the current scope (with a confirmation); "Clear project" also removes that project's records.
+- **AI sessions isolated by scope**: panel memory is kept separately for "global" and each project — selecting a project no longer mixes contexts, and it resumes after a restart.
+- **Image -> CAD triage flow**: when the image **has dimensions**, the AI no longer traces pixels — it first lists a dimension table, self-checks the dimension chain (segments sum to the total), asks about anything uncertain, draws to real size, then reads it back to verify. When there are **no dimensions at all** it asks exactly once: "is there any length you know?" — it never guesses.
+- **Batch performance**: `importVectorPaths` draws hundreds of polylines in a single transaction (524 in 0.16 s — 57x faster than one-by-one); `exportImageGray` extends tracing to JPEG / GIF / TIFF (previously PNG / BMP only).
+
+### Installer (recommended)
+- `new-acad-setup-v1.6.0.exe` — run it, follow the wizard (Chinese or English), paste your own LLM API key
+
+### Portable
+- `new-acad-v1.6.0.zip` — unzip and run `install.bat`
+
+### Autoloader (store) package
+- `new-acad.bundle.zip` — unzip to get `new-acad.bundle`, copy it into `%APPDATA%\Autodesk\ApplicationPlugins\`
+
+**Requirements**: Windows + genuine AutoCAD / Civil 3D 2025 / 2026 + an LLM API key
+**License**: MIT | Upstream credit: Civil3D-mcp

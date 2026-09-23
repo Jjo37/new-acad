@@ -27,3 +27,31 @@
 
 **要求**：Windows + 正版 AutoCAD / Civil 3D 2025 / 2026 + 一个 LLM API Key
 **License**：MIT ｜ 上游致谢：Civil3D-mcp
+
+---
+
+### New capabilities
+
+- **Hatch (fills)** — the AI can now create, batch-create and **edit** hatches:
+  - single loop, **multiple loops with islands** (holes), pattern fills (SOLID / ANSI31 / …), **two-color gradients** (LINEAR / CYLINDER / SPHERICAL / HEMISPHERICAL / CURVED / …)
+  - pattern scale, angle, color, layer, island style, associativity and origin are all adjustable; **the boundary can be replaced wholesale when editing**
+  - hatches can be **selected** (type HATCH), **measured** (area) and **read back in full** (pattern / scale / angle / island style / area / loop count / gradient name and stop colors)
+- **Fills straight from tracing**: `traceImage` gained a `fill` parameter — flat illustrations and color-block images can be drawn into CAD **as filled, colored areas** (a cartoon wallpaper becomes a set of colored patches).
+
+### Fixes
+
+- **Per-item color was being silently dropped**: when batch-drawing vector paths, the color carried by each path (every color block of a traced image) was never written to CAD — colors now take effect (both RGB and ACI-index forms accepted).
+- Tracing threshold parameter `inkGamma` (default unchanged; 0.5 gives cleaner white-background line art).
+- Panel assistant SOP: documents the new fill capability.
+
+### Installer (recommended)
+- `new-acad-setup-v1.6.2.exe` — run it, follow the wizard (Chinese or English), paste your own LLM API key
+
+### Portable
+- `new-acad-v1.6.2.zip` — unzip and run `install.bat`
+
+### Autoloader (store) package
+- `new-acad.bundle.zip` — unzip to get `new-acad.bundle`, copy it into `%APPDATA%\Autodesk\ApplicationPlugins\`
+
+**Requirements**: Windows + genuine AutoCAD / Civil 3D 2025 / 2026 + an LLM API key
+**License**: MIT | Upstream credit: Civil3D-mcp

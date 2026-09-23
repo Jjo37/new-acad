@@ -22,3 +22,26 @@
 
 **要求**：Windows + 正版 AutoCAD / Civil 3D 2025 / 2026 + 一个 LLM API Key
 **License**：MIT ｜ 上游致谢：Civil3D-mcp
+
+---
+
+### Fixes / improvements
+
+- **Tracing quality roughly 3–4x better**: fixes "the image traces into CAD as a heap of fragments". The root cause was the edge-detection mask — on **halftone scans / illustrations** it produced thousands of fragments. White-background line art and scans now switch to an **ink threshold** automatically. Measured (794x1280 halftone manga): ink coverage **17.6% → 52.9%**, line-on-ink hit rate **18.0% → 78.3%**.
+- **Smarter auto mode**: with no mode given — flat / solid-color art → color regions; **white-background line art / scans (with solid blacks) → outline** (measurably closer to the original than centerlines); everything else → arc fitting.
+- **Adaptive length filter**: the threshold is set at 5% of the image width (12–80 px), so large images don't lose real content and small ones don't turn to mush.
+- New optional cleanup parameters `open` (despeckle) and `fill` (hole filling), off by default — they can drop thin lines and interior detail.
+- **Panel assistant hardened**: (1) it may no longer claim "the plugin doesn't support X" without checking the live method list first; (2) before re-tracing it **cleans up its own previous layer** instead of asking you to delete it by hand.
+- Fixed the stale version in the Autoloader manifest (`PackageContents.xml` 1.5.1 → 1.6.1).
+
+### Installer (recommended)
+- `new-acad-setup-v1.6.1.exe` — run it, follow the wizard (Chinese or English), paste your own LLM API key
+
+### Portable
+- `new-acad-v1.6.1.zip` — unzip and run `install.bat`
+
+### Autoloader (store) package
+- `new-acad.bundle.zip` — unzip to get `new-acad.bundle`, copy it into `%APPDATA%\Autodesk\ApplicationPlugins\`
+
+**Requirements**: Windows + genuine AutoCAD / Civil 3D 2025 / 2026 + an LLM API key
+**License**: MIT | Upstream credit: Civil3D-mcp

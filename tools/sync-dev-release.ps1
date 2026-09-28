@@ -40,7 +40,8 @@ $files = @(
   'tools/find-civil3d.ps1','tools/locale.ps1','tools/clean-runtime.ps1',
   'tools/port-check.ps1','tools/port-check.bat','tools/port-config.ps1','tools/port-config.bat',
   'tools/sync-dev-release.ps1',
-  'tools/scan-release-leaks.js','tools/push-via-api.js'
+  'tools/scan-release-leaks.js',
+  'tools/push-via-api.js'
 )
 
 # ---- 2) 目录清单（递归，带排除）----
@@ -94,6 +95,20 @@ $mode = if ($Apply) { '（执行）' } else { '（干跑）' }
 Write-Host "===== dev → release 同步$mode =====" -ForegroundColor Cyan
 Write-Host ("清单文件 {0} 个 + 目录 {1} 个；需同步 {2}，相同 {3}，dev 缺失 {4}" -f `
   $files.Count, $dirs.Count, $toSync.Count, ($plan | Where-Object Action -eq 'SAME').Count, ($plan | Where-Object Action -eq 'MISSING-IN-DEV').Count)
+# 2026-09-28: 兜底提醒 —— tools/ 顶层脚本若未登记到 $files，公开仓不会包含它（踩过两次）
+$listedTop = $files | Where-Object { $_ -match '^tools/[^/]+$' }
+$devTools = Get-ChildItem (Join-Path $From 'tools') -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.js', '.ps1', '.bat') }
+$unlisted = @()
+foreach ($tf in $devTools) {
+  $rel = 'tools/' + $tf.Name
+  $skipIt = $false
+  foreach ($p in $excludePatterns) { if ($tf.FullName -match $p) { $skipIt = $true; break } }
+  if (-not $skipIt -and ($listedTop -notcontains $rel)) { $unlisted += $tf.Name }
+}
+if ($unlisted.Count -gt 0) {
+  $show = ($unlisted | Sort-Object | Select-Object -First 8) -join ', '
+  Write-Host ('[WARN] tools/ 顶层有未登记脚本（不会同步）：' + $show + ' 等 ' + $unlisted.Count + ' 个') -ForegroundColor Yellow
+}
 if ($toSync.Count -gt 0) {
   Write-Host "`n-- 待同步 --" -ForegroundColor Yellow
   $toSync | Sort-Object Path | ForEach-Object { Write-Host ("  [{0}] {1}" -f $_.Action, $_.Path) }

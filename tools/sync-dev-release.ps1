@@ -39,7 +39,8 @@ $files = @(
   'tools/build-bundle.ps1','tools/publish-public.ps1','tools/publish-release.ps1',
   'tools/find-civil3d.ps1','tools/locale.ps1','tools/clean-runtime.ps1',
   'tools/port-check.ps1','tools/port-check.bat','tools/port-config.ps1','tools/port-config.bat',
-  'tools/sync-dev-release.ps1'
+  'tools/sync-dev-release.ps1',
+  'tools/scan-release-leaks.js','tools/push-via-api.js'
 )
 
 # ---- 2) 目录清单（递归，带排除）----

@@ -3,7 +3,7 @@
 param(
   [string]$Rel = "D:\new-acad-release",
   [string]$Out = "D:\new-acad-public",
-  [string]$Tag = "v1.3.3-release",   # NOTE: plain "v1.3.3" is permanently burned in this repo
+  [string]$Tag = "",   # REQUIRED: snapshot tag, e.g. v1.7.0-release. The old default
                                      # (first release was published immutable, then deleted ->
                                      #  GitHub refuses to reuse that tag name ever again)
   [switch]$SkipGit,
@@ -22,6 +22,11 @@ robocopy $Rel $Out /E `
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed, code $LASTEXITCODE" }
 $global:LASTEXITCODE = 0
 
+# 2026-09-28: -Tag is now REQUIRED. The old default (v1.3.3-release) plus "git tag -f"
+if ([string]::IsNullOrWhiteSpace($Tag)) {
+  throw "Pass -Tag explicitly, e.g. -Tag v1.7.0-release (tags are not recyclable; never reuse the historical default)"
+}
+
 Write-Host "[2/6] drop internal docs"
 foreach ($f in @("DASHBOARD.md","BOOTSTRAP.md","ROADMAP.md")) {
   $p = Join-Path $Out $f
@@ -30,8 +35,7 @@ foreach ($f in @("DASHBOARD.md","BOOTSTRAP.md","ROADMAP.md")) {
 
 Write-Host "[3/6] knowledge whitelist"
 $keep = @("api-inventory.md","c3d-api-refs.md","civil3d-objects.md",
-          "command-methods-assessment.md","deployment-package.md",
-          "method-description-spec.md","sac-xaml-guide.md")
+          "image-to-cad.md","method-description-spec.md","sac-xaml-guide.md")
 $kd = Join-Path $Out "knowledge"
 if (Test-Path $kd) {
   Get-ChildItem $kd -File -Filter *.md |

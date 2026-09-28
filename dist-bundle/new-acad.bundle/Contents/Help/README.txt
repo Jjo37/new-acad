@@ -1,4 +1,4 @@
-﻿new-acad v1.6.2 — Civil 3D AI assistant（portable / 绿色版）
+﻿new-acad v1.7.0 — Civil 3D AI assistant（portable / 绿色版）
 ==============================================================
 
 【中文】

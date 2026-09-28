@@ -103,6 +103,22 @@ Copy-Item "$ROOT\server\file-tools.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\trace-image.js" "$DIST\server\" -Force   # 2026-09-22
 Copy-Item "$ROOT\server\relay-launcher.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\memory" "$DIST\server\memory" -Recurse -Force  # 2026-08-07: 长期记忆初始骨架
+# 2026-09-28: 分发版必须用**中性**记忆骨架（dev 副本里含开发者个人偏好，会误导用户的 AI）
+$memSkeleton = @'
+# new-acad LLM Agent 长期记忆
+
+<!-- 准入原则（最高优先）：只存"规则类 / 用户习惯 / 工具方法"。
+     具体任务数据、图纸内容、一次性上下文（算量结果 / 选中集 / 某张图的处理）禁止写入——会污染记忆。
+     由 AI 通过 writeMemory 覆盖式维护；写入前先 readMemory，保留仍有价值的旧条目。 -->
+
+## 用户偏好
+（空。由 AI 在对话中逐步积累。）
+
+## 工具方法
+（空。）
+'@
+[System.IO.File]::WriteAllText("$DIST\server\memory\agent-memory.md", $memSkeleton, (New-Object System.Text.UTF8Encoding $true))
+Write-Host "[OK] dist/server/memory/agent-memory.md 已重置为中性骨架"
 Copy-Item "$ROOT\server\sacred-mcp.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\install.ps1" "$DIST\" -Force
 # 安全加固: 进包的 config.json 必须是干净模板（强制清空 relayToken/relaySessionKey），
@@ -133,7 +149,9 @@ Copy-Item "$ROOT\使用手册.html" "$DIST\" -Force
 # 2026-08-17: AI 生成 SAC 部件必需（knowledge.md 指引 AI 读 guide + 模板）+ 简版手册
 Copy-Item "$ROOT\knowledge\sac-xaml-guide.md" "$DIST\knowledge\" -Force
 Copy-Item "$ROOT\knowledge\sac-templates" "$DIST\knowledge\sac-templates" -Recurse -Force
-Copy-Item "$ROOT\knowledge\ai-sac-subassembly-plan.md" "$DIST\knowledge\" -Force
+# 2026-09-28: 不再分发 ai-sac-subassembly-plan.md（内部 PoC/实现细节，运行时无引用）；
+# 分发出去的 knowledge 只保留被运行时引用的三项：image-to-cad / sac-xaml-guide / sac-templates
+if (Test-Path "$DIST\knowledge\ai-sac-subassembly-plan.md") { Remove-Item "$DIST\knowledge\ai-sac-subassembly-plan.md" -Force }
 Copy-Item "$ROOT\knowledge\image-to-cad.md" "$DIST\knowledge\" -Force   # 2026-09-22
 Copy-Item "$ROOT\workflow-guide.md" "$DIST\" -Force
 Copy-Item "$ROOT\server\mcp\build" "$DIST\server\mcp\build" -Recurse -Force

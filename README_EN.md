@@ -52,6 +52,9 @@ new-acad is made of three parts:
 | **File channel** | Read `docx` / `xlsx` / `pptx` / `zip` plus legacy `doc` / `xls` (built-in OLE2 / BIFF8 parsing — **no Office, no extra dependencies**); list directories; write inside a sandboxed workspace; open / create / save drawings (semi-automated multi-drawing workflow) |
 | **Selection** | The selection is snapshotted automatically when you send a command, and tagged with the drawing name — switching drawings never picks up a stale selection |
 | **Tasks & memory** | Multi-step task plans, real abort/cancel, selective cleanup, keyword-injected long-term AI memory |
+| **Verifiable action log** (v1.7) | Every request is logged as structured JSONL (`readTrace` / `traceStats`, with result digest and duration); `tools/replay.js` replays and diffs (read-only drift = fail, mutating = expected, errors compared by code); `assertChecks` asserts entities, counts, length/area/radius/vertex count and "surface built". Failures now surface the **real exception**, not just "unexpected error" |
+| **Large-drawing context** (v1.7) | `summarizeDrawing` produces a budget-capped picture (layers + spatial grid + global counts; a 15k-entity drawing summarises to ~3 KB); oversized results are auto-trimmed **without breaking their shape** (arrays truncated to a prefix plus a `_summarized` note) — ask for everything with `fullResult:true` |
+| **Earthwork toolkit** (v1.7) | Corridor earthwork `computeCorridorEarthwork` (grid + station banding, **0.1%** off Civil 3D's surface-volume method in testing); **grading optimisation** `optimizeGrading` (max slope + platform levels + retaining walls/steps via `walls` + optional cut/fill balance → generates a design surface and builds it as a TIN); site mass haul `computeSiteMassHaul` (surfaces → per-station cut/fill → balanced sections, nearest pairing, free/overhaul haul, waste/borrow) |
 
 ---
 
@@ -169,6 +172,8 @@ new-acad/
 - The plugin DLL is locked while Civil 3D runs — close it before rebuilding
 - The palette receives replies over **SSE push** (`/replies/stream`) — not polling. Status and task progress are pushed in real time too (the 10 s `/status` poll is only a fallback for dropped connections)
 - A few Civil 3D features (grading group editing, parcel line editing) are not wrapped by the managed API and are therefore unreachable for the AI — see `ONBOARDING.md`
+- Grading optimisation is positioned as a **preliminary design-surface generator**: minimum drainage slope is expressed as a platform tilt, retaining walls/steps are declared via `walls`; multi-tier walls, utility conflicts and similar constraints still need human review
+- Corridor regeneration is inherently slow (30 s – 10 min of internal regeneration); other requests queue briefly meanwhile (`HOST_BUSY`, recovers automatically)
 
 ---
 

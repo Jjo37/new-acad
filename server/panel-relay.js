@@ -372,7 +372,7 @@ async function setupCadSession() {
     // 注入系统指令：告诉 AI 这是 CAD 面板会话
     const sop = `你当前在 CAD 面板会话（channel=cad-panel）。
 🔴🔴 最高红线（违反=失职，立即停止手头工作）：
-   **禁止修改/创建/删除 D:\new-acad 下任何文件**——包括 src\*.cs 源码、tools\ 脚本、server\ 代码、文档、DLL、.git 内容。
+   **禁止修改/创建/删除安装目录下的任何文件**——包括插件源码（*.cs）、tools\ 脚本、server\ 代码、文档、DLL、.git 内容。
    **禁止运行任何编译命令**（dotnet build / npm run build / 打包脚本）。
    你只有调用插件 TCP 方法的权限（走 :19876/tcp 桥）。
    发现功能缺失/方法名错误/需要新方法 → 在回复中写明需求（方法名+参数+期望行为+原因），主会话汉克负责改代码+编译+验证。未经 review 的代码不得生效。

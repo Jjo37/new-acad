@@ -31,7 +31,8 @@ function ok(name, cond, extra) {
   console.log('=== 0. openDrawing（C3D 公制模板 → 干净图纸）===');
   let nd;
   try {
-    nd = await tcp('openDrawing', { path: process.env.GEO_TEMPLATE || 'C:\\Users\\Jjo37\\AppData\\Local\\Autodesk\\C3D 2025\\chs\\Template\\_Autodesk Civil 3D (Metric) NCS.dwt' });
+    const defaultDwt = (process.env.APPDATA || '') + '\\Autodesk\\C3D 2025\\chs\\Template\\_Autodesk Civil 3D (Metric) NCS.dwt';
+    nd = await tcp('openDrawing', { path: process.env.GEO_TEMPLATE || defaultDwt });
     console.log('  ' + JSON.stringify(nd).slice(0, 220));
   } catch (e) {
     console.log('  ⚠ 模板打开失败，沿用当前图纸: ' + e.message);

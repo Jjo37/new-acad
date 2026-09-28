@@ -31,7 +31,7 @@
 <div id="lang-cn">
 
 <h1>🖥️ new-acad 使用手册</h1>
-<p><b>版本 v1.6.0</b> ｜ 让 AI 直接帮你操作 AutoCAD / Civil 3D</p>
+<p><b>版本 v1.7.0</b> ｜ 让 AI 直接帮你操作 AutoCAD / Civil 3D</p>
 
 <div class="tip">
 <b>这不是"给 AI 套一层 CAD 工具"。</b>new-acad 是装在 CAD 里的<b>内置 AI 工程助手</b>：大脑（AI 判断逻辑）内置在软件里，<b>不依赖任何外部平台</b>——不用注册我们的账号、不用装其他客户端，你只需要填一个自己的模型 API Key。
@@ -87,6 +87,14 @@
 <p><strong>描摹图片</strong>：选图后说"画进 CAD"即可。不指定模式时 AI 按图片类型自动选——扁平 / 纯色 / 卡通 / logo / 矢量壁纸用「色块区域」（线最少、最好看），线稿 / 手绘 / 照片用「圆弧拟合」。想自己指定就说：色块区域 / 圆弧拟合 / 骨架细线（便于继续编辑）/ 描边（保笔画粗细）。</p>
 <p><strong>图上有尺寸标注时</strong>：AI 不会照像素描，而是先读标注列成尺寸表 → 自检（分段和 = 总长）→ 有拿不准的数字会问你 → 再按真实尺寸画出来，画完回读对账。</p>
 <p><strong>图里没有尺寸时</strong>：AI 只会问你一次"图上有没有哪一段长度你知道？哪怕一个"，并给你三个选择：①按图比例画（形状准，实际尺寸未知）②你给一个参考尺寸（自动换算成真实尺寸）③你给一个目标总尺寸。<strong>它不会瞎猜尺寸。</strong></p>
+<h3>土方与地形（v1.7.0 新增）</h3>
+<p><strong>放坡优化</strong>：说一句「这块场地要建平台，标高 42.5，边坡不陡于 1:3」，AI 会自动生成满足坡率上限、平台标高（支持挡墙/台阶）的设计面，并建成 Civil 3D 曲面；还可以要求土方平衡。</p>
+<p><strong>廊道土方</strong>：给廊道和基准面，直接算逐桩号挖填方（与 Civil 3D 体积法一致到 0.1% 量级）。</p>
+<p><strong>土方调配</strong>：把设计面和现状面交给它，输出调配方案——平衡区间、就近调配、免费运距与超运距、弃方/借方。</p>
+<h3>大图纸不卡（v1.7.0 新增）</h3>
+<p>图很大时 AI 不硬读全量：先取一张「图纸画像」（图层 + 空间分布 + 数量），需要细节再定点下钻；返回结果过大时自动改成摘要，并告诉你怎么取全量。</p>
+<h3>可核查（v1.7.0 新增）</h3>
+<p>AI 做的每一步都有结构化记录（可回放、可对比）；关键结果可下断言核验（图元存在、数量、长度/面积/半径、曲面是否已构建）。出错时能直接拿到真实原因，不再只有一句"未知错误"。</p>
 <h3>聊天记录与项目隔离</h3>
 <p>面板对话按天落盘：全局模式在 <code>exchange\panel-chat-日期.jsonl</code>；选中项目后，该项目的对话单独存到项目目录里，<strong>切换项目不会串对话</strong>，重启也不丢。「清理会话」只清当前作用域的记录（会先弹确认框）。</p>
 
@@ -292,7 +300,7 @@ CAD 软件: Civil 3D 2024 / 2025 / 2026（自动检测版本）
 无需: Node.js / Python / .NET SDK / 任何编程环境</pre>
 
 <h2>八、技术支持</h2>
-<p>版本 v1.6.0 ｜ <b>400 个 CAD 方法</b>（以软件内清单为准）/ <b>274</b> 个 MCP 工具 ｜ 支持 C3D 2024 / 2025 / 2026（自动检测）｜ 界面语言 中文 / English</p>
+<p>版本 v1.7.0 ｜ <b>417 个 CAD 方法</b>（以软件内清单为准）/ <b>274</b> 个 MCP 工具 ｜ 支持 C3D 2024 / 2025 / 2026（自动检测）｜ 界面语言 中文 / English</p>
 
 <hr>
 <div style="color:#888;font-size:12px;text-align:center;padding:8px 0">
@@ -307,7 +315,7 @@ CAD 软件: Civil 3D 2024 / 2025 / 2026（自动检测版本）
 <div id="lang-en" style="display:none">
 
 <h1>🖥️ new-acad User Guide</h1>
-<p><b>Version v1.6.0</b> ｜ Let an AI drive AutoCAD / Civil 3D for you</p>
+<p><b>Version v1.7.0</b> ｜ Let an AI drive AutoCAD / Civil 3D for you</p>
 
 <div class="tip">
 <b>This is not "an AI wrapped around some CAD tools".</b> new-acad is a <b>built-in AI engineering assistant</b> living inside CAD: the brain (the AI's judgement logic) ships inside the software and <b>depends on no external platform</b> — no account with us, no extra client to install. You only bring your own model API key.
@@ -363,6 +371,14 @@ Type in the input box at the bottom → press Enter → the AI operates CAD → 
 <p><strong>Tracing an image</strong>: pick the image and say "draw it into CAD". Without an explicit mode the AI picks by image type — flat / solid-colour / cartoon / logo / vector wallpaper use "colour regions" (fewest, cleanest lines); line art / sketches / photos use "arc fitting". You can also ask for: colour regions / arc fitting / centre-line skeleton (easy to keep editing) / outline (keeps stroke width).</p>
 <p><strong>When the drawing has dimension labels</strong>: the AI does not trace pixels. It first reads the labels into a dimension table → self-checks (segments must sum to the total) → asks you about any digit it is unsure of → then draws to true size and measures back to verify.</p>
 <p><strong>When there are no dimensions</strong>: the AI asks once — "is there any segment whose length you know, even one?" — and offers three choices: ①draw to image proportions (shape accurate, real size unknown) ②give one reference length (auto-converted to real size) ③give a target overall size. <strong>It will never guess dimensions.</strong></p>
+<h3>Earthwork &amp; terrain (new in v1.7.0)</h3>
+<p><strong>Grading optimisation</strong>: say "grade this site to a 42.5 m platform, side slopes no steeper than 1:3" and the AI generates a design surface that satisfies the slope limit and the platform level (retaining walls / steps supported), then builds it as a Civil 3D surface. Optional cut/fill balance.</p>
+<p><strong>Corridor earthwork</strong>: give it a corridor and a base surface to get per-station cut/fill (within 0.1% of Civil 3D's volume method).</p>
+<p><strong>Mass haul</strong>: hand it the design and existing surfaces and get a haul plan — balanced sections, nearest pairing, free vs overhaul haul, waste/borrow.</p>
+<h3>Large drawings stay fast (new in v1.7.0)</h3>
+<p>On a big drawing the AI reads a budgeted picture first (layers + spatial distribution + counts) and drills down on demand; oversized results are summarised automatically, along with a documented way to fetch everything.</p>
+<h3>Verifiable (new in v1.7.0)</h3>
+<p>Every step is logged in a structured, replayable form, and key results can be asserted (entity exists, count, length / area / radius, surface built). Failures surface the real reason instead of a generic "unknown error".</p>
 <h3>Chat history and project isolation</h3>
 <p>Panel chats are saved per day: global mode in <code>exchange\panel-chat-date.jsonl</code>; with a project selected the chat is stored inside that project folder — <strong>switching projects never mixes conversations</strong>, and nothing is lost on restart. "Clear chat" only clears the current scope, with a confirmation dialog first.</p>
 
@@ -570,7 +586,7 @@ Model API: any OpenAI-compatible provider key (configured in the palette)
 Not needed: Node.js / Python / .NET SDK / any programming environment</pre>
 
 <h2>8. Support</h2>
-<p>Version v1.6.0 ｜ <b>400 CAD methods</b> (the in-software list is authoritative) / <b>274</b> MCP tools ｜ Civil 3D 2024 / 2025 / 2026 (auto-detected) ｜ UI language: Chinese / English</p>
+<p>Version v1.7.0 ｜ <b>417 CAD methods</b> (the in-software list is authoritative) / <b>274</b> MCP tools ｜ Civil 3D 2024 / 2025 / 2026 (auto-detected) ｜ UI language: Chinese / English</p>
 
 <hr>
 <div style="color:#888;font-size:12px;text-align:center;padding:8px 0">

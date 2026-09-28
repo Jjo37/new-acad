@@ -3,7 +3,7 @@
   new-acad 一键部署脚本 — 环境检查 + 自动加载 + MCP/Relay 自启
 .NOTES
   2026-08-03 重写：修复编码（原文件 UTF-8 被 GBK 误读成乱码），逻辑不变
-  2026-09-11: C3D 路径改注册表动态检测（tools/find-civil3d.ps1），支持 2024/2025/2026
+  2026-09-11: C3D 路径改注册表动态检测（tools/find-civil3d.ps1），支持 2025/2026（2024 = .NET Framework 4.8，与本插件 net8.0 构建不兼容）
 #>
 
 param([string]$Locale = "")
@@ -74,6 +74,9 @@ Write-Host "`n--- 2/9 C3D 安装检查 ---" -ForegroundColor Yellow
 try { $c3d = & "$ROOT\tools\find-civil3d.ps1" | ConvertFrom-Json } catch { $c3d = [pscustomobject]@{ found = $false }; Wn "C3D 检测脚本异常: $_" } # 2026-08-14 P2-4
 if ($c3d.found) {
   Ok "C3D $($c3d.year) 安装: $($c3d.installDir)"
+  if ($c3d.PSObject.Properties['supported'] -and -not $c3d.supported) {
+    Wn "Civil 3D $($c3d.year) 不受支持：本插件为 .NET 8 构建，仅支持 2025/2026。装到 2024 会静默不加载。"
+  }
   if (Test-Path "$($c3d.installDir)acad.exe") { Ok "acad.exe 就绪" } else { Wn "acad.exe 未找到（目录存在但无 acad.exe）" }
 } else {
   Wn "未检测到 C3D（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无 Civil 3D 产品），用户需手动安装"

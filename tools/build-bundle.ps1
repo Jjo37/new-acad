@@ -46,6 +46,16 @@ Write-Host "[5/5] PackageContents.xml"
 $pcSrc = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\bundle\PackageContents.xml'
 if (-not (Test-Path $pcSrc)) { throw "PackageContents.xml source not found: $pcSrc" }
 Copy-Item $pcSrc (Join-Path $bundle 'PackageContents.xml') -Force
+# 2026-09-28: AppVersion/Version 从根部 package.json 注入（模板长期停在 1.6.2，商店元数据因此错版）
+$pcVer = try { (Get-Content (Join-Path $Root "package.json") -Raw | ConvertFrom-Json).version } catch { "" }
+if ($pcVer) {
+  $pcPath = Join-Path $bundle "PackageContents.xml"
+  $pcTxt = Get-Content $pcPath -Raw
+  $pcTxt = $pcTxt -replace 'AppVersion="[^"]*"', "AppVersion=`"$pcVer`""
+  $pcTxt = $pcTxt -replace '\bVersion="[^"]*"', "Version=`"$pcVer`""
+  Set-Content -Path $pcPath -Value $pcTxt -Encoding UTF8
+  Write-Host "[5/5] PackageContents.xml version -> $pcVer"
+}
 $storeReadme = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\bundle\INSTALL-README.txt'
 if (Test-Path $storeReadme) { Copy-Item $storeReadme (Join-Path $bundle 'README-FIRST.txt') -Force ; Copy-Item $storeReadme (Join-Path $contents 'Help\INSTALL-README.txt') -Force }
 

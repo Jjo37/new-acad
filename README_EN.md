@@ -82,7 +82,7 @@ new-acad is made of three parts:
 ## Requirements
 
 - **Windows**
-- **AutoCAD / Civil 3D 2024 / 2025 / 2026** (licensed copy — bring your own)
+- **AutoCAD / Civil 3D 2025 / 2026** (licensed copy — bring your own)
 - An **LLM API key** (the only thing you must supply in the default mode)
 - Runtime prerequisites (Node, etc.) are handled by the installer
 
@@ -95,7 +95,7 @@ new-acad is made of three parts:
 > Don't want to build it yourself? Grab `setup.exe` or the portable zip from the [Releases](../../releases) page.
 
 ```
-1. Make sure Civil 3D (2024 / 2025 / 2026) is installed
+1. Make sure Civil 3D (2025 / 2026) is installed
 2. Double-click install.bat  (recommended — bypasses the PowerShell execution policy)
    or: right-click install.ps1 → Run with PowerShell
 3. Step 11 of the wizard: pick your LLM provider and paste your API key

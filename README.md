@@ -84,7 +84,7 @@ new-acad 由三块拼成，各司其职：
 ## 环境要求
 
 - **Windows**
-- **AutoCAD / Civil 3D 2024 / 2025 / 2026**（正版授权，自行准备）
+- **AutoCAD / Civil 3D 2025 / 2026**（正版授权，自行准备）
 - 一个 LLM 的 **API Key**（默认模式下唯一需要你自己准备的东西）
 - 运行环境（Node 等）由安装脚本自动处理
 
@@ -97,7 +97,7 @@ new-acad 由三块拼成，各司其职：
 > 不想自己编译？到 [Releases](../../releases) 页面下载 `setup.exe` 安装包或绿色版 zip。
 
 ```
-① 确保已安装 Civil 3D（2024 / 2025 / 2026）
+① 确保已安装 Civil 3D（2025 / 2026）
 ② 双击 install.bat（推荐；自动绕过 PowerShell 执行策略）
    或：右键 install.ps1 → 使用 PowerShell 运行
 ③ 安装向导第 11 步会让你选 LLM 服务商 + 填 API Key

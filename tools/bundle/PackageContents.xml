@@ -14,10 +14,10 @@
     AutodeskProduct="AutoCAD"
     Name="new-acad"
     Description="In-app AI assistant for AutoCAD / Civil 3D 閳?talk to the drawing in plain language."
-    AppVersion="1.6.2"
+    AppVersion="1.7.1"
     ProductCode="{6DA652EC-AE9F-492F-8204-0CECB76A2D2C}"
     UpgradeCode="{F641A245-0C7B-4D6A-8C6F-6373E79B4B18}"
-    Version="1.6.2"
+    Version="1.7.1"
     Author="Jjo"
     HelpFile="Contents\Help\index.html"
     AppNameSpace="new-acad"
@@ -45,7 +45,7 @@
 
     <ComponentEntry
         AppName="new-acad"
-        Version="1.6.2"
+        Version="1.7.1"
         ModuleName="Contents\Windows\Civil3DMcpPlugin.dll"
         AppDescription="AI assistant palette and CAD bridge for AutoCAD / Civil 3D"
         LoadOnAutoCADStartup="True"

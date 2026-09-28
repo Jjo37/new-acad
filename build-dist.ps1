@@ -209,7 +209,7 @@ Full guide: open 使用手册.html (Chinese + English, toggle at the top right)
 
 【要求 / Requirements】
 - Windows 10 / 11
-- Civil 3D 2024 / 2025 / 2026（自动检测 / auto-detected）
+- Civil 3D 2025 / 2026（.NET 8；2024 不兼容 / auto-detected）
 - 无需安装 Node.js（已内置 node.exe）/ No Node.js needed (node.exe is bundled)
 
 【填 Key / API key】

@@ -19,7 +19,7 @@ namespace Civil3DMcpPlugin;
 /// </summary>
 public static class TraceCommands
 {
-  private static readonly string[] ImageExts = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff" };
+  private static readonly string[] ImageExts = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp" };
 
   private static string ResolveImagePath(string rawPath)
   {
@@ -52,6 +52,79 @@ public static class TraceCommands
     return false;
   }
 
+  // GDI+ 解码（png/jpg/gif/bmp/tiff）；格式不支持时抛异常，由调用方回退 WIC
+  private static (byte[] Gray, int W, int H, int OW, int OH) LoadGrayViaGdiPlus(string full, int maxSide)
+  {
+    using var src = new System.Drawing.Bitmap(full);
+    var ow = src.Width; var oh = src.Height;
+    var scale = Math.Min(1.0, (double)maxSide / Math.Max(src.Width, src.Height));
+    var w = Math.Max(1, (int)Math.Round(src.Width * scale));
+    var h = Math.Max(1, (int)Math.Round(src.Height * scale));
+    using var scaled = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+    using (var gfx = System.Drawing.Graphics.FromImage(scaled))
+    {
+      gfx.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+      gfx.DrawImage(src, 0, 0, w, h);
+    }
+    var rect = new System.Drawing.Rectangle(0, 0, w, h);
+    var data = scaled.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+    byte[] gray;
+    try
+    {
+      var stride = data.Stride;
+      var tmp = new byte[stride * h];
+      Marshal.Copy(data.Scan0, tmp, 0, tmp.Length);
+      gray = new byte[w * h];
+      for (var y = 0; y < h; y++)
+      {
+        var row = y * stride;
+        for (var x = 0; x < w; x++)
+        {
+          var o = row + x * 3;
+          gray[y * w + x] = (byte)((tmp[o + 2] * 299 + tmp[o + 1] * 587 + tmp[o] * 114) / 1000);
+        }
+      }
+    }
+    finally { scaled.UnlockBits(data); }
+    return (gray, w, h, ow, oh);
+  }
+
+  // WIC 解码（WPF/PresentationCore 成像栈 → 系统 WIC 编解码器）：覆盖 GDI+ 不支持的 webp 等
+  private static (byte[] Gray, int W, int H, int OW, int OH) LoadGrayViaWic(string full, int maxSide)
+  {
+    System.Windows.Media.Imaging.BitmapSource frame;
+    using (var fs = System.IO.File.OpenRead(full))
+    {
+      var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(
+        fs,
+        System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,
+        System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+      frame = decoder.Frames[0];
+    }
+    frame.Freeze();
+    var ow = frame.PixelWidth; var oh = frame.PixelHeight;
+    var conv = new System.Windows.Media.Imaging.FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+    conv.Freeze();
+    System.Windows.Media.Imaging.BitmapSource src = conv;
+    var scale = Math.Min(1.0, (double)maxSide / Math.Max(ow, oh));
+    if (scale < 1.0)
+    {
+      var tb = new System.Windows.Media.Imaging.TransformedBitmap(conv, new System.Windows.Media.ScaleTransform(scale, scale));
+      tb.Freeze();
+      src = tb;
+    }
+    var w = src.PixelWidth; var h = src.PixelHeight;
+    var stride = w * 4;
+    var px = new byte[stride * h];
+    src.CopyPixels(px, stride, 0);
+    var gray = new byte[w * h];
+    for (var i = 0; i < w * h; i++)
+    {
+      var o = i * 4;   // Bgra32: B,G,R,A
+      gray[i] = (byte)((px[o + 2] * 299 + px[o + 1] * 587 + px[o] * 114) / 1000);
+    }
+    return (gray, w, h, ow, oh);
+  }
   // ---------------- exportImageGray ----------------
   public static Task<object?> ExportImageGrayAsync(JsonObject? parameters)
   {
@@ -63,39 +136,16 @@ public static class TraceCommands
       if (maxSide < 64) maxSide = 64;
       if (maxSide > 4096) maxSide = 4096;
 
+      // 2026-10-04: GDI+ 优先（png/jpg/gif/bmp/tiff）；GDI+ 不认的格式（webp 等）回退 WIC（PresentationCore）
       byte[] gray;
       int w, h, ow, oh;
-      using (var src = new System.Drawing.Bitmap(full))
+      try
       {
-        ow = src.Width; oh = src.Height;
-        var scale = Math.Min(1.0, (double)maxSide / Math.Max(src.Width, src.Height));
-        w = Math.Max(1, (int)Math.Round(src.Width * scale));
-        h = Math.Max(1, (int)Math.Round(src.Height * scale));
-        using var scaled = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-        using (var gfx = System.Drawing.Graphics.FromImage(scaled))
-        {
-          gfx.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-          gfx.DrawImage(src, 0, 0, w, h);
-        }
-        var rect = new System.Drawing.Rectangle(0, 0, w, h);
-        var data = scaled.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-        try
-        {
-          var stride = data.Stride;
-          var tmp = new byte[stride * h];
-          Marshal.Copy(data.Scan0, tmp, 0, tmp.Length);
-          gray = new byte[w * h];
-          for (var y = 0; y < h; y++)
-          {
-            var row = y * stride;
-            for (var x = 0; x < w; x++)
-            {
-              var o = row + x * 3;
-              gray[y * w + x] = (byte)((tmp[o + 2] * 299 + tmp[o + 1] * 587 + tmp[o] * 114) / 1000);
-            }
-          }
-        }
-        finally { scaled.UnlockBits(data); }
+        (gray, w, h, ow, oh) = LoadGrayViaGdiPlus(full, maxSide);
+      }
+      catch
+      {
+        (gray, w, h, ow, oh) = LoadGrayViaWic(full, maxSide);
       }
 
       string b64;
@@ -119,6 +169,35 @@ public static class TraceCommands
   }
 
   // ---------------- importVectorPaths ----------------
+  /// <summary>B3.2：校验"每层实际多段线数 ≥ 本次创建数"</summary>
+  private static Dictionary<string, object?> VerifyLayerCounts(Transaction transaction, BlockTableRecord modelSpace, Dictionary<string, int> createdByLayer)
+  {
+    var byLayer = new Dictionary<string, object?>();
+    var pass = true;
+    foreach (var kv in createdByLayer)
+    {
+      var actual = 0;
+      foreach (ObjectId id in modelSpace)
+      {
+        if (id.IsNull || id.IsErased) continue;
+        try
+        {
+          if (transaction.GetObject(id, OpenMode.ForRead, false) is Polyline pl && string.Equals(pl.Layer, kv.Key, StringComparison.OrdinalIgnoreCase)) actual++;
+        }
+        catch { }
+      }
+      var ok = actual >= kv.Value;
+      pass &= ok;
+      byLayer[kv.Key] = new Dictionary<string, object?> { ["created"] = kv.Value, ["countOnLayer"] = actual, ["pass"] = ok };
+    }
+    return new Dictionary<string, object?>
+    {
+      ["pass"] = pass,
+      ["check"] = "polylineCountOnLayer >= created",
+      ["byLayer"] = byLayer,
+    };
+  }
+
   public static Task<object?> ImportVectorPathsAsync(JsonObject? parameters)
   {
     var itemsNode = PluginRuntime.GetParameter(parameters, "items") as JsonArray
@@ -133,6 +212,7 @@ public static class TraceCommands
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
 
       var created = 0; var colored = 0;
+      var createdByLayer = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // B3.2 自动断言用
       var vertexCount = 0;
       var failed = 0;
       var failedSamples = new List<string>();
@@ -198,6 +278,8 @@ public static class TraceCommands
         modelSpace.AppendEntity(pl);
         transaction.AddNewlyCreatedDBObject(pl, true);
         created++;
+        var layerKey = pl.Layer ?? "0";
+        createdByLayer[layerKey] = createdByLayer.TryGetValue(layerKey, out var c0) ? c0 + 1 : 1;
         vertexCount += pl.NumberOfVertices;
         if (!layers.Contains(pl.Layer, StringComparer.OrdinalIgnoreCase)) layers.Add(pl.Layer);
       }
@@ -210,6 +292,8 @@ public static class TraceCommands
         ["failed"] = failed,
         ["failedSamples"] = failedSamples.ToArray(),
         ["layers"] = layers.ToArray(),
+        // B3.2（2026-09-28）：操作后自动断言 —— 每层多段线总数 ≥ 本次创建数（落地漏画会立刻暴露）
+        ["verification"] = VerifyLayerCounts(transaction, modelSpace, createdByLayer),
       };
     });
   }

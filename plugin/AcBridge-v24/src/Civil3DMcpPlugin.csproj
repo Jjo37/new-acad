@@ -53,6 +53,14 @@
       <HintPath>D:\Program Files\Autodesk\AutoCAD 2025\C3D\SACRuntime\Subassembly.API.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="PresentationCore">
+      <HintPath>C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\8.0.10\PresentationCore.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="WindowsBase">
+      <HintPath>C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\8.0.10\WindowsBase.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="System.IO.Packaging">
       <HintPath>C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\8.0.10\System.IO.Packaging.dll</HintPath>
       <Private>False</Private>

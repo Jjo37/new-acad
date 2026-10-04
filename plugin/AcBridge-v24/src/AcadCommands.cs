@@ -2703,7 +2703,7 @@ public static class AcadCommands
   public static Task<object?> GetEntitiesByLayerAsync(JsonObject? parameters)
   {
     var layer = PluginRuntime.GetRequiredString(parameters, "layer");
-    var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 500;
+    var maxCount = PluginRuntime.GetOptionalCount(parameters) ?? 500;
     // 2026-08-10: offset 分页--配合 maxCount 分批取全量(原来只能取前 N 条,大图层数据拿不全)
     var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
     // 2026-08-13: z 范围过滤（服务端筛异常点，AI 不用拉全量被截断）——如 minZ=-1 maxZ=3 找异常低点
@@ -2754,7 +2754,7 @@ public static class AcadCommands
   public static Task<object?> GetEntitiesByBlockAsync(JsonObject? parameters)
   {
     var block = PluginRuntime.GetRequiredString(parameters, "blockName");
-    var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 500;
+    var maxCount = PluginRuntime.GetOptionalCount(parameters) ?? 500;
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
@@ -2795,7 +2795,7 @@ public static class AcadCommands
   public static Task<object?> GetBlocksByLayerAsync(JsonObject? parameters)
   {
     var layer = PluginRuntime.GetRequiredString(parameters, "layer");
-    var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 500;
+    var maxCount = PluginRuntime.GetOptionalCount(parameters) ?? 500;
     var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
     var blockName = PluginRuntime.GetOptionalString(parameters, "blockName"); // optional filter
     var minZ = PluginRuntime.GetOptionalDouble(parameters, "minZ");

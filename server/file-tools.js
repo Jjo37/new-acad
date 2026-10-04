@@ -245,9 +245,12 @@ function traceImage(args) {
   // 非 PNG/BMP：先让插件解码成灰度（deflate+base64）
   return (async () => {
     const cadCall = require('./cad-tools.js').cadCall;
-    const gr = await cadCall('exportImageGray', { path: p, maxSide: num(args.maxSide, 1400) }, 60000);
+    // 2026-10-04: 必须带 fullResult:true —— 插件 C2 大结果降级（默认阈值 64KB）会把 gray base64 当"最长字符串"截断
+    // → inflate 报"数据不完整"，非 PNG/BMP（JPEG/GIF/TIFF）描摹一律失败。fullResult 是插件设计的逃生门。
+    const gr = await cadCall('exportImageGray', { path: p, maxSide: num(args.maxSide, 1400), fullResult: true }, 60000);
     const meta = gr && gr.result ? gr.result : gr;
     if (!meta || !meta.gray) throw new Error('插件 exportImageGray 未返回灰度数据：' + JSON.stringify(gr).slice(0, 160));
+    if (meta._summarized) throw new Error('灰度数据被插件大结果降级截断（_summarized）——调用需带 fullResult:true');
     const buf = zlib.inflateRawSync(Buffer.from(meta.gray, 'base64'));
     if (buf.length < meta.width * meta.height) throw new Error('灰度数据长度不符（' + buf.length + ' < ' + (meta.width * meta.height) + '）');
     const grayData = new Uint8Array(buf.buffer, buf.byteOffset, meta.width * meta.height);
@@ -418,11 +421,11 @@ const FILE_TOOLS = [
     type: 'function',
     function: {
       name: 'traceImage',
-      description: '把位图（PNG/BMP/JPEG/GIF/TIFF）自动描摹成 CAD 矢量线条——用户贴图要求"画进 CAD/描成线条/照这个画"时用。mode 选择：flat=色块区域(★扁平/纯色插画：卡通、logo、矢量风壁纸——线最少效果最好) / arc=圆弧拟合(线稿、手绘、照片风格) / centerline=骨架细线(要能继续编辑) / outline=描边(保笔画粗细) / posterize=全色块(含背景)。不传 mode 会按图片类型自动判定：扁平/纯色→flat；白底线稿/扫描件且含大块实心墨→outline（外轮廓更接近原画，实测优于中心线）；其余→arc。默认只生成路径 JSON；要画进图纸**直接带 draw:true**——工具会自己建图层、一次画完并回报成功/失败数（不要自己循环 createPolyline）。非 PNG/BMP 会自动走插件 exportImageGray 解码。fill:true 时改为把每条闭合路径**填充**落地（走 importHatches；色块图/扁平插画用，可用 fillPattern 指定图案名如 ANSI31，默认 SOLID 实体填充）。mask 参数（默认 auto）控制掩膜来源：auto 会在“明亮纸张背景 + 墨迹比例适中”的图（墨线稿/扫描件/白底手绘）上自动改用墨迹阈值，其余（照片/彩图）走边缘检测；可直接传 ink（强制墨迹阈值，适合白底线稿/扫描件）或 dog（强制边缘检测）。',
+      description: '把位图（PNG/BMP/JPEG/GIF/TIFF/WEBP）自动描摹成 CAD 矢量线条——用户贴图要求"画进 CAD/描成线条/照这个画"时用。mode 选择：flat=色块区域(★扁平/纯色插画：卡通、logo、矢量风壁纸——线最少效果最好) / arc=圆弧拟合(线稿、手绘、照片风格) / centerline=骨架细线(要能继续编辑) / outline=描边(保笔画粗细) / posterize=全色块(含背景)。不传 mode 会按图片类型自动判定：扁平/纯色→flat；白底线稿/扫描件且含大块实心墨→outline（外轮廓更接近原画，实测优于中心线）；其余→arc。默认只生成路径 JSON；要画进图纸**直接带 draw:true**——工具会自己建图层、一次画完并回报成功/失败数（不要自己循环 createPolyline）。非 PNG/BMP 会自动走插件 exportImageGray 解码。fill:true 时改为把每条闭合路径**填充**落地（走 importHatches；色块图/扁平插画用，可用 fillPattern 指定图案名如 ANSI31，默认 SOLID 实体填充）。mask 参数（默认 auto）控制掩膜来源：auto 会在“明亮纸张背景 + 墨迹比例适中”的图（墨线稿/扫描件/白底手绘）上自动改用墨迹阈值，其余（照片/彩图）走边缘检测；可直接传 ink（强制墨迹阈值，适合白底线稿/扫描件）或 dog（强制边缘检测）。',
       parameters: {
         type: 'object',
         properties: {
-          image: { type: 'string', description: '图片绝对路径（PNG/BMP/JPEG/GIF/TIFF）' },
+          image: { type: 'string', description: '图片绝对路径（PNG/BMP/JPEG/GIF/TIFF/WEBP）' },
           mode: { type: 'string', description: 'flat(扁平/纯色插画首选) | arc(线稿/手绘) | centerline | outline | posterize；不传=按图自动判定' },
           draw: { type: 'boolean', description: 'true=直接画入当前图纸（默认 false 只生成 JSON）' },
           layer: { type: 'string', description: '目标图层名（默认 TRACE_<MODE>）' },

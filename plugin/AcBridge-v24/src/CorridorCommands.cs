@@ -107,7 +107,8 @@ public static class CorridorCommands
             cancellationToken.ThrowIfCancellationRequested();
             JobRegistry.Progress(job.JobId, 10, $"Scheduling rebuild for corridor {name}", null);
 
-            var result = await CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+            // 2026-09-28 D3: 走再生护栏（App.Idle 路径，见 CivilExecution.RegeneratingOperations）
+            var result = await CivilExecution.WriteViaIdleAsync<object?>((doc, civilDoc, database, transaction) =>
             {
               cancellationToken.ThrowIfCancellationRequested();
 
@@ -240,6 +241,92 @@ public static class CorridorCommands
         ["boundaries"] = surface.Boundaries.Cast<CorridorSurfaceBoundary>().Select(boundary => boundary.Name).ToList(),
       })
       .ToList();
+  }
+
+  /// <summary>
+  /// A1 收口（2026-09-28）：用**廊道要素线**定义"设计曲面真实覆盖范围"（左右外沿 offset）。
+  /// 链条：Corridor.Baselines[i].MainBaselineFeatureLines.FeatureLineCollectionMap[code].Item[j].FeatureLinePoints{Station,Offset}
+  /// 用途：断面法算量必须把窗口切到该范围内，否则 C3D 断面会向采样线两端**外插**，产生假挖填。
+  /// </summary>
+  public static Task<object?> GetCorridorCoverageAsync(JsonObject? parameters)
+  {
+    var name = PluginRuntime.GetRequiredString(parameters, "name");
+    var stationStart = PluginRuntime.GetOptionalDouble(parameters, "stationStart");
+    var stationEnd = PluginRuntime.GetOptionalDouble(parameters, "stationEnd");
+
+    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var corridor = CivilObjectUtils.FindCorridorByName(civilDoc, transaction, name, OpenMode.ForRead);
+      var map = new SortedDictionary<double, Coverage>();
+      var codeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+      foreach (Baseline baseline in corridor.Baselines)
+      {
+        var groups = new List<BaselineFeatureLines> { baseline.MainBaselineFeatureLines };
+        groups.AddRange(baseline.OffsetBaselineFeatureLinesCol.Cast<BaselineFeatureLines>());
+
+        foreach (var group in groups)
+        {
+          var collections = group.FeatureLineCollectionMap;
+          foreach (var codeName in collections.CodeNames())
+          {
+            codeNames.Add(codeName);
+            var collection = collections[codeName];
+            for (var i = 0; i < collection.Count; i++)
+            {
+              CorridorFeatureLine featureLine;
+              try { featureLine = collection[i]; } catch { continue; }
+              if (featureLine == null) continue;
+              foreach (FeatureLinePoint point in featureLine.FeatureLinePoints)
+              {
+                var station = Math.Round(point.Station, 3);
+                if (stationStart.HasValue && station < stationStart.Value) continue;
+                if (stationEnd.HasValue && station > stationEnd.Value) continue;
+                if (!map.TryGetValue(station, out var cov))
+                {
+                  cov = new Coverage { LeftOffset = double.MaxValue, RightOffset = double.MinValue };
+                  map[station] = cov;
+                }
+                var offset = point.Offset;
+                if (offset < cov.LeftOffset) { cov.LeftOffset = offset; cov.LeftCode = codeName; }
+                if (offset > cov.RightOffset) { cov.RightOffset = offset; cov.RightCode = codeName; }
+                cov.PointCount++;
+              }
+            }
+          }
+        }
+      }
+
+      var coverage = map.Select(kv => (object)new Dictionary<string, object?>
+      {
+        ["station"] = kv.Key,
+        ["leftOffset"] = kv.Value.LeftOffset,
+        ["rightOffset"] = kv.Value.RightOffset,
+        ["leftCode"] = kv.Value.LeftCode,
+        ["rightCode"] = kv.Value.RightCode,
+        ["pointCount"] = kv.Value.PointCount,
+        ["width"] = kv.Value.RightOffset - kv.Value.LeftOffset,
+      }).ToList();
+
+      return new Dictionary<string, object?>
+      {
+        ["corridorName"] = corridor.Name,
+        ["stationCount"] = coverage.Count,
+        ["featureLineCodes"] = codeNames.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToArray(),
+        ["minLeftOffset"] = coverage.Count > 0 ? map.Values.Min(v => v.LeftOffset) : (double?)null,
+        ["maxRightOffset"] = coverage.Count > 0 ? map.Values.Max(v => v.RightOffset) : (double?)null,
+        ["coverage"] = coverage,
+      };
+    });
+  }
+
+  private sealed class Coverage
+  {
+    public double LeftOffset { get; set; }
+    public double RightOffset { get; set; }
+    public string? LeftCode { get; set; }
+    public string? RightCode { get; set; }
+    public int PointCount { get; set; }
   }
 
   private static List<Dictionary<string, object?>> ReadCorridorFeatureLines(Corridor corridor)

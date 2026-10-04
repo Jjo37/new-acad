@@ -587,5 +587,46 @@ public static class DrawingCommands
 
       return new Dictionary<string, object?> { ["handle"] = CivilObjectUtils.GetHandle(circle) };
     });
+  }  public static Task<object?> CreateEllipseAsync(JsonObject? parameters)
+  {
+    var centerX = PluginRuntime.GetOptionalDouble(parameters, "centerX") ?? 0;
+    var centerY = PluginRuntime.GetOptionalDouble(parameters, "centerY") ?? 0;
+    var centerZ = PluginRuntime.GetOptionalDouble(parameters, "centerZ") ?? 0;
+    var majorRadius = PluginRuntime.GetOptionalDouble(parameters, "majorRadius") ?? 0;
+    var ratio = PluginRuntime.GetOptionalDouble(parameters, "ratio") ?? 0;
+    var rotationDeg = PluginRuntime.GetOptionalDouble(parameters, "rotation") ?? 0;
+    var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
+
+    if (majorRadius <= 0)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "createEllipse requires majorRadius > 0.");
+    }
+
+    if (ratio <= 0 || ratio > 1)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "createEllipse requires ratio in (0, 1] (minor/major).");
+    }
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
+      var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+
+      var rotation = rotationDeg * Math.PI / 180.0;
+      var majorAxis = new Vector3d(Math.Cos(rotation) * majorRadius, Math.Sin(rotation) * majorRadius, 0);
+
+      var ellipse = new Ellipse(new Point3d(centerX, centerY, centerZ), new Vector3d(0, 0, 1), majorAxis, ratio, 0.0, 2.0 * Math.PI);
+
+      if (!string.IsNullOrWhiteSpace(layerName))
+      {
+        ellipse.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      }
+
+      var ellipseId = modelSpace.AppendEntity(ellipse);
+      transaction.AddNewlyCreatedDBObject(ellipse, true);
+
+      return new Dictionary<string, object?> { ["handle"] = CivilObjectUtils.GetHandle(ellipse) };
+    });
   }
+
 }

@@ -370,23 +370,30 @@ public static class PluginRuntime
       PluginLog.Debug("Dispatch", $"-> {method} [{CurrentRequestId.Value ?? "no-id"}]");
       var result = await CommandDispatcher.DispatchAsync(method, parameters, cancellationToken);
       PluginLog.Debug("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] ok durationMs={timer.ElapsedMilliseconds}");
-      return JsonRpcProtocol.SerializeResult(id, result);
+      // C2（2026-09-28）：大结果自动降级 —— 超阈值换成"结构化画像 + 取全量方法"信封
+      var resultJson = OperationTrace.SerializeResult(result);
+      var outcome = ResultSummarizer.ApplyIfOversized(result, resultJson, method, parameters);
+      OperationTrace.Record(method, parameters, "ok", null, null, timer.ElapsedMilliseconds, outcome.Serialized);
+      return JsonRpcProtocol.SerializeResult(id, outcome.Value);
     }
     catch (JsonRpcDispatchException ex)
     {
       // Domain-level errors are part of the contract; record at info so they
       // show up in diagnostics without looking like runtime faults.
       PluginLog.Info("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] dispatch error {ex.Code} durationMs={timer.ElapsedMilliseconds}: {ex.Message}");
+      OperationTrace.Record(method, parameters, "error", ex.Code, ex.Message, timer.ElapsedMilliseconds);
       return JsonRpcProtocol.SerializeError(id, JsonRpcProtocol.NumericErrorCode(ex.Code), ex.Code, ex.Message);
     }
     catch (OperationCanceledException)
     {
       PluginLog.Info("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] cancelled durationMs={timer.ElapsedMilliseconds}");
+      OperationTrace.Record(method, parameters, "cancelled", "CIVIL3D.CANCELLED", null, timer.ElapsedMilliseconds);
       return JsonRpcProtocol.SerializeError(id, -32010, "CIVIL3D.CANCELLED", $"Operation '{method}' was cancelled.");
     }
     catch (Exception ex)
     {
       PluginLog.Error("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] unhandled failure durationMs={timer.ElapsedMilliseconds} category={ex.GetType().Name}", ex);
+      OperationTrace.Record(method, parameters, "fatal", "CIVIL3D.INTERNAL_ERROR", ex.GetType().Name + ": " + ex.Message, timer.ElapsedMilliseconds);
       return JsonRpcProtocol.SerializeError(id, -32603, "CIVIL3D.INTERNAL_ERROR", "The Civil 3D plugin encountered an unexpected error.");
     }
     finally
@@ -577,6 +584,10 @@ public static class PluginRuntime
     var value = GetParameter(parameters, name) as JsonNode;
     return value == null ? null : CoerceDouble(value, name);
   }
+
+  /// <summary>C2（2026-09-28）：分页 / 条数上限的**参数别名** —— AI 常写 limit，历史实现叫 maxCount。</summary>
+  public static int? GetOptionalCount(JsonObject? parameters)
+    => GetOptionalInt(parameters, "maxCount") ?? GetOptionalInt(parameters, "limit") ?? GetOptionalInt(parameters, "count");
 
   public static int? GetOptionalInt(JsonObject? parameters, string name)
   {

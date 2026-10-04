@@ -134,7 +134,8 @@ public static class CorridorEditingCommands
     var frequencyAtCurves = PluginRuntime.GetOptionalDouble(parameters, "frequencyAtCurves") ?? frequency;
     var frequencyAtKneePoints = PluginRuntime.GetOptionalDouble(parameters, "frequencyAtKneePoints") ?? frequency;
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    // 2026-09-28 D3: 走再生护栏（App.Idle 路径，见 CivilExecution.RegeneratingOperations）
+    return CivilExecution.WriteViaIdleAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var corridor = CivilObjectUtils.FindCorridorByName(civilDoc, transaction, corridorName, OpenMode.ForWrite);
       var baseline = GetBaseline(corridor, baselineIndex);
@@ -209,7 +210,8 @@ public static class CorridorEditingCommands
     var surfaceName = PluginRuntime.GetOptionalString(parameters, "surfaceName");
     var styleName = PluginRuntime.GetOptionalString(parameters, "style");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    // 2026-09-28 D3: 走再生护栏（App.Idle 路径，见 CivilExecution.RegeneratingOperations）
+    return CivilExecution.WriteViaIdleAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       // 名称冲突检查
       foreach (ObjectId cid in civilDoc.CorridorCollection)
@@ -447,21 +449,16 @@ public static class CorridorEditingCommands
               };
             });
 
-            // 2026-09-21: commit 返回后 C3D 仍会异步再生曲面。等它真正生成完再报完成，
-            //   避免上层立刻调用读到空曲面；等待期间 job 保持 running → 其它请求拿到 JOB_RUNNING（relay 自动重试）。
-            var buildReady = false;
+            // 2026-09-21 / 2026-09-28 D3: commit 返回后 C3D 仍会异步再生曲面；统一走再生护栏等待。
+            bool buildReady = false;
             long waitedMs = 0;
             if (waitForBuild)
             {
-              var swWait = System.Diagnostics.Stopwatch.StartNew();
-              while (swWait.ElapsedMilliseconds < 300000)
+              var regenerated = await CivilExecution.WaitForRegenerationAsync(async () =>
               {
-                // 2026-09-21 实测：插件一碰文档/Idle，C3D 的异步曲面再生就被推迟（每 2s 轮询 240s 都没建完）。
-                // 所以先静默 30s 给 C3D 一个安静窗口，再做一次低频检查。
-                await Task.Delay(30000);
                 try
                 {
-                  buildReady = await CivilExecution.ReadViaIdleAsync((doc, civilDoc, database, transaction) =>
+                  return await CivilExecution.ReadViaIdleAsync((doc, civilDoc, database, transaction) =>
                   {
                     var corridor = CivilObjectUtils.FindCorridorByName(civilDoc, transaction, corridorName, OpenMode.ForRead);
                     foreach (Autodesk.Civil.DatabaseServices.CorridorSurface c in corridor.CorridorSurfaces)
@@ -480,18 +477,19 @@ public static class CorridorEditingCommands
                 }
                 catch (Exception ex)
                 {
-                  buildReady = false;
                   try { PluginLog.Info("Corridor", "addCorridorSurface wait poll: " + ex.GetType().Name + " " + ex.Message); } catch { }
+                  return false;
                 }
-                if (buildReady) break;
-              }
-              waitedMs = swWait.ElapsedMilliseconds;
+              });
+              buildReady = regenerated.ready;
+              waitedMs = regenerated.waitedMs;
             }
             try { PluginLog.Info("Corridor", "addCorridorSurface buildReady=" + buildReady + " waitedMs=" + waitedMs); } catch { }
             if (result is Dictionary<string, object?> rd)
             {
               rd["buildReady"] = buildReady;
               rd["waitedMs"] = waitedMs;
+              rd["pendingRegeneration"] = !buildReady;
             }
 
             JobRegistry.Complete(job.JobId, result);
@@ -567,7 +565,8 @@ public static class CorridorEditingCommands
     var baselineIndex = PluginRuntime.GetOptionalInt(parameters, "baselineIndex") ?? 0;
     var regionIndex = PluginRuntime.GetRequiredInt(parameters, "regionIndex");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    // 2026-09-28 D3: 走再生护栏（App.Idle 路径，见 CivilExecution.RegeneratingOperations）
+    return CivilExecution.WriteViaIdleAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var corridor = CivilObjectUtils.FindCorridorByName(civilDoc, transaction, corridorName, OpenMode.ForWrite);
       var baseline = GetBaseline(corridor, baselineIndex);

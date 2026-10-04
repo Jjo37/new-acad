@@ -1,6 +1,6 @@
 ﻿{
   "name": "new-acad",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "private": true,
   "description": "AutoCAD / Civil 3D AI 数据桥",
   "scripts": {

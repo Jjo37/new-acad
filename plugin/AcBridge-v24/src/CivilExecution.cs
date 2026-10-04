@@ -166,6 +166,53 @@ public static class CivilExecution
     }
   }
 
+  // ── 2026-09-28 D3：会触发 C3D 内部再生的写操作（统一护栏）──────────────────
+  // 背景（2026-09-21 实测）：廊道曲面首次构建若在命令上下文提交，会被 C3D 节流/推迟
+  //   （215~360s，CPU≈0%，约一半撞破 300s job 上限 → 假失败；曲面其实已建好）。
+  //   改走 App.Idle（文档线程 + 文档锁 + 事务，非命令上下文）后 commit 降到 ~56ms。
+  // 规则：凡"改数据会引发 C3D 后台再生"的写操作，一律走 WriteViaIdleAsync，
+  //   并在 commit 后用 WaitForRegenerationAsync 给它一个静默窗口等生成完成。
+  //   ⚠️ Idle 回调在 UI 线程执行且阻塞消息泵 —— 只放"必须离开命令上下文"的操作，别滥用。
+  public static readonly IReadOnlyList<string> RegeneratingOperations = new[]
+  {
+    "createCorridor",
+    "addCorridorRegion",
+    "deleteCorridorRegion",
+    "rebuildCorridor",
+    "addCorridorSurface",
+    "setCorridorTargetMappings",
+  };
+
+  public static bool IsRegeneratingOperation(string? operation)
+  {
+    if (string.IsNullOrWhiteSpace(operation)) return false;
+    foreach (var op in RegeneratingOperations)
+    {
+      if (string.Equals(op, operation, StringComparison.OrdinalIgnoreCase)) return true;
+    }
+    return false;
+  }
+
+  // 等 C3D 后台再生完成：先静默 settleMs 给一个不被打扰的窗口（实测一碰文档/Idle 就会推迟再生，
+  // 高频轮询会让它永远建不完），再做低频探测。probe 返回 true 即完成。
+  public static async Task<(bool ready, long waitedMs)> WaitForRegenerationAsync(
+    Func<Task<bool>> probe,
+    int settleMs = 30000,
+    int pollMs = 30000,
+    int maxMs = 600000)
+  {
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var ready = false;
+    while (sw.ElapsedMilliseconds < maxMs)
+    {
+      await Task.Delay(sw.ElapsedMilliseconds == 0 ? settleMs : pollMs);
+      try { ready = await probe(); }
+      catch (Exception ex) { try { PluginLog.Info("Exec", "WaitForRegeneration probe: " + ex.GetType().Name + " " + ex.Message); } catch { } ready = false; }
+      if (ready) break;
+    }
+    return (ready, sw.ElapsedMilliseconds);
+  }
+
   public static Task<T> WriteAsync<T>(Func<Document, CivilDocument, Database, Transaction, T> action)
   {
     return ExecuteAsync(action, true);

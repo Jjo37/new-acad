@@ -41,8 +41,9 @@ public static class SurfaceCommands
     {
       var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, name, OpenMode.ForRead);
       var generalProperties = surface.GetGeneralProperties();
+      // 2026-09-28: 廊道曲面的 GeometricExtents 可能不可用 → 容错，不让整个 getSurface 挂掉
       var terrainProperties = GetTerrainProperties(surface);
-      var extents = surface.GeometricExtents;
+      var haveExtents = TryGetExtents(surface, out var ex0, out var ey0, out var ex1, out var ey1);
 
       return new Dictionary<string, object?>
       {
@@ -61,13 +62,16 @@ public static class SurfaceCommands
           ["numberOfPoints"] = generalProperties.NumberOfPoints,
           ["numberOfTriangles"] = GetTriangleCount(surface),
         },
-        ["boundingBox"] = new Dictionary<string, object?>
-        {
-          ["minX"] = extents.MinPoint.X,
-          ["minY"] = extents.MinPoint.Y,
-          ["maxX"] = extents.MaxPoint.X,
-          ["maxY"] = extents.MaxPoint.Y,
-        },
+        ["boundingBox"] = haveExtents
+          ? new Dictionary<string, object?>
+          {
+            ["minX"] = ex0,
+            ["minY"] = ey0,
+            ["maxX"] = ex1,
+            ["maxY"] = ey1,
+          }
+          : null,
+        ["boundingBoxUnavailable"] = !haveExtents,
         ["units"] = CivilObjectUtils.LinearUnits(database),
         ["isReference"] = surface.IsReferenceObject,
         ["dependentAlignments"] = new List<string>(),
@@ -138,6 +142,7 @@ public static class SurfaceCommands
     {
       var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, name, OpenMode.ForRead);
       var generalProperties = surface.GetGeneralProperties();
+      // 2026-09-28: 廊道曲面的 GeometricExtents 可能不可用 → 容错，不让整个 getSurface 挂掉
       var terrainProperties = GetTerrainProperties(surface);
       return new Dictionary<string, object?>
       {
@@ -397,17 +402,153 @@ public static class SurfaceCommands
     });
   }
 
-  public static Task<object?> ComputeSurfaceVolumeAsync(JsonObject? parameters)
+  // ── 2026-09-28 A3 修复 ──────────────────────────────────────────────
+  // 实测根因：只要输入里含"廊道曲面"，TinVolumeSurface.Create 立即抛
+  //   ArgumentException: Fail to create a surface（纯 TIN 之间正常）。同时廊道曲面的
+  //   GeometricExtents 不可靠（网格采样会得到 0 个点）。
+  // 对策：① 网格采样法兜底（不依赖体积曲面对象，还能给出挖填面积）；② 明确可行动的错误。
+  private static bool TryGetExtents(CivilSurface surface, out double minX, out double minY, out double maxX, out double maxY)
   {
-    var baseSurfaceName = PluginRuntime.GetRequiredString(parameters, "baseSurface");
-    var comparisonSurfaceName = PluginRuntime.GetRequiredString(parameters, "comparisonSurface");
-
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    minX = minY = maxX = maxY = 0;
+    try
     {
-      var baseSurface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, baseSurfaceName, OpenMode.ForRead);
-      var comparisonSurface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, comparisonSurfaceName, OpenMode.ForRead);
-      var volumeProperties = GetVolumeProperties(civilDoc, transaction, baseSurface, comparisonSurface);
+      var extents = surface.GeometricExtents;
+      minX = extents.MinPoint.X; minY = extents.MinPoint.Y;
+      maxX = extents.MaxPoint.X; maxY = extents.MaxPoint.Y;
+      return maxX > minX && maxY > minY;
+    }
+    catch { return false; }
+  }
 
+  private static Dictionary<string, object?> ComputeVolumeByGrid(CivilSurface baseSurface, CivilSurface comparisonSurface, double requestedStep)
+  {
+    var haveA = TryGetExtents(baseSurface, out var ax0, out var ay0, out var ax1, out var ay1);
+    var haveB = TryGetExtents(comparisonSurface, out var bx0, out var by0, out var bx1, out var by1);
+    if (!haveA && !haveB)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.NOT_SUPPORTED", "网格法失败：两个曲面的范围（GeometricExtents）都不可用。");
+    }
+
+    double minX, minY, maxX, maxY;
+    string extentsFrom;
+    if (haveA && haveB)
+    {
+      minX = Math.Max(ax0, bx0); minY = Math.Max(ay0, by0);
+      maxX = Math.Min(ax1, bx1); maxY = Math.Min(ay1, by1);
+      extentsFrom = "intersection";
+    }
+    else if (haveA) { minX = ax0; minY = ay0; maxX = ax1; maxY = ay1; extentsFrom = "base"; }
+    else { minX = bx0; minY = by0; maxX = bx1; maxY = by1; extentsFrom = "comparison"; }
+
+    if (maxX <= minX || maxY <= minY)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "两曲面 XY 范围不重叠，无法计算体积。");
+    }
+
+    var step = requestedStep > 0 ? requestedStep : Math.Max(maxX - minX, maxY - minY) / 100.0;
+    if (step < 0.01) step = 0.01;
+    var cellArea = step * step;
+    double cut = 0, fill = 0, cutArea = 0, fillArea = 0;
+    int used = 0, skipped = 0;
+
+    for (var x = minX + step / 2; x < maxX; x += step)
+    {
+      for (var y = minY + step / 2; y < maxY; y += step)
+      {
+        double za, zb;
+        try
+        {
+          za = InvokeSurfaceElevation(baseSurface, x, y);
+          zb = InvokeSurfaceElevation(comparisonSurface, x, y);
+        }
+        catch { skipped++; continue; }
+        var d = za - zb;
+        used++;
+        if (d > 0) { cut += d * cellArea; cutArea += cellArea; }
+        else if (d < 0) { fill += -d * cellArea; fillArea += cellArea; }
+      }
+    }
+
+    return new Dictionary<string, object?>
+    {
+      ["method"] = "grid",
+      ["gridStep"] = step,
+      ["cellsUsed"] = used,
+      ["cellsSkipped"] = skipped,
+      ["cutVolume"] = cut,
+      ["fillVolume"] = fill,
+      ["netVolume"] = fill - cut,   // 口径对齐 C3D（UnadjustedNetVolume = fill - cut）
+      ["cutArea"] = cutArea,
+      ["fillArea"] = fillArea,
+      ["extentsFrom"] = extentsFrom,
+    };
+  }
+
+  // ── 2026-09-28 A3 二刀：廊道曲面烘焙 ────────────────────────────────
+  // C3D 内置：TinSurface.CreateFromCorridorSurface(name, corridorSurface) 可把廊道曲面转成普通 TIN。
+  // 用途：廊道曲面①不能作 TinVolumeSurface 输入；②GeometricExtents/采样域退化。烘焙成普通 TIN 后全部可用。
+  private static bool TryFindCorridorSurface(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Transaction transaction, string surfaceName, out Autodesk.Civil.DatabaseServices.CorridorSurface corridorSurface)
+  {
+    corridorSurface = null!;
+    foreach (ObjectId corridorId in civilDoc.CorridorCollection)
+    {
+      var corridor = CivilObjectUtils.GetRequiredObject<Autodesk.Civil.DatabaseServices.Corridor>(transaction, corridorId, OpenMode.ForRead);
+      foreach (Autodesk.Civil.DatabaseServices.CorridorSurface cs in corridor.CorridorSurfaces)
+      {
+        if (string.Equals(cs.Name, surfaceName, StringComparison.OrdinalIgnoreCase)) { corridorSurface = cs; return true; }
+      }
+    }
+    return false;
+  }
+
+  /// <summary>若该曲面是廊道曲面，烘焙成临时普通 TIN（加入 tempIds 待清理）；否则返回 null</summary>
+  private static TinSurface? TryBakeCorridorSurface(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Transaction transaction, CivilSurface surface, List<ObjectId> tempIds)
+  {
+    if (!TryFindCorridorSurface(civilDoc, transaction, surface.Name, out var corridorSurface)) return null;
+    var bakedName = surface.Name + "__baked_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+    var bakedId = TinSurface.CreateFromCorridorSurface(bakedName, corridorSurface);
+    tempIds.Add(bakedId);
+    return CivilObjectUtils.GetRequiredObject<TinSurface>(transaction, bakedId, OpenMode.ForRead);
+  }
+
+  private static void EraseTemps(Transaction transaction, List<ObjectId> tempIds)
+  {
+    foreach (var id in tempIds)
+    {
+      try
+      {
+        if (id.IsNull || id.IsErased) continue;
+        var obj = transaction.GetObject(id, OpenMode.ForWrite, false);
+        obj?.Erase();
+      }
+      catch { /* 清理失败不致命 */ }
+    }
+    tempIds.Clear();
+  }
+  private static Dictionary<string, object?> ComputeVolumeDict(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Transaction transaction, CivilSurface baseSurface, CivilSurface comparisonSurface, Database database, string method, double gridStep)
+  {
+    var units = new Dictionary<string, object?>
+    {
+      ["volume"] = $"{CivilObjectUtils.LinearUnits(database)}^3",
+      ["area"] = $"{CivilObjectUtils.LinearUnits(database)}^2",
+    };
+
+    if (method == "grid")
+    {
+      var grid = ComputeVolumeByGrid(baseSurface, comparisonSurface, gridStep);
+      grid["units"] = units;
+      return grid;
+    }
+
+    var tempIds = new List<ObjectId>();
+    try
+    {
+      // 2026-09-28：廊道曲面先烘焙成普通 TIN（否则 TinVolumeSurface 必失败）
+      var baseForVolume = TryBakeCorridorSurface(civilDoc, transaction, baseSurface, tempIds) ?? baseSurface;
+      var compForVolume = TryBakeCorridorSurface(civilDoc, transaction, comparisonSurface, tempIds) ?? comparisonSurface;
+      var baked = tempIds.Count > 0;
+
+      var volumeProperties = GetVolumeProperties(civilDoc, transaction, baseForVolume, compForVolume);
       return new Dictionary<string, object?>
       {
         ["cutVolume"] = volumeProperties.UnadjustedCutVolume,
@@ -415,12 +556,77 @@ public static class SurfaceCommands
         ["netVolume"] = volumeProperties.UnadjustedNetVolume,
         ["cutArea"] = null,
         ["fillArea"] = null,
-        ["units"] = new Dictionary<string, object?>
-        {
-          ["volume"] = $"{CivilObjectUtils.LinearUnits(database)}^3",
-          ["area"] = $"{CivilObjectUtils.LinearUnits(database)}^2",
-        },
+        ["method"] = "tin_volume",
+        ["bakedCorridorInputs"] = baked,
+        ["units"] = units,
       };
+    }
+    catch (Exception ex) when (method != "tin_volume")
+    {
+      var grid = ComputeVolumeByGrid(baseSurface, comparisonSurface, gridStep);
+      grid["tinError"] = ex.Message;
+      grid["units"] = units;
+      return grid;
+    }
+    catch (Exception ex)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.NOT_SUPPORTED",
+        "TinVolumeSurface 创建失败（Civil 3D 不支持廊道曲面参与体积曲面计算）：" + ex.Message);
+    }
+    finally
+    {
+      EraseTemps(transaction, tempIds);
+    }
+  }
+
+  /// <summary>bakeCorridorSurface —— 把廊道曲面烘焙成普通 TIN 曲面（永久保留）
+  /// 用途：廊道曲面不能算体积、无可用 extents（采样/网格法都不行）；烘焙后一切可用。</summary>
+  public static Task<object?> BakeCorridorSurfaceAsync(JsonObject? parameters)
+  {
+    var surfaceName = PluginRuntime.GetRequiredString(parameters, "surfaceName");
+    var newName = PluginRuntime.GetOptionalString(parameters, "newSurfaceName");
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, surfaceName, OpenMode.ForRead);
+      if (!TryFindCorridorSurface(civilDoc, transaction, surfaceName, out var corridorSurface))
+      {
+        throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"曲面 '{surfaceName}' 不是廊道曲面，无需烘焙。");
+      }
+
+      var targetName = string.IsNullOrWhiteSpace(newName) ? surfaceName + "_baked" : newName;
+      var bakedId = TinSurface.CreateFromCorridorSurface(targetName, corridorSurface);
+      var baked = CivilObjectUtils.GetRequiredObject<TinSurface>(transaction, bakedId, OpenMode.ForRead);
+
+      var haveExtents = TryGetExtents(baked, out var minX, out var minY, out var maxX, out var maxY);
+      var stats = baked.GetGeneralProperties();
+      return new Dictionary<string, object?>
+      {
+        ["sourceSurface"] = surfaceName,
+        ["bakedSurface"] = baked.Name,
+        ["handle"] = CivilObjectUtils.GetHandle(baked),
+        ["numberOfPoints"] = stats.NumberOfPoints,
+        ["numberOfTriangles"] = GetTriangleCount(baked),
+        ["extentsAvailable"] = haveExtents,
+        ["boundingBox"] = haveExtents
+          ? new Dictionary<string, object?> { ["minX"] = minX, ["minY"] = minY, ["maxX"] = maxX, ["maxY"] = maxY }
+          : null,
+        ["note"] = "烘焙后可用普通 TIN 做体积（computeSurfaceVolume）/采样/网格法",
+      };
+    });
+  }
+  public static Task<object?> ComputeSurfaceVolumeAsync(JsonObject? parameters)
+  {
+    var baseSurfaceName = PluginRuntime.GetRequiredString(parameters, "baseSurface");
+    var comparisonSurfaceName = PluginRuntime.GetRequiredString(parameters, "comparisonSurface");
+    var method = PluginRuntime.GetOptionalString(parameters, "method") ?? "auto";
+    var gridStep = PluginRuntime.GetOptionalDouble(parameters, "gridStep") ?? 0;
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var baseSurface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, baseSurfaceName, OpenMode.ForRead);
+      var comparisonSurface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, comparisonSurfaceName, OpenMode.ForRead);
+      return ComputeVolumeDict(civilDoc, transaction, baseSurface, comparisonSurface, database, method, gridStep);
     });
   }
 
@@ -430,31 +636,20 @@ public static class SurfaceCommands
   {
     var baseSurfaceName = PluginRuntime.GetRequiredString(parameters, "baseSurface");
     var comparisonSurfaceName = PluginRuntime.GetRequiredString(parameters, "comparisonSurface");
-    var method = PluginRuntime.GetOptionalString(parameters, "method") ?? "tin_volume";
+    var method = PluginRuntime.GetOptionalString(parameters, "method") ?? "auto";
+    var gridStep = PluginRuntime.GetOptionalDouble(parameters, "gridStep") ?? 0;
 
     return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var baseSurface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, baseSurfaceName, OpenMode.ForRead);
       var comparisonSurface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, comparisonSurfaceName, OpenMode.ForRead);
-      var volumeProperties = GetVolumeProperties(civilDoc, transaction, baseSurface, comparisonSurface);
+      var volumeDict = ComputeVolumeDict(civilDoc, transaction, baseSurface, comparisonSurface, database, method, gridStep);
       var units = CivilObjectUtils.LinearUnits(database);
 
-      return new Dictionary<string, object?>
-      {
-        ["baseSurface"] = baseSurfaceName,
-        ["comparisonSurface"] = comparisonSurfaceName,
-        ["cutVolume"] = volumeProperties.UnadjustedCutVolume,
-        ["fillVolume"] = volumeProperties.UnadjustedFillVolume,
-        ["netVolume"] = volumeProperties.UnadjustedNetVolume,
-        ["cutArea"] = null,
-        ["fillArea"] = null,
-        ["method"] = method,
-        ["units"] = new Dictionary<string, object?>
-        {
-          ["volume"] = $"{units}^3",
-          ["area"] = $"{units}^2",
-        },
-      };
+      volumeDict["baseSurface"] = baseSurfaceName;
+      volumeDict["comparisonSurface"] = comparisonSurfaceName;
+      volumeDict["requestedMethod"] = method;
+      return volumeDict;
     });
   }
 
@@ -659,6 +854,7 @@ public static class SurfaceCommands
     {
       var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, name, OpenMode.ForRead);
       var generalProperties = surface.GetGeneralProperties();
+      // 2026-09-28: 廊道曲面的 GeometricExtents 可能不可用 → 容错，不让整个 getSurface 挂掉
       var units = CivilObjectUtils.LinearUnits(database);
       var analysisData = surface.Analysis.GetElevationData();
       if (analysisData.Length == 0)
@@ -819,6 +1015,7 @@ public static class SurfaceCommands
     {
       var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, name, OpenMode.ForRead);
       var generalProperties = surface.GetGeneralProperties();
+      // 2026-09-28: 廊道曲面的 GeometricExtents 可能不可用 → 容错，不让整个 getSurface 挂掉
       var terrainProperties = GetTerrainProperties(surface);
       var units = CivilObjectUtils.LinearUnits(database);
 

@@ -117,6 +117,10 @@ function readImage(args) {
   if (!rawPath) throw new Error('参数 path 必填');
   const p = resolveReadPath(rawPath, true);
   if (fs.statSync(p).isDirectory()) throw new Error('这是目录，不是文件: ' + p);
+  // 2026-10-04: 可选增强开关（仅显式传参时注入，line 档在引擎侧走默认）
+  if (args.adaptive !== undefined) opts.adaptive = (args.adaptive === true || args.adaptive === 1);
+  if (args.autotune !== undefined) opts.autotune = (args.autotune === true || args.autotune === 1);
+  if (args.denoise !== undefined) opts.denoise = (args.denoise === true || args.denoise === 1);
   const ext = path.extname(p).toLowerCase();
   const mime = IMAGE_EXT[ext];
   if (!mime) throw new Error('仅支持图片文件（png/jpg/jpeg/bmp/gif/webp）: ' + ext);
@@ -190,7 +194,7 @@ function traceImage(args) {
   const p = resolveReadPath(raw, true);
   if (fs.statSync(p).isDirectory()) throw new Error('这是目录，不是文件: ' + p);
 
-  const MODES = ['flat', 'arc', 'centerline', 'outline', 'posterize'];
+  const MODES = ['flat', 'arc', 'centerline', 'outline', 'posterize', 'line', 'tone'];
   const engine = require('./trace-image.js');
   // 2026-09-22: 未指定 mode 时自动判定——扁平/纯色插画（卡通、logo、矢量壁纸）必须走 flat，
   // 否则 DoG+骨架管线会把色块边缘碎成一堆小圈（实测：同一张 AT 壁纸 flat 6 条 vs arc 83 条）
@@ -216,7 +220,13 @@ function traceImage(args) {
     // 2026-09-23: 掩膜来源 —— auto=墨线稿/扫描件自动走墨迹阈值,照片/彩图走 DoG 边缘
     maskMode: ['auto', 'dog', 'ink'].includes(String(args.mask || 'auto').toLowerCase()) ? String(args.mask || 'auto').toLowerCase() : 'auto',
     inkGamma: num(args.inkGamma, 1),   // ink 掩膜提亮指数（默认 1=不变；0.5=更干净但浅排线更狠）
+    toneLevels: num(args.levels, 4), toneMinArea: num(args.minArea, 0.15),   // 2026-10-04: tone 档分层数/每层最小面积(%)
+    sauvolaWindow: (args.window == null ? null : num(args.window, 0)), sauvolaK: (args.k == null ? undefined : num(args.k, 0.2))
   };
+  // 2026-10-04: 可选增强开关（仅显式传参时注入，line 档在引擎侧走默认）
+  if (args.adaptive !== undefined) opts.adaptive = (args.adaptive === true || args.adaptive === 1);
+  if (args.autotune !== undefined) opts.autotune = (args.autotune === true || args.autotune === 1);
+  if (args.denoise !== undefined) opts.denoise = (args.denoise === true || args.denoise === 1);
   const ext = path.extname(p).toLowerCase();
   // PNG/BMP 本引擎自带解码；其他格式（jpg/gif/tif/webp…）走插件 exportImageGray（GDI+ 全格式）
   const nativeOk = ext === '.png' || ext === '.bmp';
@@ -225,7 +235,7 @@ function traceImage(args) {
   const finish = (r) => {
     const realMode = (r.stats && r.stats.mode) || mode;
     const realLayer = args.layer ? String(args.layer) : ('TRACE_' + String(realMode).toUpperCase());
-    for (const it of r.items) it.layer = realLayer;
+    for (const it of r.items) { if (!it.layer || it.layer === layer) it.layer = realLayer; }   // 2026-10-04: 保留 tone 的逐色图层
     const base = path.basename(p).replace(/\.[^.]+$/, '').slice(0, 40).replace(/[^\w.\u4e00-\u9fa5-]/g, '_');
     const outPath = resolveWritePath(path.join(getAgentWorkDir(), 'trace-' + base + '-' + realMode + '.json'));
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -235,7 +245,10 @@ function traceImage(args) {
       stats: r.stats,
       autoMode: (r.stats && r.stats.autoMode) || autoMode || undefined, imageKind: kindInfo || undefined,
     };
-    if (args.draw === true || args.draw === 1) return drawItems(r.items, realLayer, res, { fill: args.fill, pattern: args.fillPattern });
+    // 2026-10-04: tone 档默认『轮廓+填充』（可用 fill:false 关掉）
+    const toneFill = String(realMode).toLowerCase() === 'tone' && args.fill !== false && args.fill !== 0;
+    const fillWant = args.fill === true || args.fill === 1 || toneFill;
+    if (args.draw === true || args.draw === 1) return drawItems(r.items, realLayer, res, { fill: fillWant, pattern: args.fillPattern });
     res.note = '已生成矢量路径 JSON（未画入 CAD）。要落地请再调 traceImage 同参数 + draw:true。';
     return res;
   };
@@ -273,6 +286,17 @@ async function hasBatchImport() {
 }
 
 // 落地：优先批量一次事务；否则逐条 createPolyline
+// 2026-10-04: 整块 INTERNAL_ERROR 时逐项重试，跳过坏 loop
+async function fillOneByOne(closed, i, CH, res, layer, fillOpts) {
+  const cadCall = require('./cad-tools.js').cadCall;
+  for (const it of closed.slice(i, i + CH)) {
+    try {
+      const rr = await cadCall('importHatches', { items: [{ loops: [{ points: it.points }], color: it.color, layer: it.layer || layer, pattern: (fillOpts && fillOpts.pattern) || undefined }], layer }, 60000);
+      const m = rr && rr.result ? rr.result : null;
+      if (m && m.created) res.drawn.ok += m.created; else { res.drawn.fail++; if (res.drawn.samples.length < 3) res.drawn.samples.push('bad loop @' + it.layer); }
+    } catch (e) { res.drawn.fail++; if (res.drawn.samples.length < 3) res.drawn.samples.push('bad loop: ' + String(e.message).slice(0, 80)); }
+  }
+}
 async function drawItems(items, layer, res, fillOpts) {
   const cadCall = require('./cad-tools.js').cadCall;
   const useFill = !!(fillOpts && (fillOpts.fill === true || fillOpts.fill === 1));
@@ -280,21 +304,30 @@ async function drawItems(items, layer, res, fillOpts) {
   try { await cadCall('createLayer', { name: layer, color: 3 }, 20000); } catch (_) { /* 图层已存在 */ }
 
   if (useFill) {
-    // 2026-09-23: 填充落地（importHatches 批量，一次事务）—— 只填闭合路径；item.color 透传
     const closed = items.filter((it) => it.closed && Array.isArray(it.points) && it.points.length >= 3);
-    const CH = 200;
-    for (let i = 0; i < closed.length; i += CH) {
-      const chunk = closed.slice(i, i + CH).map((it) => ({
-        loops: [{ points: it.points, bulges: it.bulges }],
-        color: it.color, layer: it.layer || layer,
-        pattern: fillOpts.pattern || undefined,
-      }));
+    // 2026-10-04: 按图层聚合为『多层环』填充（每色一层、含孔洞岛）——避免逐环 hatch 把孔洞填死、互相遮挡
+    const byLayer = new Map();
+    for (const it of closed) { const ln = it.layer || layer; let g = byLayer.get(ln); if (!g) { g = { color: it.color, loops: [] }; byLayer.set(ln, g); } g.loops.push(it.points); }
+    const layerOrder = [...byLayer.keys()].sort((a, b) => Number((b.match(/(\d+)$/) || [0, 0])[1]) - Number((a.match(/(\d+)$/) || [0, 0])[1]));   // 浅→深
+    for (const ln of layerOrder) {
+      const g = byLayer.get(ln);
+      try { await cadCall('createLayer', { name: ln, color: 7 }, 20000); } catch (_) { /* 已存在 */ }
+      let ok = false;
       try {
-        const rr = await cadCall('importHatches', { items: chunk, layer, pattern: fillOpts.pattern || undefined }, 180000);
+        const rr = await cadCall('importHatches', { items: [{ loops: g.loops.map((p) => ({ points: p })), color: g.color, layer: ln, pattern: fillOpts.pattern || undefined }], layer: ln }, 180000);
         const m = rr && rr.result ? rr.result : null;
-        if (m) { res.drawn.ok += m.created || 0; res.drawn.fail += m.failed || 0; if (Array.isArray(m.failedSamples) && res.drawn.samples.length < 3) res.drawn.samples.push(...m.failedSamples.slice(0, 3)); }
-        else { res.drawn.fail += chunk.length; if (res.drawn.samples.length < 3) res.drawn.samples.push(JSON.stringify((rr && rr.error) || rr).slice(0, 160)); }
-      } catch (e) { res.drawn.fail += chunk.length; if (res.drawn.samples.length < 3) res.drawn.samples.push(String(e.message).slice(0, 160)); }
+        if (m) { res.drawn.ok += m.created || 0; res.drawn.fail += m.failed || 0; ok = true; }
+      } catch (e) { /* 整层失败 → 逐环回退 */ }
+      if (!ok) {
+        for (const p of g.loops) {
+          let done = false;
+          try { const rr2 = await cadCall('importHatches', { items: [{ loops: [{ points: p }], color: g.color, layer: ln }], layer: ln }, 60000); const m2 = rr2 && rr2.result ? rr2.result : null; if (m2 && m2.created) { res.drawn.ok += m2.created; done = true; } } catch (e2) { /* fall */ }
+          if (!done) {
+            // 2026-10-04: hatch 拒不收的小环 → 改画闭合多段线（不填）
+            /* 2026-10-04: 极小环不画多段线（Bro: 画蛇添足）→ 直接跳过 */ res.drawn.fail += 1;
+          }
+        }
+      }
     }
     res.drawn.batched = true;
     res.drawn.skipped = items.length - closed.length;
@@ -314,7 +347,7 @@ async function drawItems(items, layer, res, fillOpts) {
             res.drawn.layerMismatch = m.layers;
           }
         }
-        else { res.drawn.fail += chunk.length; if (res.drawn.samples.length < 3) res.drawn.samples.push(JSON.stringify((rr && rr.error) || rr).slice(0, 160)); }
+        else { await fillOneByOne(closed, i, CH, res, layer, fillOpts); }
       } catch (e) {
         res.drawn.fail += chunk.length;
         if (res.drawn.samples.length < 3) res.drawn.samples.push(String(e.message).slice(0, 160));
@@ -421,7 +454,7 @@ const FILE_TOOLS = [
     type: 'function',
     function: {
       name: 'traceImage',
-      description: '把位图（PNG/BMP/JPEG/GIF/TIFF/WEBP）自动描摹成 CAD 矢量线条——用户贴图要求"画进 CAD/描成线条/照这个画"时用。mode 选择：flat=色块区域(★扁平/纯色插画：卡通、logo、矢量风壁纸——线最少效果最好) / arc=圆弧拟合(线稿、手绘、照片风格) / centerline=骨架细线(要能继续编辑) / outline=描边(保笔画粗细) / posterize=全色块(含背景)。不传 mode 会按图片类型自动判定：扁平/纯色→flat；白底线稿/扫描件且含大块实心墨→outline（外轮廓更接近原画，实测优于中心线）；其余→arc。默认只生成路径 JSON；要画进图纸**直接带 draw:true**——工具会自己建图层、一次画完并回报成功/失败数（不要自己循环 createPolyline）。非 PNG/BMP 会自动走插件 exportImageGray 解码。fill:true 时改为把每条闭合路径**填充**落地（走 importHatches；色块图/扁平插画用，可用 fillPattern 指定图案名如 ANSI31，默认 SOLID 实体填充）。mask 参数（默认 auto）控制掩膜来源：auto 会在“明亮纸张背景 + 墨迹比例适中”的图（墨线稿/扫描件/白底手绘）上自动改用墨迹阈值，其余（照片/彩图）走边缘检测；可直接传 ink（强制墨迹阈值，适合白底线稿/扫描件）或 dog（强制边缘检测）。',
+      description: '把位图（PNG/BMP/JPEG/GIF/TIFF/WEBP）自动描摹成 CAD 矢量线条——用户贴图要求"画进 CAD/描成线条/照这个画"时用。mode 选择：flat=色块区域(★扁平/纯色插画：卡通、logo、矢量风壁纸——线最少效果最好) / arc=圆弧拟合(线稿、手绘、照片风格) / centerline=骨架细线(要能继续编辑) / outline=描边(保笔画粗细) / posterize=全色块(含背景)。不传 mode 会按图片类型自动判定：扁平/纯色→flat；白底线稿/扫描件且含大块实心墨→outline（外轮廓更接近原画，实测优于中心线）；其余→arc。默认只生成路径 JSON；要画进图纸**直接带 draw:true**——工具会自己建图层、一次画完并回报成功/失败数（不要自己循环 createPolyline）。非 PNG/BMP 会自动走插件 exportImageGray 解码。fill:true 时改为把每条闭合路径**填充**落地（走 importHatches；色块图/扁平插画用，可用 fillPattern 指定图案名如 ANSI31，默认 SOLID 实体填充）。mask 参数（默认 auto）控制掩膜来源：auto 会在“明亮纸张背景 + 墨迹比例适中”的图（墨线稿/扫描件/白底手绘）上自动改用墨迹阈值，其余（照片/彩图）走边缘检测；可直接传 ink（强制墨迹阈值，适合白底线稿/扫描件）或 dog（强制边缘检测）。另有两档增强：line=线稿增强（中值降噪 + Sauvola 局部自适应阈值，适合脏扫描/光照不均的线稿）；tone=明暗分层（灰度 k-means 分层 → 每层轮廓，draw 时默认按层填色填充，fill:false 可关；适合连续调/照片/灰度图）。autotune:true 会用「覆盖率/精度」自动挑最优管线与参数（推荐，略慢）。**两种输出形态都保留、由用户选**：要"描成线"→ 线稿多段线（line/arc/outline/centerline）；要"色块/明暗分层"→ tone（分层平涂：每个色阶一个 CAD 图层 + 填充，可逐层开关）。不确定时问用户要哪种。',
       parameters: {
         type: 'object',
         properties: {

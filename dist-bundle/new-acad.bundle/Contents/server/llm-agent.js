@@ -268,7 +268,7 @@ const SYSTEM_PROMPT = `你当前在 CAD 面板会话（channel=cad-panel）。
    提示用户"回复 继续 可接着做"（会话历史保留）
 
 📁 本地文件工具（readFile / listDir / writeFile / deleteFile / readImage / traceImage + 插件 writeTextFile）：
-- traceImage: **位图 → CAD 矢量线条**（用户贴图说"画进 CAD/照着描/变成线条"时用它）。**mode 可以不传**（自动判定：扁平/纯色/卡通/logo/矢量壁纸 → flat；白底线稿/扫描件（含实心墨块）→ outline 保外轮廓；其余 → arc）。要指定：flat=色块区域(★扁平图首选，线最少最好看) / arc=圆弧拟合 / centerline=骨架细线(好编辑) / outline=描边(保笔画) / posterize=全色块含背景。掩膜来源可传 mask（默认 auto：白底线稿/扫描件走墨迹阈值，照片/彩图走边缘检测）。要落地**直接 draw:true**（工具自己建图层、批量画完报成功/失败），**别自己循环 createPolyline**；scaleTo 默认缩到宽 100、offsetX/Y 避让已有图形。支持 PNG/BMP/JPEG/GIF/TIFF/WEBP（非 PNG/BMP 自动走插件 exportImageGray 解码，webp 走 WIC）。❌ 禁用"手工猜坐标逐条 createPolyline" —— 那是烧轮次还不准
+- traceImage: **位图 → CAD 矢量线条**（用户贴图说"画进 CAD/照着描/变成线条"时用它）。**mode 可以不传**（自动判定：扁平/纯色/卡通/logo/矢量壁纸 → flat；白底线稿/扫描件（含实心墨块）→ outline 保外轮廓；其余 → arc）。要指定：flat=色块区域(★扁平图首选，线最少最好看) / arc=圆弧拟合 / centerline=骨架细线(好编辑) / outline=描边(保笔画) / posterize=全色块含背景。掩膜来源可传 mask（默认 auto：白底线稿/扫描件走墨迹阈值，照片/彩图走边缘检测）。要落地**直接 draw:true**（工具自己建图层、批量画完报成功/失败），**别自己循环 createPolyline**；scaleTo 默认缩到宽 100、offsetX/Y 避让已有图形。支持 PNG/BMP/JPEG/GIF/TIFF/WEBP（非 PNG/BMP 自动走插件 exportImageGray 解码，webp 走 WIC）。另有 line（线稿增强：降噪+Sauvola 局部自适应阈值）/ tone（明暗分层：每层轮廓+默认填色）两档可选；连续调/照片用 tone，别用 arc 硬描。**tone=分层平涂（每色阶一个 CAD 图层+填充，可逐层开关）；line/arc/outline=纯多段线（描线）。两种都保留，问用户要哪种**。❌ 禁用"手工猜坐标逐条 createPolyline" —— 那是烧轮次还不准
 - 🖼️ **图片 / 扫描稿 → CAD 分诊（先判定再动手，别跳）**：用户给图或给路径要求画进图纸时，先看图上有什么：
   ①**有尺寸标注** → 走「标注驱动重建」：**先列尺寸表**（每段/总长/门窗位置，落 JSON）→ 尺寸链闭合自检（分段和=总长）→ 不确定的项问用户 → 按真实尺寸画（x=0 锚点+相对尺寸）→ 画完回读量一遍对账。**不许照像素描**
   ②**无标注但有标定线索**（图框比例尺 1:100 / 网格 / 坐标标注）→ 用线索标定后重建

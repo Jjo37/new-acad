@@ -474,6 +474,62 @@ function detectImageKind(img) {
 }
 
 // ---------------------------------------------------------------- 几何
+// Chaikin 角切平滑（去台阶锯齿，保整体形状）
+function chaikin(pts, iters) {
+  let p = pts;
+  for (let it = 0; it < iters; it++) {
+    if (p.length < 3) return p;
+    const q = [p[0]];
+    for (let i = 0; i < p.length - 1; i++) {
+      const a = p[i], b = p[i + 1];
+      q.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+      q.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+    }
+    q.push(p[p.length - 1]);
+    p = q;
+  }
+  return p;
+}
+
+// 最小二乘三次贝塞尔曲线拟合（Schneider 风格"固定端点+递归分裂"）——把折线换成平滑曲线，再按弧长采样回折线
+function bpt(b, u) { const m = 1 - u, a = m * m * m, bq = 3 * u * m * m, c = 3 * u * u * m, d = u * u * u; return [a * b[0][0] + bq * b[1][0] + c * b[2][0] + d * b[3][0], a * b[0][1] + bq * b[1][1] + c * b[2][1] + d * b[3][1]]; }
+function fitCubicLS(p, i0, i1, tol, depth, out) {
+  const n = i1 - i0 + 1;
+  if (n < 2) return;
+  if (n === 2) { out.push([p[i0], [p[i0][0], p[i0][1]], [p[i1][0], p[i1][1]], p[i1]]); return; }
+  const u = [0];
+  for (let i = i0 + 1; i <= i1; i++) u.push(u[u.length - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  const L = u[u.length - 1] || 1; for (let i = 0; i < u.length; i++) u[i] /= L;
+  let A11 = 0, A12 = 0, A22 = 0, X1x = 0, X2x = 0, X1y = 0, X2y = 0;
+  for (let i = 0; i < u.length; i++) {
+    const uu = u[i], m = 1 - uu; const a1 = 3 * uu * m * m, a2 = 3 * uu * uu * m, a0 = m * m * m, a3 = uu * uu * uu;
+    A11 += a1 * a1; A12 += a1 * a2; A22 += a2 * a2;
+    const qx = p[i0 + i][0] - (a0 * p[i0][0] + a3 * p[i1][0]), qy = p[i0 + i][1] - (a0 * p[i0][1] + a3 * p[i1][1]);
+    X1x += a1 * qx; X2x += a2 * qx; X1y += a1 * qy; X2y += a2 * qy;
+  }
+  const det = A11 * A22 - A12 * A12;
+  let c1x, c1y, c2x, c2y;
+  if (Math.abs(det) < 1e-9) { c1x = p[i0][0]; c1y = p[i0][1]; c2x = p[i1][0]; c2y = p[i1][1]; }
+  else { c1x = (X1x * A22 - A12 * X2x) / det; c1y = (X1y * A22 - A12 * X2y) / det; c2x = (A11 * X2x - A12 * X1x) / det; c2y = (A11 * X2y - A12 * X1y) / det; }
+  const bez = [p[i0], [c1x, c1y], [c2x, c2y], p[i1]];
+  let maxD = 0, split = i0 + (n >> 1);
+  for (let i = 0; i < u.length; i++) { const q = bpt(bez, u[i]); const d = Math.hypot(q[0] - p[i0 + i][0], q[1] - p[i0 + i][1]); if (d > maxD) { maxD = d; split = i0 + i; } }
+  if (maxD <= tol || depth >= 8 || n < 4 || split <= i0 || split >= i1) { out.push(bez); return; }
+  fitCubicLS(p, i0, split, tol, depth + 1, out);
+  fitCubicLS(p, split, i1, tol, depth + 1, out);
+}
+function bezierFlatten(pts, tol, step) {
+  const segs = []; fitCubicLS(pts, 0, pts.length - 1, tol, 0, segs);
+  const out = [];
+  for (const b of segs) {
+    let len = 0, prev = b[0];
+    for (let i = 1; i <= 16; i++) { const q = bpt(b, i / 16); len += Math.hypot(q[0] - prev[0], q[1] - prev[1]); prev = q; }
+    const k = Math.max(1, Math.min(48, Math.round(len / (step || 1))));
+    for (let i = 0; i <= k; i++) { if (out.length && i === 0) continue; out.push(bpt(b, i / k)); }
+  }
+  return out;
+}
+
 function rdpIdx(pts, eps) {
   const n = pts.length;
   if (n < 3) return [...Array(n).keys()];
@@ -537,6 +593,229 @@ function fillHoles(mask, w, h, maxArea) {
   return out;
 }
 
+// 2026-10-04 · A 描线 / B 明暗块 增强 --------------------------------------------------
+
+// 中值滤波 3x3（去散点噪，保边）
+function medianFilter(g, w, h) {
+  const out = new Uint8Array(w * h);
+  const win = new Uint8Array(9);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      win[n++] = g[ny * w + nx];
+    }
+    for (let i = 1; i < n; i++) { const v = win[i]; let j = i - 1; while (j >= 0 && win[j] > v) { win[j + 1] = win[j]; j--; } win[j + 1] = v; }
+    out[y * w + x] = win[n >> 1];
+  }
+  return out;
+}
+
+// Sauvola 局部自适应阈值 → 墨掩膜（积分图，O(1)/px）。抗光照不均/连续调/脏扫描。
+function sauvolaMask(g, w, h, winSize, k) {
+  const R = 128, W1 = w + 1;
+  const sum = new Float64Array(W1 * (h + 1)), sum2 = new Float64Array(W1 * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let rs = 0, rs2 = 0;
+    for (let x = 0; x < w; x++) {
+      const v = g[y * w + x]; rs += v; rs2 += v * v;
+      sum[(y + 1) * W1 + (x + 1)] = sum[y * W1 + (x + 1)] + rs;
+      sum2[(y + 1) * W1 + (x + 1)] = sum2[y * W1 + (x + 1)] + rs2;
+    }
+  }
+  const r = Math.max(1, winSize >> 1);
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r);
+    const x1 = Math.min(w - 1, x + r), y1 = Math.min(h - 1, y + r);
+    const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+    const s1 = sum[(y1 + 1) * W1 + (x1 + 1)] - sum[y0 * W1 + (x1 + 1)] - sum[(y1 + 1) * W1 + x0] + sum[y0 * W1 + x0];
+    const s2 = sum2[(y1 + 1) * W1 + (x1 + 1)] - sum2[y0 * W1 + (x1 + 1)] - sum2[(y1 + 1) * W1 + x0] + sum2[y0 * W1 + x0];
+    const m = s1 / area;
+    const sd = Math.sqrt(Math.max(0, s2 / area - m * m));
+    const T = m * (1 + k * (sd / R - 1));
+    mask[y * w + x] = g[y * w + x] < T ? 1 : 0;
+  }
+  return mask;
+}
+
+// 一维 k-means 灰度分层
+function kmeansLevels(g, w, h, L) {
+  const n = g.length;
+  const centers = new Float64Array(L);
+  for (let i = 0; i < L; i++) centers[i] = (i + 0.5) * 255 / L;
+  const assign = new Int16Array(n);
+  for (let it = 0; it < 12; it++) {
+    let moved = 0;
+    const sum = new Float64Array(L), cnt = new Float64Array(L);
+    for (let i = 0; i < n; i++) {
+      let best = 0, bd = Infinity;
+      for (let c = 0; c < L; c++) { const d = Math.abs(g[i] - centers[c]); if (d < bd) { bd = d; best = c; } }
+      if (assign[i] !== best) { assign[i] = best; moved++; }
+      sum[best] += g[i]; cnt[best]++;
+    }
+    for (let c = 0; c < L; c++) if (cnt[c]) centers[c] = sum[c] / cnt[c];
+    if (!moved) break;
+  }
+  return { cls: assign, centers };
+}
+
+// 3x3 众数标签平滑（去孤立/散点，保大块）
+function majorityLabels(cls, w, h, L) {
+  const out = new Int16Array(w * h);
+  const cnt = new Int16Array(L + 1);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    cnt.fill(0);
+    let bestL = cls[y * w + x], bestN = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const l = cls[ny * w + nx]; cnt[l]++;
+    }
+    for (let l = 0; l < L; l++) if (cnt[l] > bestN) { bestN = cnt[l]; bestL = l; }
+    out[y * w + x] = bestL;
+  }
+  return out;
+}
+
+// 全部轮廓 = 前景外轮廓 + 被前景包围的孔洞轮廓（maskContours 只给外轮廓，填充会填死孔洞）
+function allContours(mask, w, h) {
+  const out = maskContours(mask, w, h);
+  const inv = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) inv[i] = mask[i] ? 0 : 1;
+  const lc = labelComponents(inv, w, h);
+  const border = new Set();
+  for (let x = 0; x < w; x++) { border.add(lc.lab[x]); border.add(lc.lab[(h - 1) * w + x]); }
+  for (let y = 0; y < h; y++) { border.add(lc.lab[y * w]); border.add(lc.lab[y * w + w - 1]); }
+  const holes = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) if (inv[i] && !border.has(lc.lab[i])) holes[i] = 1;
+  for (const c of maskContours(holes, w, h)) out.push(c);
+  return out;
+}
+
+// tone（B）：灰度/颜色分层 → 每层轮廓（含孔洞，带代表色）
+// 区域合并：颜色量化→连通域→按颜色相近贪心合并到目标块数（2026-10-04）
+// 区域合并（Felzenszwalb & Huttenlocher 2004，抗链式）：边按权重升序，w<=min(Int+k/|C|) 才合并
+function regionMerge(g, w, h, k, minSize) {
+  const n = w * h;
+  const edges = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (x > 0) edges.push([Math.abs(g[i] - g[i - 1]), i, i - 1]); if (y > 0) edges.push([Math.abs(g[i] - g[i - w]), i, i - w]); }
+  edges.sort((a, b) => a[0] - b[0]);
+  const par = new Int32Array(n); for (let i = 0; i < n; i++) par[i] = i;
+  const sz = new Int32Array(n).fill(1);
+  const intd = new Float64Array(n);
+  const find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  const K = k == null ? 100 : k;
+  for (const e of edges) {
+    const wt = e[0]; let ra = find(e[1]), rb = find(e[2]);
+    if (ra === rb) continue;
+    const tau1 = K / sz[ra], tau2 = K / sz[rb];
+    if (wt <= Math.min(intd[ra] + tau1, intd[rb] + tau2)) {
+      if (sz[ra] < sz[rb]) { par[ra] = rb; sz[rb] += sz[ra]; intd[rb] = Math.max(intd[rb], intd[ra], wt); }
+      else { par[rb] = ra; sz[ra] += sz[rb]; intd[ra] = Math.max(intd[ra], intd[rb], wt); }
+    }
+  }
+  const minS = minSize || 0;
+  if (minS > 0) {
+    for (const e of edges) { let ra = find(e[1]), rb = find(e[2]); if (ra === rb) continue; if (sz[ra] < minS || sz[rb] < minS) { if (sz[ra] < sz[rb]) { par[ra] = rb; sz[rb] += sz[ra]; } else { par[rb] = ra; sz[ra] += sz[rb]; } } }
+  }
+  const map = new Int32Array(n).fill(-1); let N = 0; const out = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const r = find(i); if (map[r] < 0) map[r] = N++; out[i] = map[r]; }
+  return out;
+}
+
+// crack-following：在标签图上追区域边界，相邻区共用边（无缝 tiling）——2026-10-04
+function labelLoops(lab, w, h) {
+  const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? -100000 : lab[y * w + x];
+  const groups = new Map();
+  function addEdge(label, x, y, d) { let m = groups.get(label); if (!m) { m = new Map(); groups.set(label, m); } const k = x + ',' + y; let a = m.get(k); if (!a) { a = []; m.set(k, a); } a.push(d); }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const L2 = lab[y * w + x];
+    if (at(x, y - 1) !== L2) addEdge(L2, x, y, 0);
+    if (at(x + 1, y) !== L2) addEdge(L2, x + 1, y, 1);
+    if (at(x, y + 1) !== L2) addEdge(L2, x + 1, y + 1, 2);
+    if (at(x - 1, y) !== L2) addEdge(L2, x, y + 1, 3);
+  }
+  const loops = [];
+  for (const [label, m] of groups) {
+    const used = new Set();
+    for (const [k, dirs] of m) for (let di = 0; di < dirs.length; di++) {
+      if (used.has(k + '#' + di)) continue;
+      const loop = []; let curK = k, curDi = di, guard = 0;
+      while (guard++ < 5000000) {
+        const eid = curK + '#' + curDi;
+        if (used.has(eid)) break;
+        used.add(eid);
+        const pp = curK.split(','); const vx = Number(pp[0]), vy = Number(pp[1]);
+        const d = m.get(curK)[curDi];
+        loop.push([vx, vy]);
+        const nx = vx + D[d][0], ny = vy + D[d][1], nk = nx + ',' + ny;
+        const nd = m.get(nk); if (!nd) break;
+        let pick = -1;
+        for (const pref of [1, 0, 3, 2]) { const want = (d + pref) % 4; const idx = nd.indexOf(want); if (idx >= 0 && !used.has(nk + '#' + idx)) { pick = idx; break; } }
+        if (pick < 0) break;
+        curK = nk; curDi = pick;
+      }
+      if (loop.length > 2) loops.push({ label, pts: loop });
+    }
+  }
+  return loops;
+}
+
+// 把自交环拆成多个简单环（crack 边界在掐点会自交，hatch 拒绝）
+function splitLoop(pts) {
+  const out = []; const stack = []; const pos = new Map();
+  const key = (p) => p[0] + ',' + p[1];
+  for (const p of pts) {
+    const k = key(p);
+    if (pos.has(k)) {
+      const i = pos.get(k);
+      if (stack.length - i > 2) out.push(stack.slice(i));
+      for (let j = i; j < stack.length; j++) pos.delete(key(stack[j]));
+      stack.length = i;
+    }
+    pos.set(k, stack.length); stack.push(p);
+  }
+  if (stack.length > 2) out.push(stack);
+  return out;
+}
+
+function toneChains(img, g0, w, h, o) {
+  const Lv = Math.max(2, Math.min(8, o.toneLevels || 4));
+  const g = g0 || (img.gray ? img.gray : toGray(img));
+  let cls;
+  if (o.toneK > 0) { const gb = o.toneBlur > 0 ? blur(g, w, h, o.toneBlur) : g; cls = regionMerge(gb, w, h, o.toneK, o.toneMinSize || 20); }
+  else { const km = kmeansLevels(g, w, h, Lv); cls = (o.toneMajority === false) ? km.cls : majorityLabels(km.cls, w, h, Lv); }
+  let K = 0; for (let i = 0; i < w * h; i++) if (cls[i] + 1 > K) K = cls[i] + 1;
+  const acc = Array.from({ length: K }, () => [0, 0, 0, 0]);
+  for (let i = 0; i < w * h; i++) {
+    const c = cls[i], a = acc[c];
+    if (img.rgb) { a[0] += img.rgb[i * 3]; a[1] += img.rgb[i * 3 + 1]; a[2] += img.rgb[i * 3 + 2]; }
+    else { const v = g[i]; a[0] += v; a[1] += v; a[2] += v; }
+    a[3]++;
+  }
+  let bg = -1, maxc = -1;
+  for (let c = 0; c < K; c++) if (acc[c][3] > maxc) { maxc = acc[c][3]; bg = c; }
+  const colors = acc.map((a) => a[3] ? [Math.round(a[0] / a[3]), Math.round(a[1] / a[3]), Math.round(a[2] / a[3])] : [128, 128, 128]);
+  const minArea = ((o.toneMinArea == null ? 0.02 : o.toneMinArea) / 100) * w * h;
+  const loops = labelLoops(cls, w, h);   // 2026-10-04: crack-following —— 相邻区共享边界，无缝
+  const chains = [];
+  for (const lp of loops) {
+    const c = lp.label;
+    if (c === bg && !o.keepBackground && acc[c][3] > 0.5 * w * h) continue;
+    for (const pts of splitLoop(lp.pts)) {
+      if (pts.length < 3) continue;
+      { let a2 = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a2 += p[0] * q[1] - q[0] * p[1]; } if (Math.abs(a2 / 2) < Math.max(minArea, 4)) continue; }   // 2026-10-04: 退化/细碎环给 hatch 会崩，硬地板 4px²
+      pts.__color = colors[c];
+      pts.__areaRatio = acc[c][3] / (w * h);
+      chains.push(pts);
+    }
+  }
+  return chains;
+}
+
 function chooseMaskMode(g, w, h) {
   const t = otsu(g);
   const n = g.length;
@@ -545,6 +824,21 @@ function chooseMaskMode(g, w, h) {
   const darkFrac = dark / n, lightFrac = light / n;
   return (lightFrac > 0.30 && darkFrac > 0.02 && darkFrac < 0.55) ? 'ink' : 'dog';
 }
+
+// 2026-10-04: 用"差异图"给描摹结果打分（与 tools/trace-preview 同口径）：ink=g<150，线像素 ±2px 内命中
+function scoreDetail(g, W, H, items, S) {
+  const line = new Uint8Array(W * H);
+  const inv = 1 / S;
+  const put = (x, y) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) line[y * W + x] = 1; };
+  for (const it of items) { const p = it.points; for (let i = 0; i < p.length - 1; i++) { const x0 = p[i][0] * inv, y0 = H - p[i][1] * inv, x1 = p[i + 1][0] * inv, y1 = H - p[i + 1][1] * inv; const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); const st = n > 3000 ? 2 : 1; for (let k = 0; k <= n; k += st) { const t = n ? k / n : 0; put(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t); } } }
+  const dil = new Uint8Array(W * H); const R = 2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (!line[y * W + x]) continue; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < W && ny < H) dil[ny * W + nx] = 1; } }
+  let ink = 0, hit = 0, ln = 0, on = 0;
+  for (let i = 0; i < W * H; i++) { const isInk = g[i] < 150; if (isInk) { ink++; if (dil[i]) hit++; } if (line[i]) { ln++; if (isInk) on++; } }
+  const rc = ink ? hit / ink : 0, pr = ln ? on / ln : 0;
+  return { f1: (rc + pr) ? 2 * rc * pr / (rc + pr) : 0, rc: Math.round(rc * 1000) / 1000, pr: Math.round(pr * 1000) / 1000, paths: items.length };
+}
+function scoreItems(g, W, H, items, S) { return scoreDetail(g, W, H, items, S).f1; }
 
 function traceImage(opts) {
   const o = Object.assign({
@@ -555,34 +849,111 @@ function traceImage(opts) {
     maskMode: 'auto',   // 2026-09-23: 'auto'|'dog'(边缘,照片/彩图) |'ink'(墨迹阈值,墨线稿/扫描件)
     inkGamma: 1,   // 2026-09-23: ink 掩膜提亮指数（1=默认不变；0.5=提亮中灰/压网点，实测精度+15.6pp 但浅排线易断）
     open: null, fill: null,   // 2026-09-23: 掩膜清理——open=开运算半径(去毛刺/碎点), fill=填充孔洞上限px; null=按掩膜类型自动
+    denoise: false,     // 2026-10-04: 前端中值降噪（line 档默认开）
+    adaptive: false,    // 2026-10-04: Sauvola 局部自适应阈值（line 档默认开）
+    sauvolaWindow: null, sauvolaK: 0.2,   // 2026-10-04: 自适应阈值窗口(奇数 px, 默认 min(w,h)/8) 与灵敏度 k
+    toneLevels: 4, toneMinArea: 0.15,     // 2026-10-04: tone 档分层数 / 每层最小面积(%)
+    toneK: 0, toneMinSize: 20, toneBlur: 0,   // 2026-10-04: 区域合并（Felzenszwalb）尺度 k / 最小块 / 预模糊 sigma
+    smooth: 0,   // 2026-10-04: Chaikin 平滑遍数（去台阶锯齿；line/tone 默认 2）
+    fit: null,   // 2026-10-04: 'bezier'=曲线拟合输出（默认折线 RDP）
+    autotune: false,   // 2026-10-04: 用差异 F1 自动选最优管线/参数
+    inkPercentile: null,   // 2026-10-04: ink 掩膜按占比定阈值（0~1）；直接控制描多描少
+    inset: 0,   // 2026-10-04: 轮廓内缩像素（outline 贴合墨侧，提精度）
+
   }, opts || {});
+
+  // 2026-10-04: 新增档位 —— line（A 描线增强）/ tone（B 明暗块，分层+填色）
+  if (o.mode === 'line') {
+    if (opts.maskMode == null || opts.maskMode === 'auto') o.maskMode = 'ink';
+    if (opts.adaptive == null) o.adaptive = true;
+    if (opts.denoise == null) o.denoise = true;
+  }
+  if (o.mode === 'line' && opts.smooth == null) o.smooth = 2;
+  if (o.mode === 'tone') { if (opts.smooth == null) o.smooth = 0; if (opts.simplify == null) o.simplify = 0; if (opts.minLength == null) o.minLength = 0; }
 
   let img;
   if (o.gray) { img = { w: o.gray.w, h: o.gray.h, rgb: null, gray: Uint8Array.from(o.gray.data) }; }
   else img = loadImage(o.input);
   const w0 = img.w, h0 = img.h;
+
+  // 2026-10-04: autotune —— 用"差异图"F1 当目标，跑候选择优（在缩略工作分辨率上打分，快）
+  if (o.autotune) {
+    const g0 = img.gray ? img.gray : toGray(img);
+    const S0 = o.scaleTo > 0 ? o.scaleTo / w0 : 1;
+    const grayArg = { w: w0, h: h0, data: g0 };
+    // 生成候选：模式 × 阈值 × 降噪 × speck × 长度 × 内缩 × 闭运算
+    const CANDS = [];
+    for (const mode of ['outline', 'line']) {
+      for (const dn of [true, false]) {
+        for (const sp of [8, 30]) {
+          for (const ml of [8, 16]) {
+            for (const ins of [0, 1]) {
+              for (const cl of [0, 1]) {
+                const baseC = { mode, maskMode: 'ink', denoise: dn, speck: sp, minLength: ml, inset: ins, close: cl };
+                CANDS.push(Object.assign({}, baseC, { adaptive: true }));
+                CANDS.push(Object.assign({}, baseC, { adaptive: false, inkPercentile: 0.4 }));
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const sp of [16, 30]) {
+      CANDS.push({ mode: 'outline', maskMode: 'dog', denoise: true, speck: sp, minLength: 12 });
+      CANDS.push({ mode: 'line', maskMode: 'dog', denoise: true, speck: sp, minLength: 12 });
+    }
+    CANDS.push({ mode: 'tone', toneLevels: 3 });
+    CANDS.push({ mode: 'tone', toneLevels: 4 });
+    CANDS.push({ mode: 'tone', toneLevels: 5 });
+    let best = null, bestF = -1;
+    for (const cd of CANDS) {
+      let r; try { r = traceImage(Object.assign({}, o, cd, { autotune: false, input: null, gray: grayArg, maxWorkSide: 500, offsetX: 0, offsetY: 0 })); } catch (e) { continue; }
+      const f = scoreItems(g0, w0, h0, r.items, S0);
+      if (f > bestF) { bestF = f; best = cd; }
+    }
+    if (best) Object.assign(o, best);
+    o.autotune = false; o.__picked = best; o.__pickedF1 = Math.round(bestF * 1000) / 1000;
+  }
   // 2026-09-22: 工作分辨率上限（默认 1600）——大图降采样后再检测/细化，顺手磨平锯齿
   const maxWork = o.maxWorkSide == null ? 1600 : o.maxWorkSide;
   const fx = (maxWork > 0 && Math.max(w0, h0) > maxWork) ? Math.ceil(Math.max(w0, h0) / maxWork) : 1;
   if (fx > 1) img = downscaleImage(img, fx);
   const w = img.w, h = img.h;
-  const g = img.gray ? img.gray : toGray(img);
+  let g = img.gray ? img.gray : toGray(img);
+  if (o.denoise) g = medianFilter(g, w, h);   // 2026-10-04: 前端降噪
 
   const S = o.scaleTo > 0 ? o.scaleTo / w0 : 1;   // 缩放以原始宽度为基准
   const up = 1;   // 固定 1（放大实验已证伪：块状掩膜细化更碎）
   const UW = w * up, UH = h * up;
   const out = (x, y) => [(x * up * fx) * S + o.offsetX, (h0 - y * up * fx) * S + o.offsetY];
-  const stats = { mode: o.mode, w, h, paths: 0, points: 0, arcs: 0, straight: 0, bridged: 0 };
+  const stats = { mode: o.mode, w, h, paths: 0, points: 0, arcs: 0, straight: 0, bridged: 0, denoise: !!o.denoise, adaptive: !!o.adaptive, picked: o.__picked || undefined, pickedF1: o.__pickedF1 };
   const items = [];
 
   // ---- 掩膜 ----
   let mask;
-  if (o.mode === 'posterize' || o.mode === 'flat' || o.mode === 'region') mask = null;
+  if (o.mode === 'posterize' || o.mode === 'flat' || o.mode === 'region' || o.mode === 'tone') mask = null;
   else {
     // 2026-09-23: 掩膜来源可选 —— 墨线稿/扫描件走墨迹阈值(g<otsu)，照片类走 DoG 边缘
     const maskMode = o.maskMode === 'auto' ? chooseMaskMode(g, w, h) : o.maskMode;
     stats.maskMode = maskMode;
     if (maskMode === 'ink') {
+      if (o.inkPercentile != null) {
+        // 2026-10-04: 按目标墨占比定阈值（直接调红/蓝平衡）
+        const p = Math.max(0.02, Math.min(0.9, o.inkPercentile));
+        const h = new Float64Array(256);
+        for (let i = 0; i < w * h; i++) h[g[i]]++;
+        let acc = 0, t = 0; const target = p * w * h;
+        for (let v = 0; v < 256; v++) { acc += h[v]; if (acc >= target) { t = v; break; } }
+        stats.inkThreshold = 'pct(' + t + ',' + p + ')';
+        mask = new Uint8Array(w * h);
+        for (let i = 0; i < w * h; i++) mask[i] = g[i] < t ? 1 : 0;
+      } else if (o.adaptive) {
+        // 2026-10-04: 局部自适应阈值 Sauvola —— 抗光照不均/连续调（line 档默认开）
+        const win = o.sauvolaWindow || (Math.max(15, Math.min(151, (Math.min(w, h) >> 3) | 1)));
+        const kk = o.sauvolaK == null ? 0.2 : o.sauvolaK;
+        mask = sauvolaMask(g, w, h, win, kk);
+        stats.inkThreshold = 'sauvola(' + win + ',' + kk + ')';
+      } else {
       // 2026-09-23: 先提亮中灰（γ=inkGamma）—— 把网点/中灰压向白，拉开墨与纸的分离（效果等价于提高阈值）
       let gi = g;
       if (o.inkGamma && o.inkGamma !== 1) { const lut = new Uint8Array(256); for (let v = 0; v < 256; v++) lut[v] = Math.round(255 * Math.pow(v / 255, o.inkGamma)); gi = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) gi[i] = lut[g[i]]; }
@@ -590,6 +961,7 @@ function traceImage(opts) {
       stats.inkThreshold = t;
       mask = new Uint8Array(w * h);
       for (let i = 0; i < w * h; i++) mask[i] = gi[i] < t ? 1 : 0;
+      }
     } else {
       const b1 = blur(g, w, h, o.sigma1), b2 = blur(g, w, h, o.sigma2);
       const dog = new Float64Array(w * h);
@@ -636,7 +1008,9 @@ function traceImage(opts) {
   // ---- 取链 ----
   let chains = [];
   if (o.mode === 'outline') {
-    chains = maskContours(mask, w, h);
+    let mm = mask;
+    if (o.inset > 0) mm = morph(mask, w, h, 'erode', o.inset);   // 2026-10-04: 轮廓内缩
+    chains = maskContours(mm, w, h);
     stats.closed = true;
   } else if (o.mode === 'posterize') {
     chains = posterizeChains(img, w, h, o);
@@ -644,6 +1018,10 @@ function traceImage(opts) {
   } else if (o.mode === 'flat' || o.mode === 'region') {
     // 2026-09-22: 扁平/纯色插画——按色块取轮廓（默认丢背景色，可按颜色分层）
     chains = regionChains(img, w, h, o);
+    stats.closed = true;
+  } else if (o.mode === 'tone') {
+    // 2026-10-04: 明暗分层档（B）——灰度 k-means 分层 → 每层轮廓（+按层填色）
+    chains = toneChains(img, g, w, h, o);
     stats.closed = true;
   } else if (o.mode === 'skeleton') {
     // 实验：骨架走链（对块状掩膜会产生大量梯状交叉，仅调试用）
@@ -665,15 +1043,30 @@ function traceImage(opts) {
     : o.minLength;
   for (const ch of chains) {
     if (ch.length < 2) continue;
-    const pts = ch.map((p) => out(p[0], p[1]));
+    let pts = ch.map((p) => out(p[0], p[1]));
+    if (o.smooth > 0) pts = chaikin(pts, o.smooth);   // 2026-10-04: 平滑后再简化
     // 长度过滤（输出坐标系）
     let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     if (len < minLen * S) continue;
-    const idx = rdpIdx(pts, o.simplify * S);    const sp = idx.map((k) => [Math.round(pts[k][0] * 1000) / 1000, Math.round(pts[k][1] * 1000) / 1000]);
+    let idx = null, sp;
+    if (o.fit === 'bezier') {
+      const fl = bezierFlatten(pts, o.simplify * S, o.simplify * S);
+      sp = fl.map((p) => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000]);
+    } else {
+      idx = rdpIdx(pts, o.simplify * S);
+      sp = idx.map((k) => [Math.round(pts[k][0] * 1000) / 1000, Math.round(pts[k][1] * 1000) / 1000]);
+    }
     if (sp.length < 2) continue;
+    if (stats.closed) { let a2 = 0; for (let i = 0; i < sp.length; i++) { const p = sp[i], q = sp[(i + 1) % sp.length]; a2 += p[0] * q[1] - q[0] * p[1]; } if (Math.abs(a2 / 2) < 0.15) continue; }   // 2026-10-04: 退化细碎环（hatch 会崩）\r
     const item = { layer: o.layer, closed: !!stats.closed, points: sp };
     if (ch.__color) { item.color = ch.__color; item.areaRatio = Math.round((ch.__areaRatio || 0) * 10000) / 10000; }   // flat 模式：色块代表色
-    const wantArc = o.mode === 'arc' || ((o.mode === 'flat' || o.mode === 'region') && o.arcize !== false);
+    // 2026-10-04: tone 按色分层 —— 每个色阶一个 CAD 图层（多图层叠加）
+    if (ch.__color && o.mode === 'tone') item.layer = (o.layer || 'TRACE_TONE') + '_' + String(Math.round(ch.__color[0])).padStart(3, '0');
+    // 2026-10-04: tone 按色分层 —— 每个色阶一个 CAD 图层（多图层叠加）
+    if (ch.__color && o.mode === 'tone') item.layer = (o.layer || 'TRACE_TONE') + '_' + String(Math.round(ch.__color[0])).padStart(3, '0');
+    // 2026-10-04: tone 按色分层 —— 每个色阶一个 CAD 图层（多图层叠加）
+    if (ch.__color && o.mode === 'tone') item.layer = (o.layer || 'TRACE_TONE') + '_' + String(Math.round(ch.__color[0])).padStart(3, '0');
+    const wantArc = idx && (o.mode === 'arc' || o.mode === 'line' || ((o.mode === 'flat' || o.mode === 'region' || o.mode === 'tone') && o.arcize !== false));
     if (wantArc) {
       const bulges = [];
       for (let a = 0; a < idx.length - 1; a++) {
@@ -746,7 +1139,7 @@ function posterizeChains(img, w, h, o) {
   return chains;
 }
 
-module.exports = { traceImage, loadImage, toGray, detectImageKind, _internals: { blur, otsu, morph, thin, pruneSpurs, skeletonChains, maskContours, labelComponents, rdpIdx, downscaleImage, regionChains, detectImageKind, chooseMaskMode, fillHoles } };
+module.exports = { traceImage, loadImage, toGray, detectImageKind, _internals: { blur, otsu, morph, thin, pruneSpurs, skeletonChains, maskContours, labelComponents, rdpIdx, downscaleImage, regionChains, detectImageKind, chooseMaskMode, fillHoles, medianFilter, sauvolaMask, kmeansLevels, toneChains, chaikin, scoreItems, scoreDetail, majorityLabels, allContours, labelLoops, regionMerge } };
 
 // ---- CLI（自测用）----
 if (require.main === module) {

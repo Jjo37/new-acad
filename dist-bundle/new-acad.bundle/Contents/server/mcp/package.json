@@ -1,0 +1,68 @@
+{
+  "name": "civil3d-mcp",
+  "version": "1.2.1",
+  "description": "MCP server for interacting with Autodesk Civil 3D.",
+  "main": "build/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "bin": {
+    "civil3d-mcp": "./build/index.js"
+  },
+  "scripts": {
+    "clean": "rimraf build",
+    "prebuild": "npm run clean",
+    "build": "tsc && node ./scripts/copy-static-assets.mjs",
+    "start": "node ./build/index.js",
+    "test": "vitest run",
+    "test:p2-boundaries": "dotnet run --project ./tests/FileBoundaryHarness/FileBoundaryHarness.csproj",
+    "test:watch": "vitest",
+    "test:live-plugin": "npm run build && node ./scripts/verify-live-plugin.mjs",
+    "test:live-host": "npm run build && node ./scripts/live-host-smoke.mjs",
+    "test:live-mcp-client": "npm run build && node ./scripts/live-mcp-client-smoke.mjs",
+    "test:live-all": "npm run test:live-plugin && node ./scripts/live-mcp-client-smoke.mjs && node ./scripts/live-host-smoke.mjs",
+    "test:startup": "npm run build && node ./scripts/startup-smoke.mjs",
+    "version:sync": "node ./scripts/sync-version.mjs",
+    "version:check": "node ./scripts/sync-version.mjs --check",
+    "docs:generate": "npm run build && node ./scripts/generate-tool-docs.mjs",
+    "docs:check": "npm run build && node ./scripts/generate-tool-docs.mjs --check",
+    "package:inspect": "npm run build && node ./scripts/inspect-package.mjs",
+    "package:claude": "npm run build && node ./scripts/package-claude-extension.mjs",
+    "package:claude:validate": "node ./scripts/package-claude-extension.mjs --validate-only",
+    "claude:add": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-claude-mcp.ps1 -Scope project",
+    "claude:add:user": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-claude-mcp.ps1 -Scope user",
+    "claude:print-add": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-claude-mcp.ps1 -Scope project -PrintOnly"
+  },
+  "files": [
+    "build"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sacred-G/Civil3D-mcp.git"
+  },
+  "keywords": [],
+  "author": "Steven Bouldin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Sacred-G/Civil3D-mcp/issues"
+  },
+  "homepage": "https://github.com/Sacred-G/Civil3D-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cheerio": "^1.0.0",
+    "minisearch": "^7.2.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
+    "@rolldown/binding-win32-x64-msvc": "^1.2.3",
+    "@types/node": "^22.13.10",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.8.2",
+    "vitest": "^4.1.0"
+  },
+  "overrides": {
+    "tmp": "^0.2.7"
+  }
+}

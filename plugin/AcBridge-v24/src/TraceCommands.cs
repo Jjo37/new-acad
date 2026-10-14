@@ -1,6 +1,7 @@
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using SixLabors.ImageSharp.Processing;
 using System.Text.Json.Nodes;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -134,6 +135,33 @@ public static class TraceCommands
     }
     return (gray, rgb, w, h, ow, oh);
   }
+  // ImageSharp 解码（纯托管，自带 webp）—— 最终兜底，不依赖系统 WIC 编解码器。
+  // 2026-10-14: 与 LoadGrayViaGdiPlus/Wic 同契约（灰度+可选 RGB + 原始尺寸）。
+  private static (byte[] Gray, byte[] Rgb, int W, int H, int OW, int OH) LoadGrayViaImageSharp(string full, int maxSide)
+  {
+    using var img = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Bgra32>(full);
+    var ow = img.Width; var oh = img.Height;
+    var scale = Math.Min(1.0, (double)maxSide / Math.Max(ow, oh));
+    var w = Math.Max(1, (int)Math.Round(ow * scale));
+    var h = Math.Max(1, (int)Math.Round(oh * scale));
+    SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Bgra32> work = img;
+    if (w != ow || h != oh) work = img.Clone(x => x.Resize(w, h));
+    try
+    {
+      var px = new byte[w * h * 4];
+      work.CopyPixelDataTo(px);
+      var gray = new byte[w * h];
+      var rgb = new byte[w * h * 3];
+      for (var i = 0; i < w * h; i++)
+      {
+        var o = i * 4;   // Bgra32: B,G,R,A
+        rgb[i * 3] = px[o + 2]; rgb[i * 3 + 1] = px[o + 1]; rgb[i * 3 + 2] = px[o];
+        gray[i] = (byte)((px[o + 2] * 299 + px[o + 1] * 587 + px[o] * 114) / 1000);
+      }
+      return (gray, rgb, w, h, ow, oh);
+    }
+    finally { if (!ReferenceEquals(work, img)) work.Dispose(); }
+  }
   // ---------------- exportImageGray ----------------
   public static Task<object?> ExportImageGrayAsync(JsonObject? parameters)
   {
@@ -158,8 +186,17 @@ public static class TraceCommands
       }
       catch
       {
-        var wic = LoadGrayViaWic(full, maxSide);
-        gray = wic.Gray; rgb = wic.Rgb; w = wic.W; h = wic.H; ow = wic.OW; oh = wic.OH;
+        try
+        {
+          var wic = LoadGrayViaWic(full, maxSide);
+          gray = wic.Gray; rgb = wic.Rgb; w = wic.W; h = wic.H; ow = wic.OW; oh = wic.OH;
+        }
+        catch
+        {
+          // 2026-10-14: GDI+ 与 WIC 都不行时走 ImageSharp（随包）—— webp 等在任何机器都能描摹
+          var ish = LoadGrayViaImageSharp(full, maxSide);
+          gray = ish.Gray; rgb = ish.Rgb; w = ish.W; h = ish.H; ow = ish.OW; oh = ish.OH;
+        }
       }
 
       string b64;

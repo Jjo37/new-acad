@@ -40,7 +40,7 @@
 ### 四、修复（含发布后用户反馈）
 
 - **安装期 AI 配置不生效**：`install.ps1` 先起 relay、后写 `config.json`，relay 启动时只读一次配置 → 内存里是空的 → 面板显示「未配置」，用户得再配一次。已修：写完配置即通知 relay 热加载。
-- **webp 图片解码**：`exportImageView`（看图/压缩/裁剪走它）以前只走 GDI+，对 webp 必挂，且 webp 还依赖系统 WIC 编解码器。已修：解码链改为 GDI+ → WIC → **内置 ImageSharp**（随包分发）→ **webp 在任何机器都能解**。
+- **webp 图片解码（看图 + 描摹两条路）**：看图（`exportImageView`）与描摹（`exportImageGray`）两条解码路以前都只靠 GDI+ / 系统 WIC，webp 在部分机器上会挂。已修：**两条路**的解码链均改为 GDI+ → WIC → **内置 ImageSharp**（随包分发）→ **webp 在任何机器都能看、能描摹**。
 - 读图 / 读文件成功时也计为「有进展」，不再被「连续 N 轮无成功进展」误杀中止。
 - `exportImageView` 返回的大 base64 不再被插件侧 `ResultSummarizer`（64KB）截断致图坏。
 - **打包修复**：M6 引入的 PdfPig 依赖 DLL 以前**没随包**（`build-dist` 只拷主 DLL、同步清单也没有）→ 发布版 `readPdf` 会 `FileNotFound`。本版已把插件目录内全部托管依赖纳入打包与同步。
@@ -104,7 +104,7 @@ Measured: `server/test-large-file.js` **18/18 PASS**, `test-image-ctx-guard.js` 
 ### 4. Fixes (incl. post-release user reports)
 
 - **Install-time AI config had no effect**: `install.ps1` starts the relay first and writes `config.json` later; the relay reads config once at start, so its in-memory config was empty and the palette showed "not configured". Fixed: notify the relay to hot-reload right after the config is written.
-- **webp decoding**: `exportImageView` (used by image view / compress / crop) used GDI+ only, so it always failed on webp (and webp depended on the system WIC codec). Fixed: the decode chain is now GDI+ -> WIC -> bundled ImageSharp, so **webp works on any machine**.
+- **webp decoding (both paths: view + trace)**: the image-view path (`exportImageView`) and the trace path (`exportImageGray`) both relied on GDI+ / the system WIC codec, so webp failed on some machines. Fixed: **both** decode chains are now GDI+ -> WIC -> bundled ImageSharp, so **webp can be viewed and traced on any machine**.
 - Read-image / read-file success now counts as "progress" (no more false "no progress" aborts).
 - `exportImageView`'s large base64 is no longer truncated by the plugin-side result summarizer (64KB).
 - **Packaging fix**: the PdfPig dependency DLLs were not shipped (`build-dist` copied only the main DLL). Fixed: all managed dependencies in the plugin folder are now packaged and synced.

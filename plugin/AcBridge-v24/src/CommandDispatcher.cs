@@ -531,7 +531,8 @@ public static class CommandDispatcher
     names.Remove("dispatch"); // 内部入口，不对外
     var sorted = names.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
     // 2026-08-10: 353 个方法全覆盖描述（按域批量补全；中性说明，不写频率/偏好词）
-    var descriptions = new Dictionary<string, string>
+    // 2026-10-14 i18n-B: locale=en 时用英文描述表（CommandDescsEn.cs）
+    var descriptions = Loc.IsEnglish ? CommandDescsEn.Build() : new Dictionary<string, string>
     {
       ["addCorridorRegion"] = "廊道加区域 {corridorName, assemblyName, startStation, endStation, baselineIndex?, frequency?, frequencyAtCurves?, frequencyAtKneePoints?, regionName?}",
       ["createCorridor"] = "创建廊道 {corridorName, alignmentName, assemblyName, baselineName?, regionName?, startStation?, endStation?, profileName?, surfaceName?, style?}——路线+装配→廊道，可选纵断面/曲面/样式",

@@ -38,6 +38,10 @@ $need = @(
   "$ROOT\server\trace-image.js",   # 2026-09-22: 位图→CAD 描摹引擎(llm-agent/file-tools 依赖, 漏打包 traceImage 直接报模块找不到)
   "$ROOT\server\relay-launcher.js",
   "$ROOT\server\sacred-mcp.js",
+  "$ROOT\server\ocr.js",   # 2026-10-14: 扫描件 OCR（Windows WinRT）
+  "$ROOT\server\ocr-win.ps1",
+  "$ROOT\server\i18n-en.js",   # 2026-10-14 i18n-B 工具描述英文表
+  "$ROOT\server\system-prompt-en.js",
   "$ROOT\server\mcp\build\index.js",
   "$ROOT\server\mcp\package.json",
   "$ROOT\server\mcp\LICENSE",
@@ -126,6 +130,10 @@ $memSkeleton = @'
 [System.IO.File]::WriteAllText("$DIST\server\memory\agent-memory.md", $memSkeleton, (New-Object System.Text.UTF8Encoding $true))
 Write-Host "[OK] dist/server/memory/agent-memory.md 已重置为中性骨架"
 Copy-Item "$ROOT\server\sacred-mcp.js" "$DIST\server\" -Force
+Copy-Item "$ROOT\server\ocr.js" "$DIST\server\" -Force
+Copy-Item "$ROOT\server\ocr-win.ps1" "$DIST\server\" -Force
+Copy-Item "$ROOT\server\i18n-en.js" "$DIST\server\" -Force
+Copy-Item "$ROOT\server\system-prompt-en.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\install.ps1" "$DIST\" -Force
 # 安全加固: 进包的 config.json 必须是干净模板（强制清空 relayToken/relaySessionKey），
 # 绝不复制本机可能已配置密钥的 config.json，防止网关 token 随包泄漏

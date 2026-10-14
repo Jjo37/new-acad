@@ -12,6 +12,8 @@ const path = require('path');
 const { CAD_CALL_TOOL, cadCall, formatResult, mcpCall, MCP_CALL_TOOL, MCPCALL_ALLOW } = require('./cad-tools.js');
 const { compactMessages } = require('./compact.js'); // 2026-08-14: 上下文压缩（超限主动摘要，防膨胀超时）
 const { readFile, writeFile, deleteFile, listDir, readImage, traceImage, queryFile, FILE_TOOLS, getFileTools, getAgentWorkDir, getLimits } = require('./file-tools.js');
+const { ocrFile } = require('./ocr.js');   // 2026-10-14: 扫描件 OCR（Windows WinRT，零打包）
+const { localizeToolSchema } = require('./i18n-en.js');   // 2026-10-14 i18n-B: locale=en 时给 LLM 的工具 schema 出英文描述
 
 // ---------- 长期记忆（2026-08-07 新增） ----------
 // 分层: 核心记忆（每轮注入 ≤4KB）+ 知识库（按需 readKnowledge）
@@ -205,25 +207,49 @@ async function ingestUserKnowledge(signal) {
   const entries = []; const errors = [];
   for (const f of files) {
     let text = '';
+    let usedOcr = false;
+    let fileErr = '';
     try {
       if (USER_KB_TEXT_EXT.has(f.ext)) {
         text = fs.readFileSync(f.full, 'utf8');
       } else {
         const cmd = USER_KB_OFFICE_EXT[f.ext];
-        const pr = await cadCall(cmd, { path: f.full, maxChars: 200000, maxResultBytes: 0 }, 60000, signal);
-        if (pr && pr.error) { errors.push(f.rel + ': ' + (pr.error.message || pr.error.code)); continue; }
-        text = (pr && pr.result && typeof pr.result.content === 'string') ? pr.result.content : JSON.stringify((pr && pr.result) || '');
+        let pr = null;
+        try { pr = await cadCall(cmd, { path: f.full, maxChars: 200000, maxResultBytes: 0 }, 60000, signal); }
+        catch (e) { pr = { error: { message: e.message } }; }
+        let thin = false;
+        if (pr && pr.error) {
+          if (f.ext === '.pdf') { thin = true; }   // readPdf 超时/报错也可能是扫描件 → 仍试 OCR
+          else { fileErr = (pr.error.message || pr.error.code); }
+        } else {
+          const res = (pr && pr.result) || {};
+          text = (typeof res.content === 'string') ? res.content : JSON.stringify(res || '');
+          if (f.ext === '.pdf') {
+            const pages = Number(res.pages) || 0;
+            thin = text.trim().length < 60 || (pages > 0 && text.trim().length / pages < 30);
+          }
+        }
+        // 2026-10-14: 扫描件 PDF（无/极稀文本层）→ Windows 自带 OCR 兜底（零打包，见 server/ocr.js）
+        if (f.ext === '.pdf' && thin) {
+          try {
+            const oc = await ocrFile(f.full, { maxPages: 60 });
+            if (oc.ok && oc.chars > text.trim().length) { text = oc.text; usedOcr = true; fileErr = ''; }
+            else if (!oc.ok) { fileErr = '无文本层，OCR 失败 ' + oc.error + (oc.hint ? ('（' + oc.hint + '）') : ''); }
+            else { fileErr = ''; }
+          } catch (e2) { fileErr = 'OCR 异常 ' + e2.message; }
+        }
       }
-    } catch (e) { errors.push(f.rel + ': ' + e.message); continue; }
+    } catch (e) { fileErr = e.message; }
+    if (fileErr && !text.trim()) { errors.push(f.rel + ': ' + fileErr); continue; }
     const cacheName = encodeURIComponent(f.rel) + '.txt';
     try { fs.writeFileSync(path.join(USER_KB_CACHE, cacheName), text, 'utf8'); } catch (_) { /* 缓存写失败→不影响索引 */ }
     const lines = text.split('\n');
     const heads = lines.filter(l => /^\s*(#{1,4}\s|第[一二三四五六七八九十百0-9]+[章节条]|[0-9]+(\.[0-9]+)*[、.\s])/.test(l)).map(l => l.trim()).slice(0, 12);
-    entries.push({ rel: f.rel, ext: f.ext, bytes: Buffer.byteLength(text, 'utf8'), head: heads });
+    entries.push({ rel: f.rel, ext: f.ext, bytes: Buffer.byteLength(text, 'utf8'), head: heads, ocr: usedOcr });
   }
   const idx = ['# 用户知识库索引（自动生成，勿手改）', '', '> 用户放置的规范/规则/专业知识。检索用 searchKnowledge；取详情用 readFile（office 文件可 readDocx/readXlsx/readPptx）。', ''];
   for (const e of entries) {
-    idx.push('## ' + e.rel + '  (' + e.ext + ', ' + e.bytes + 'B)');
+    idx.push('## ' + e.rel + '  (' + e.ext + (e.ocr ? ', OCR' : '') + ', ' + e.bytes + 'B)');
     if (e.head.length) for (const h of e.head) idx.push('- ' + h);
     else idx.push('- （无标题结构，直接 searchKnowledge 检索）');
     idx.push('');
@@ -370,7 +396,7 @@ const KNOWLEDGE_TOOLS = [
     type: 'function',
     function: {
       name: 'ingestKnowledge',
-      description: '整理“用户知识库”：扫描 user-knowledge 目录下文件(md/txt/csv/json/log/docx/doc/xlsx/xls/pptx)，抽取文本→写缓存→重建索引 _index.md。用户把规范/规则/专业知识放进该目录后，让他们说“整理知识库”时调用。',
+      description: '整理“用户知识库”：扫描 user-knowledge 目录下文件(md/txt/csv/json/log/docx/doc/xlsx/xls/pptx/pdf)，抽取文本→写缓存→重建索引 _index.md。**PDF 无文本层（扫描件）会自动走 Windows OCR**（需系统装有对应语言包）。用户把规范/规则/专业知识放进该目录后，让他们说“整理知识库”时调用。',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -552,7 +578,7 @@ function callLLM(cfg, messages, timeoutMs, model, signal) {
     const body = JSON.stringify({
       model: model || cfg.model || 'deepseek-chat',
       messages,
-      tools: [CAD_CALL_TOOL, MCP_CALL_TOOL, ...getFileTools(), ...MEMORY_TOOLS, ...KNOWLEDGE_TOOLS, ...PLAN_TOOLS],
+      tools: localizeToolSchema([CAD_CALL_TOOL, MCP_CALL_TOOL, ...getFileTools(), ...MEMORY_TOOLS, ...KNOWLEDGE_TOOLS, ...PLAN_TOOLS]),
       tool_choice: 'auto',
       temperature: 0.2
     });

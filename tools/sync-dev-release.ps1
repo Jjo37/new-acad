@@ -38,6 +38,7 @@ $files = @(
   # 服务端运行时
   'server/panel-relay.js','server/llm-agent.js','server/compact.js','server/cad-tools.js',
   'server/file-tools.js','server/trace-image.js','server/relay-launcher.js','server/sacred-mcp.js',
+  'server/ocr.js','server/ocr-win.ps1','server/i18n-en.js','server/system-prompt-en.js',   # 2026-10-14 OCR + i18n-B
   'server/memory/knowledge.md',
   'server/memory/knowledge.en.md',   # 2026-10-13 i18n A
   # 知识库白名单（被运行时引用 + 面向用户）

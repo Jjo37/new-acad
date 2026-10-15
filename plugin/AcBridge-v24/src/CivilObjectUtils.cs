@@ -82,66 +82,47 @@ public static class CivilObjectUtils
     return (T)(transaction.GetObject(objectId, openMode) ?? throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", $"Object {objectId} not found."));
   }
 
-  public static string LinearUnits(Database database)
-  {
-    if (database.Insunits == UnitsValue.Meters) return "meters";
-    if (database.Insunits == UnitsValue.Feet) return "feet";
-    if (database.Insunits.ToString().Contains("Survey", StringComparison.OrdinalIgnoreCase)) return "feet";
-    return "other";
-  }
+  public static string LinearUnits(Database database) => UnitSystem.LinearUnits(database.Insunits.ToString());
 
   // ── 2026-10-15: 单位感知（默认值按 SI 定义，按图纸单位换算；公式常数按单位取）──
 
   /// <summary>图纸是否公制（米）。</summary>
-  public static bool IsMetric(Database database) => database.Insunits == UnitsValue.Meters;
+  public static bool IsMetric(Database database) => UnitSystem.LinearUnits(database.Insunits.ToString()) == "meters";
 
   /// <summary>
   /// 长度换算系数：默认值统一按 SI（米）定义，乘以该系数得到图纸单位下的值。
   /// 公制=1.0；英尺（含 Survey）=3.28084；未知/未设 → 1.0（按公制处理）。
   /// </summary>
   public static double LengthFactor(Database database)
-  {
-    if (database.Insunits == UnitsValue.Meters) return 1.0;
-    if (database.Insunits == UnitsValue.Feet) return 3.280839895013123;
-    if (database.Insunits.ToString().Contains("Survey", StringComparison.OrdinalIgnoreCase)) return 3.280839895013123;
-    return 1.0;
-  }
+    => UnitSystem.LinearUnits(database.Insunits.ToString()) == "feet" ? UnitSystem.MetersToFeet : 1.0;
 
   /// <summary>重力加速度（与图纸长度单位一致）：公制 9.81 m/s²，英制 32.2 ft/s²。</summary>
-  public static double Gravity(Database database) => IsMetric(database) ? 9.81 : 32.2;
+  public static double Gravity(Database database) => UnitSystem.Gravity(IsMetric(database));
 
   /// <summary>Manning 公式常数：SI=1.0，US customary（英尺）=1.486。</summary>
-  public static double ManningConstant(Database database) => IsMetric(database) ? 1.0 : 1.486;
+  public static double ManningConstant(Database database) => UnitSystem.ManningConstant(IsMetric(database));
 
   /// <summary>流速单位标签。</summary>
-  public static string VelocityUnits(Database database) => IsMetric(database) ? "m/s" : "ft/s";
+  public static string VelocityUnits(Database database) => UnitSystem.VelocityUnits(IsMetric(database));
 
   /// <summary>流量单位标签。</summary>
-  public static string FlowUnits(Database database) => IsMetric(database) ? "m³/s" : "cfs";
+  public static string FlowUnits(Database database) => UnitSystem.FlowUnits(IsMetric(database));
 
   // ── 活动图纸版（命令上下文拿不到 database 参数时用；取不到按公制）──
   /// <summary>2026-10-15: 解析请求级单位覆盖（"metric"/"imperial"…）。命中返回 true 并给出 isMetric。</summary>
-  private static bool TryParseUnitOverride(string? units, out bool isMetric)
-  {
-    isMetric = true;
-    if (string.IsNullOrWhiteSpace(units)) return false;
-    var u = units.Trim().ToLowerInvariant();
-    if (u.StartsWith("met") || u == "m" || u == "si" || u == "meters" || u == "metric" || u.Contains("公制")) { isMetric = true; return true; }
-    if (u.StartsWith("imp") || u == "ft" || u == "feet" || u == "us" || u == "imperial" || u.Contains("英制")) { isMetric = false; return true; }
-    return false;   // "auto"/未知 → 回退图纸探测
-  }
+  private static bool TryParseUnitOverride(string? units, out bool isMetric) => UnitSystem.TryParseOverride(units, out isMetric);
 
   /// <summary>长度换算系数：优先请求级覆盖，否则按活动图纸（取不到 → 1.0）。</summary>
   public static double ActiveLengthFactor()
   {
-    if (TryParseUnitOverride(PluginRuntime.GetCurrentUnitOverride(), out var m)) return m ? 1.0 : 3.280839895013123;
+    if (TryParseUnitOverride(PluginRuntime.GetCurrentUnitOverride(), out var m)) return UnitSystem.LengthFactor(m);
     try { return LengthFactor(HostApplicationServices.WorkingDatabase); } catch { return 1.0; }
   }
 
   /// <summary>重力加速度：优先请求级覆盖，否则按活动图纸。</summary>
   public static double ActiveGravity()
   {
-    if (TryParseUnitOverride(PluginRuntime.GetCurrentUnitOverride(), out var m)) return m ? 9.81 : 32.2;
+    if (TryParseUnitOverride(PluginRuntime.GetCurrentUnitOverride(), out var m)) return UnitSystem.Gravity(m);
     try { return Gravity(HostApplicationServices.WorkingDatabase); } catch { return 9.81; }
   }
 
@@ -257,13 +238,7 @@ public static class CivilObjectUtils
     try { return Convert.ToBoolean(raw); } catch { return null; }
   }
 
-  public static string VolumeUnits(Database database)
-  {
-    if (database.Insunits == UnitsValue.Meters) return "cubic meters";
-    if (database.Insunits == UnitsValue.Feet) return "cubic feet";
-    if (database.Insunits.ToString().Contains("Survey", StringComparison.OrdinalIgnoreCase)) return "cubic feet";
-    return "cubic units";
-  }
+  public static string VolumeUnits(Database database) => UnitSystem.VolumeUnits(database.Insunits.ToString());
 
   public static void TrySetName(AcDbObject obj, string name)
   {

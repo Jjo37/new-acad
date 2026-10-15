@@ -1,0 +1,52 @@
+name: CI
+
+# 工程纪律：每次 push / PR 自动跑已有自动化，不再靠人肉 QC。
+# 覆盖：MCP 单元测试（vitest）+ 语法检查 + 文档覆盖门禁。
+# 说明：插件(C#)编译需要 Autodesk 托管程序集，CI 不跑（本地 build-plugin.ps1 负责）。
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-tests:
+    name: MCP 单元测试 (vitest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: server/mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/mcp/package-lock.json
+      - name: install
+        run: npm ci
+      - name: test
+        run: npm test
+
+  checks:
+    name: 语法 + 文档覆盖
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 语法检查 (server + tools 的 .js)
+        shell: bash
+        run: |
+          set -euo pipefail
+          find server tools -type f -name '*.js' \
+            -not -path '*/node_modules/*' -not -path '*/build/*' -print0 \
+            | xargs -0 -n1 node --check
+          echo "syntax OK"
+      - name: 文档覆盖门禁 (check-doc-coverage)
+        run: node tools/check-doc-coverage.js

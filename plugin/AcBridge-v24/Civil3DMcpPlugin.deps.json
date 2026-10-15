@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v8.0": {
-      "Civil3DMcpPlugin/1.8.2": {
+      "Civil3DMcpPlugin/1.8.3": {
         "dependencies": {
           "SixLabors.ImageSharp": "2.1.9",
           "UglyToad.PdfPig": "1.7.0-custom-5"
@@ -90,7 +90,7 @@
     }
   },
   "libraries": {
-    "Civil3DMcpPlugin/1.8.2": {
+    "Civil3DMcpPlugin/1.8.3": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

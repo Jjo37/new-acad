@@ -67,6 +67,8 @@
 
 ### 已知问题(v1.8.3 仍未解决)
 
+> 本版为 v1.8.2 **重发版**，已知问题**未变动**（原因：仅修正手册 + 重发）。完整台账（设计边界 / 待办 / 已解决）见 `KNOWN-ISSUES.md`。
+
 1. 高色阶描摹不稳(≥24 档;建议 2-12 档)。
 2. 扫描件 OCR 依赖系统 OCR 语言包(中文 Windows 自带);单次上限 60 页。
 3. 模态对话框下超时看门狗**不能自动解锁**(需手动关闭 / 重启 CAD)。
@@ -160,6 +162,8 @@ Previously hydraulic/detention/slope/sight-distance math assumed **imperial** in
 - New regression tests: approval coverage, units, intent word-boundary, i18n description parity, packaging-manifest cross-check.
 
 ### Known issues (still open in v1.8.3)
+
+> This is the **re-issue of v1.8.2**; the known-issue list is **unchanged** (only a manual fix + re-publish). Full ledger (design limits / backlog / resolved) in `KNOWN-ISSUES.md`.
 
 1. High tone levels (>= 24) unstable (2-12 recommended).
 2. Scanned OCR depends on the system OCR language pack; cap 60 pages/run.

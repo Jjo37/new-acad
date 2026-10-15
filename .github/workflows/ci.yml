@@ -50,3 +50,5 @@ jobs:
           echo "syntax OK"
       - name: 文档覆盖门禁 (check-doc-coverage)
         run: node tools/check-doc-coverage.js
+      - name: 已知问题台账门禁 (check-known-issues)
+        run: node tools/check-known-issues.js

@@ -52,3 +52,14 @@ jobs:
         run: node tools/check-doc-coverage.js
       - name: 已知问题台账门禁 (check-known-issues)
         run: node tools/check-known-issues.js
+
+  cs-unit:
+    name: C# 单位单测 (UnitSystem)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: UnitSystemTests
+        run: dotnet run --project plugin/AcBridge-v24/tests/UnitSystemTests

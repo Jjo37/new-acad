@@ -366,7 +366,7 @@ export const STANDARDS_DOMAIN_DEFINITION: DomainToolDefinition = {
     {
       toolName: "civil3d_standards_lookup",
       displayName: "Civil 3D Standards Lookup",
-      description: "标签质检",
+      description: "查询框架标准/规范（按关键词/主题/标签）",
       inputShape: {
         query: z.string().optional(),
         topic: z.string().optional(),

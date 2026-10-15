@@ -1,4 +1,7 @@
 import { TOOL_CATALOG as TOOL_METADATA_CATALOG } from "../tools/tool_catalog.js";
+import { z } from "zod";
+import { findManifestAction } from "../tools/toolManifest.js";
+import { ROUTE_PARAM_FIELDS } from "./routeParams.js";
 import type {
   ToolCatalogEntry as ToolMetadataCatalogEntry,
   ToolDomain,
@@ -470,50 +473,7 @@ const EXPLICIT_TOOL_CATALOG: ToolCatalogEntry[] = [
   },
 ];
 
-const ROUTE_PARAM_FIELDS = [
-  "name",
-  "alignmentName",
-  "corridorName",
-  "profileName",
-  "surfaceName",
-  "projectFolder",
-  "shortcutName",
-  "shortcutType",
-  "templatePath",
-  "saveAs",
-  "limit",
-  "layerPrefix",
-  "networkName",
-  "pipeName",
-  "structureName",
-  "fittingName",
-  "partName",
-  "partsList",
-  "targetType",
-  "targetName",
-  "targetNetwork",
-  "sourceNetwork",
-  "newPartName",
-  "startPoint",
-  "endPoint",
-  "position",
-  "baseSurface",
-  "comparisonSurface",
-  "style",
-  "layer",
-  "labelSet",
-  "filePath",
-  "outputPath",
-  "gridSpacing",
-  "designSpeed",
-  "inflow",
-  "outflow",
-  "bottomElevation",
-  "topElevation",
-  "minCoverDepth",
-  "maxCoverDepth",
-  "payItems",
-];
+// ROUTE_PARAM_FIELDS 见 ./routeParams.ts（2026-10-15 统一到单一来源，消除与 orchestrate 的漂移）
 
 function humanizeToken(token: string): string {
   return token
@@ -554,6 +514,24 @@ function buildActionSynonyms(action: string): string[] {
     default:
       return [humanizeToken(action)];
   }
+}
+
+/**
+ * 2026-10-15: 从 action 的 zod 输入 schema 派生必填字段（单一事实来源；排除 action 本身）。
+ * 修静态映射漂移（如 sample_elevations 映射只写 ["name"] 但 schema 还要求 method）。
+ */
+function requiredFieldsFromSchema(toolName: string, operation: string): string[] | undefined {
+  const match = findManifestAction(toolName, operation);
+  const schema = match?.actionDefinition?.inputSchema;
+  if (!schema || !(schema instanceof z.ZodObject)) return undefined;
+  const shape = (schema as z.ZodObject<z.ZodRawShape>).shape as Record<string, { isOptional?: () => boolean } | undefined>;
+  const fields: string[] = [];
+  for (const [key, field] of Object.entries(shape)) {
+    if (key === "action") continue;
+    const optional = typeof field?.isOptional === "function" ? field.isOptional() : false;
+    if (!optional) fields.push(key);
+  }
+  return fields;
 }
 
 function inferDerivedRequiredFields(
@@ -626,6 +604,12 @@ function inferDerivedRequiredFields(
 
   if (tool.toolName === "civil3d_health" || tool.toolName === "civil3d_get_drawing_info") {
     return [];
+  }
+
+  // 2026-10-15: 优先从 action 的 zod schema 派生；派生不到再回落静态映射（去重 + 防漂移）
+  if (operation) {
+    const derived = requiredFieldsFromSchema(tool.toolName, operation);
+    if (derived) return derived;
   }
 
   const toolNameFields = toolNameFieldMap[tool.toolName];
@@ -708,7 +692,7 @@ function buildDerivedKeywords(tool: ToolMetadataCatalogEntry, operation?: string
 
 function buildDerivedToolArgs(operation?: string) {
   return (params: Record<string, unknown>) => {
-    const picked = pickDefined(params, ROUTE_PARAM_FIELDS);
+    const picked = pickDefined(params, [...ROUTE_PARAM_FIELDS]);
     return operation ? { action: operation, ...picked } : picked;
   };
 }

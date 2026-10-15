@@ -1,15 +1,22 @@
 import { z } from "zod";
 
 /**
- * Common response schemas shared across domains.
+ * Common schemas shared across domains.
  *
- * These are intentionally narrow at the top level and liberal on unknown
- * fields (`.passthrough()`), so they document the minimum contract every
+ * Response envelopes are intentionally narrow at the top level and liberal on
+ * unknown fields (`.passthrough()`), so they document the minimum contract every
  * mutating tool satisfies without rejecting legitimate plugin-side additions.
  *
  * When tightening domain-specific responses, prefer extending one of these
  * rather than re-declaring `.passthrough()` schemas.
  */
+
+/**
+ * 2026-10-15: 点坐标模式的单一事实来源。原先 alignment/geometry/surface/pipe
+ * 各自重定义 Point2D/Point3D（内容一致）→ 统一到此，消除漂移。
+ */
+export const Point2DSchema = z.object({ x: z.number(), y: z.number() });
+export const Point3DSchema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 
 /**
  * Envelope for any mutation that returns a reference to the object it touched.

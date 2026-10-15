@@ -34,7 +34,13 @@ export type DrawingFingerprintProvider = () => Promise<string>;
 
 const APPROVAL_TOKEN_TTL_MS = 5 * 60 * 1000;
 const NO_ACTIVE_DRAWING_FINGERPRINT = "no-active-drawing";
-const MUTATING_CAPABILITIES = new Set<ToolCapability>([
+/**
+ * 会改动当前图纸的能力——只有这些（且 safeForRetry=false）或命中
+ * EXPLICIT_APPROVAL_ACTION 的动作才需要审批令牌。
+ * 注：generate/register 会产生新产物但不改图纸，故不在此列；域运行时用
+ * SIDE_EFFECTING_CAPABILITIES（本集合 ∪ {generate, register}）单独计算 MCP readOnlyHint。
+ */
+export const MUTATING_CAPABILITIES = new Set<ToolCapability>([
   "create",
   "edit",
   "delete",
@@ -117,11 +123,19 @@ export class ApprovalPolicyService {
     }
   }
 
+  private purgeExpired(): void {
+    const now = this.now();
+    for (const [token, grant] of this.grants) {
+      if (grant.expiresAt <= now) this.grants.delete(token);
+    }
+  }
+
   public async requestApproval(
     target: ApprovalTarget,
     parameters: JsonObject,
     ttlMs = APPROVAL_TOKEN_TTL_MS,
   ): Promise<ApprovalReceipt> {
+    this.purgeExpired();
     if (!isApprovalRequired(target)) {
       throw new ApprovalValidationError(
         `'${target.toolName}' action '${target.action}' does not require approval. Execute it directly.`,

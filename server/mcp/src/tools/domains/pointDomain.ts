@@ -117,7 +117,7 @@ const PointImportArgsSchema = z.object({
 
 const PointDeleteArgsSchema = z.object({
   action: z.literal("delete"),
-  pointNumbers: z.array(z.number()).min(1),
+  pointNumbers: z.array(z.number().int().positive()).min(1),
 });
 
 const PointGroupCreateArgsSchema = z.object({
@@ -354,7 +354,7 @@ export const POINT_DOMAIN_DEFINITION: DomainToolDefinition = {
     {
       toolName: "civil3d_create_cogo_point",
       displayName: "Create COGO Point",
-      description: "创建 Cogo 点 {points:[{x,y,z,pointNumber?}]}",
+      description: "创建 Cogo 点 {easting, northing, elevation?, rawDescription?}",
       inputShape: {
         easting: z.number(),
         northing: z.number(),

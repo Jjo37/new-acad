@@ -1,12 +1,7 @@
 import { z } from "zod";
 import { withApplicationConnection } from "../../utils/ConnectionManager.js";
 import type { DomainToolDefinition } from "../domainRuntime.js";
-
-const Point3DSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  z: z.number(),
-});
+import { Point3DSchema } from "./sharedSchemas.js";
 
 const OptionalPoint3DSchema = z.object({
   x: z.number(),
@@ -22,6 +17,7 @@ const PipeFlowSchema = z.object({
 const GenericPipeResponseSchema = z.object({}).passthrough();
 
 const canonicalPipeInputShape = {
+  units: z.enum(["auto", "metric", "imperial"]).optional(),
   action: z.enum([
     "list",
     "get",
@@ -159,6 +155,7 @@ const PipeCalculateHglArgsSchema = z.object({
   tailwaterElevation: z.number().optional(),
   designFlow: z.number().optional(),
   manningsN: z.number().positive().optional(),
+  units: z.enum(["auto", "metric", "imperial"]).optional(),
 });
 const PipeHydraulicAnalysisArgsSchema = z.object({
   action: z.literal("hydraulic_analysis"),
@@ -169,6 +166,7 @@ const PipeHydraulicAnalysisArgsSchema = z.object({
   minVelocity: z.number().nonnegative().optional(),
   maxVelocity: z.number().positive().optional(),
   minSlope: z.number().nonnegative().optional(),
+  units: z.enum(["auto", "metric", "imperial"]).optional(),
 });
 const PipeStructurePropertiesArgsSchema = z.object({
   action: z.literal("get_structure_properties"),
@@ -182,8 +180,9 @@ const PipeSizeNetworkArgsSchema = z.object({
   defaultDesignFlow: z.number().positive().optional(),
   perPipeDesignFlows: z.array(PipeFlowSchema).optional(),
   manningsN: z.number().positive().optional().default(0.013),
-  targetVelocityMin: z.number().positive().optional().default(2.0),
-  targetVelocityMax: z.number().positive().optional().default(10.0),
+  targetVelocityMin: z.number().positive().optional(),
+  targetVelocityMax: z.number().positive().optional(),
+  units: z.enum(["auto", "metric", "imperial"]).optional(),
   applyChanges: z.boolean().optional().default(false),
 });
 const PipeAutomateProfileViewArgsSchema = z.object({
@@ -293,11 +292,12 @@ function parsePartDiameter(partName: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function computeFullFlowCapacity(diameter: number, slopePct: number, manningsN: number): number {
+function computeFullFlowCapacity(diameter: number, slopePct: number, manningsN: number, k = 1): number {
   const slope = Math.max(Math.abs(slopePct) / 100, 1e-6);
   const area = Math.PI * diameter * diameter / 4;
   const hydraulicRadius = diameter / 4;
-  return (1 / manningsN) * area * Math.pow(hydraulicRadius, 2 / 3) * Math.sqrt(slope);
+  // k: Manning 单位常数（SI=1.0 / 英尺=1.486），2026-10-15
+  return k * (1 / manningsN) * area * Math.pow(hydraulicRadius, 2 / 3) * Math.sqrt(slope);
 }
 
 function computeVelocity(flow: number, diameter: number): number {
@@ -305,13 +305,13 @@ function computeVelocity(flow: number, diameter: number): number {
   return area > 0 ? flow / area : 0;
 }
 
-function solveRequiredDiameter(flow: number, slopePct: number, manningsN: number): number {
+function solveRequiredDiameter(flow: number, slopePct: number, manningsN: number, k = 1): number {
   let low = 0.01;
   let high = 100;
-  while (computeFullFlowCapacity(high, slopePct, manningsN) < flow && high < 1_000_000) high *= 2;
+  while (computeFullFlowCapacity(high, slopePct, manningsN, k) < flow && high < 1_000_000) high *= 2;
   for (let i = 0; i < 60; i++) {
     const mid = (low + high) / 2;
-    const capacity = computeFullFlowCapacity(mid, slopePct, manningsN);
+    const capacity = computeFullFlowCapacity(mid, slopePct, manningsN, k);
     if (capacity >= flow) high = mid;
     else low = mid;
   }
@@ -461,6 +461,7 @@ export const PIPE_DOMAIN_DEFINITION: DomainToolDefinition = {
       safeForRetry: true,
       pluginMethods: ["calculatePipeNetworkHgl"],
       execute: async (args) => await withApplicationConnection(async (appClient) => await appClient.sendCommand("calculatePipeNetworkHgl", {
+        units: args.units,
         networkName: args.networkName,
         tailwaterElevation: args.tailwaterElevation ?? null,
         designFlow: args.designFlow ?? null,
@@ -476,12 +477,14 @@ export const PIPE_DOMAIN_DEFINITION: DomainToolDefinition = {
       safeForRetry: true,
       pluginMethods: ["analyzePipeNetworkHydraulics"],
       execute: async (args) => await withApplicationConnection(async (appClient) => await appClient.sendCommand("analyzePipeNetworkHydraulics", {
+        units: args.units,
         networkName: args.networkName,
         designFlow: args.designFlow ?? null,
         manningsN: args.manningsN ?? 0.013,
-        minCoverDepth: args.minCoverDepth ?? 2.0,
-        minVelocity: args.minVelocity ?? 2.0,
-        maxVelocity: args.maxVelocity ?? 10.0,
+        // 2026-10-15: 长度/流速不注入默认 → 交给插件按图纸单位自适应（公制/英制）
+        minCoverDepth: args.minCoverDepth,
+        minVelocity: args.minVelocity,
+        maxVelocity: args.maxVelocity,
         minSlope: args.minSlope ?? 0.5,
       })),
     },
@@ -520,6 +523,22 @@ export const PIPE_DOMAIN_DEFINITION: DomainToolDefinition = {
         const recommendations: Array<Record<string, unknown>> = [];
         let appliedCount = 0;
 
+        // 2026-10-15: 单位自适应 —— args.units 覆盖 > 图纸单位（getDrawingSettings.units）；
+        // Manning 常数与目标流速默认值随单位（SI: 0.6/3.0 m/s；英制: 2/10 ft/s）
+        const unitsArg = String((args as Record<string, unknown>).units ?? "auto").toLowerCase();
+        let isMetric: boolean;
+        if (unitsArg === "metric") isMetric = true;
+        else if (unitsArg === "imperial") isMetric = false;
+        else {
+          try {
+            const ds = await appClient.sendCommand("getDrawingSettings", {}) as { units?: string };
+            isMetric = String(ds?.units ?? "meters").toLowerCase().startsWith("met");
+          } catch { isMetric = true; }
+        }
+        const k = isMetric ? 1.0 : 1.486;
+        const vMin = Number(args.targetVelocityMin ?? (isMetric ? 0.6 : 2.0));
+        const vMax = Number(args.targetVelocityMax ?? (isMetric ? 3.0 : 10.0));
+
         for (const pipe of network.pipes) {
           const designFlow = flowMap.get(pipe.name.toLowerCase()) ?? args.defaultDesignFlow;
           if (!designFlow) {
@@ -528,8 +547,8 @@ export const PIPE_DOMAIN_DEFINITION: DomainToolDefinition = {
           }
 
           const resolvedDesignFlow = Number(designFlow);
-          const requiredDiameter = solveRequiredDiameter(resolvedDesignFlow, pipe.slope, Number(args.manningsN));
-          const selectedPart = chooseBestPart(parts, requiredDiameter, resolvedDesignFlow, Number(args.targetVelocityMin), Number(args.targetVelocityMax));
+          const requiredDiameter = solveRequiredDiameter(resolvedDesignFlow, pipe.slope, Number(args.manningsN), k);
+          const selectedPart = chooseBestPart(parts, requiredDiameter, resolvedDesignFlow, vMin, vMax);
           if (!selectedPart) {
             recommendations.push({ pipeName: pipe.name, currentDiameter: pipe.diameter, status: "skipped", reason: "No catalog part could be parsed into a numeric diameter." });
             continue;
@@ -869,17 +888,17 @@ export const PIPE_DOMAIN_DEFINITION: DomainToolDefinition = {
       toolName: "civil3d_pipe_network_hgl_calculate",
       displayName: "Civil 3D Pipe Network HGL Calculate",
       description: "计算管网水压线（HGL）",
-      inputShape: { networkName: z.string(), tailwaterElevation: z.number().optional(), designFlow: z.number().optional(), manningsN: z.number().positive().optional() },
+      inputShape: { networkName: z.string(), tailwaterElevation: z.number().optional(), designFlow: z.number().optional(), manningsN: z.number().positive().optional(), units: z.enum(["auto", "metric", "imperial"]).optional() },
       supportedActions: ["calculate_hgl"],
-      resolveAction: (rawArgs) => ({ action: "calculate_hgl", args: { action: "calculate_hgl", networkName: rawArgs.networkName, tailwaterElevation: rawArgs.tailwaterElevation, designFlow: rawArgs.designFlow, manningsN: rawArgs.manningsN } }),
+      resolveAction: (rawArgs) => ({ action: "calculate_hgl", args: { action: "calculate_hgl", networkName: rawArgs.networkName, tailwaterElevation: rawArgs.tailwaterElevation, designFlow: rawArgs.designFlow, manningsN: rawArgs.manningsN, units: rawArgs.units } }),
     },
     {
       toolName: "civil3d_pipe_hydraulic_analysis",
       displayName: "Civil 3D Pipe Hydraulic Analysis",
       description: "管网水力分析",
-      inputShape: { networkName: z.string(), designFlow: z.number().optional(), manningsN: z.number().positive().optional(), minCoverDepth: z.number().nonnegative().optional(), minVelocity: z.number().nonnegative().optional(), maxVelocity: z.number().positive().optional(), minSlope: z.number().nonnegative().optional() },
+      inputShape: { networkName: z.string(), designFlow: z.number().optional(), manningsN: z.number().positive().optional(), minCoverDepth: z.number().nonnegative().optional(), minVelocity: z.number().nonnegative().optional(), maxVelocity: z.number().positive().optional(), minSlope: z.number().nonnegative().optional(), units: z.enum(["auto", "metric", "imperial"]).optional() },
       supportedActions: ["hydraulic_analysis"],
-      resolveAction: (rawArgs) => ({ action: "hydraulic_analysis", args: { action: "hydraulic_analysis", networkName: rawArgs.networkName, designFlow: rawArgs.designFlow, manningsN: rawArgs.manningsN, minCoverDepth: rawArgs.minCoverDepth, minVelocity: rawArgs.minVelocity, maxVelocity: rawArgs.maxVelocity, minSlope: rawArgs.minSlope } }),
+      resolveAction: (rawArgs) => ({ action: "hydraulic_analysis", args: { action: "hydraulic_analysis", networkName: rawArgs.networkName, designFlow: rawArgs.designFlow, manningsN: rawArgs.manningsN, minCoverDepth: rawArgs.minCoverDepth, minVelocity: rawArgs.minVelocity, maxVelocity: rawArgs.maxVelocity, minSlope: rawArgs.minSlope, units: rawArgs.units } }),
     },
     {
       toolName: "civil3d_pipe_structure_properties",
@@ -893,9 +912,9 @@ export const PIPE_DOMAIN_DEFINITION: DomainToolDefinition = {
       toolName: "civil3d_pipe_network_size",
       displayName: "Civil 3D Pipe Network Size",
       description: "管网水力选型 {networkName, ...}：按设计流量/曼宁系数/目标流速计算管径，可应用变更",
-      inputShape: { networkName: z.string(), partsList: z.string().optional(), defaultDesignFlow: z.number().positive().optional(), perPipeDesignFlows: z.array(PipeFlowSchema).optional(), manningsN: z.number().positive().optional().default(0.013), targetVelocityMin: z.number().positive().optional().default(2), targetVelocityMax: z.number().positive().optional().default(10), applyChanges: z.boolean().optional().default(false) },
+      inputShape: { networkName: z.string(), partsList: z.string().optional(), defaultDesignFlow: z.number().positive().optional(), perPipeDesignFlows: z.array(PipeFlowSchema).optional(), manningsN: z.number().positive().optional().default(0.013), targetVelocityMin: z.number().positive().optional(), targetVelocityMax: z.number().positive().optional(), units: z.enum(["auto", "metric", "imperial"]).optional(), applyChanges: z.boolean().optional().default(false) },
       supportedActions: ["size_network"],
-      resolveAction: (rawArgs) => ({ action: "size_network", args: { action: "size_network", networkName: rawArgs.networkName, partsList: rawArgs.partsList, defaultDesignFlow: rawArgs.defaultDesignFlow, perPipeDesignFlows: rawArgs.perPipeDesignFlows, manningsN: rawArgs.manningsN, targetVelocityMin: rawArgs.targetVelocityMin, targetVelocityMax: rawArgs.targetVelocityMax, applyChanges: rawArgs.applyChanges } }),
+      resolveAction: (rawArgs) => ({ action: "size_network", args: { action: "size_network", networkName: rawArgs.networkName, partsList: rawArgs.partsList, defaultDesignFlow: rawArgs.defaultDesignFlow, perPipeDesignFlows: rawArgs.perPipeDesignFlows, manningsN: rawArgs.manningsN, targetVelocityMin: rawArgs.targetVelocityMin, targetVelocityMax: rawArgs.targetVelocityMax, applyChanges: rawArgs.applyChanges, units: rawArgs.units } }),
     },
     {
       toolName: "civil3d_pipe_profile_view_automation",

@@ -7,7 +7,14 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 };
 
-const currentLevel: LogLevel = (process.env.CIVIL3D_LOG_LEVEL as LogLevel) ?? "info";
+// 2026-10-15: 非法级别会让 LOG_LEVELS[currentLevel] 为 undefined → `x >= undefined` 恒 false → 所有日志（含 error）被吞。
+const rawLevel = (process.env.CIVIL3D_LOG_LEVEL ?? "info").toLowerCase();
+const currentLevel: LogLevel = (rawLevel in LOG_LEVELS ? rawLevel : "info") as LogLevel;
+if (rawLevel !== currentLevel) {
+  console.warn(
+    `[logger] unknown CIVIL3D_LOG_LEVEL='${process.env.CIVIL3D_LOG_LEVEL}' -> falling back to 'info' (valid: debug|info|warn|error)`,
+  );
+}
 
 function shouldLog(level: LogLevel): boolean {
   return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];

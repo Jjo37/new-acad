@@ -1,17 +1,7 @@
 import { z } from "zod";
 import { withApplicationConnection } from "../../utils/ConnectionManager.js";
 import type { DomainToolDefinition } from "../domainRuntime.js";
-
-const Point2DSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-});
-
-const Point3DSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  z: z.number(),
-});
+import { Point2DSchema, Point3DSchema } from "./sharedSchemas.js";
 
 const Point2DOr3DSchema = z.union([Point3DSchema, Point2DSchema]);
 
@@ -231,7 +221,9 @@ const canonicalSurfaceInputShape = {
   majorInterval: z.number().optional(),
   baseSurface: z.string().optional(),
   comparisonSurface: z.string().optional(),
-  method: z.enum(["tin_volume", "average_end_area", "prismoidal"]).optional(),
+  // 2026-10-15: 同一字段承载两类语义——体积动作=体积法；sample_elevations=采样法。
+  // 只留体积法会让 sample_elevations 经 MCP 永远参数校验失败；此处取并集，各动作自身 schema 再收紧。
+  method: z.enum(["tin_volume", "average_end_area", "prismoidal", "grid", "points", "transect"]).optional(),
   format: z.enum(["summary", "detailed"]).optional(),
   boundary: z.array(Point2DSchema).optional(),
   ranges: z.array(z.object({ min: z.number(), max: z.number() })).optional(),
@@ -908,8 +900,9 @@ export const SURFACE_DOMAIN_DEFINITION: DomainToolDefinition = {
             sampleCount: sampledElevations.samples.length,
             startElevation,
             endElevation,
-            minimumElevation: Math.min(...elevations),
-            maximumElevation: Math.max(...elevations),
+            // 2026-10-15: 空样本时 Math.min()=Infinity / Math.max()=-Infinity；加空数组守卫
+            minimumElevation: elevations.length ? Math.min(...elevations) : 0,
+            maximumElevation: elevations.length ? Math.max(...elevations) : 0,
             totalDrop: startElevation - endElevation,
             units: sampledElevations.units,
             samples: sampledElevations.samples,

@@ -737,8 +737,11 @@ export const HYDROLOGY_DOMAIN_DEFINITION: DomainToolDefinition = {
       requiresActiveDrawing: true,
       safeForRetry: false,
       pluginMethods: ["openStormSanitaryAnalysis"],
-      execute: async () => await withApplicationConnection(
-        async (appClient) => await appClient.sendCommand("openStormSanitaryAnalysis", {}),
+      execute: async (args) => await withApplicationConnection(
+        async (appClient) => await appClient.sendCommand(
+          "openStormSanitaryAnalysis",
+          args?.filePath ? { filePath: args.filePath } : {},
+        ),
       ),
     },
     watershed_runoff_workflow: {

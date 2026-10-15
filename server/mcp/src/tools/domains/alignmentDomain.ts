@@ -1,11 +1,7 @@
 import { z } from "zod";
 import { withApplicationConnection } from "../../utils/ConnectionManager.js";
 import type { DomainToolDefinition } from "../domainRuntime.js";
-
-const Point2DSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-});
+import { Point2DSchema } from "./sharedSchemas.js";
 
 const GenericAlignmentResponseSchema = z.object({}).passthrough();
 

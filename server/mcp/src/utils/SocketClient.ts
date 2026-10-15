@@ -124,7 +124,13 @@ export class ApplicationClientConnection {
   private handleResponse(responseData: string): void {
     try {
       const response = JSON.parse(responseData);
-      const requestId = response.id || "default";
+      // 2026-10-15: 响应缺 id 时原用 "default" 兜底，但回调表以随机 requestId 为键
+      // → 永远匹配不上，请求静默挂起到超时。改为报错丢弃。
+      const requestId = response?.id;
+      if (requestId === undefined || requestId === null) {
+        log.error("Response missing request id; cannot route, dropping", { response: responseData.slice(0, 200) });
+        return;
+      }
 
       const pending = this.responseCallbacks.get(requestId);
       if (pending) {

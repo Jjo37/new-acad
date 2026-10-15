@@ -98,7 +98,7 @@ function extractQuotedValue(request: string): string | undefined {
 
 function extractNamedValue(request: string, fieldLabel: string): string | undefined {
   const expression = new RegExp(
-    `${fieldLabel}\\s*[:=]\\s*(.+?)(?=\\s+[a-z][a-z0-9_]*(?:\\s+[a-z][a-z0-9_]*)?\\s*[:=]|[,;]|$)`,
+    `(?<![A-Za-z0-9])${fieldLabel}\\s*[:=]\\s*(.+?)(?=\\s+[a-z][a-z0-9_]*(?:\\s+[a-z][a-z0-9_]*)?\\s*[:=]|[,;]|$)`,
     "i",
   );
   const match = request.match(expression);
@@ -106,7 +106,7 @@ function extractNamedValue(request: string, fieldLabel: string): string | undefi
 }
 
 function extractNamedNumber(request: string, fieldLabel: string): number | undefined {
-  const expression = new RegExp(`${fieldLabel}\\s*[:=]?\\s*(-?\\d+(?:\\.\\d+)?)`, "i");
+  const expression = new RegExp(`(?<![A-Za-z0-9])${fieldLabel}\\s*[:=]?\\s*(-?\\d+(?:\\.\\d+)?)`, "i");
   const match = request.match(expression);
   return match ? Number(match[1]) : undefined;
 }
@@ -117,13 +117,13 @@ function extractPathValue(request: string, fieldLabel: string): string | undefin
     return named.replace(/^['"]|['"]$/g, "").trim();
   }
 
-  const quoted = new RegExp(`${fieldLabel}\\s*[=:]?\\s*["']([^"']+)["']`, "i").exec(request)?.[1]?.trim();
+  const quoted = new RegExp(`(?<![A-Za-z0-9])${fieldLabel}\\s*[=:]?\\s*["']([^"']+)["']`, "i").exec(request)?.[1]?.trim();
   return quoted;
 }
 
 function extractPoint3D(request: string, fieldLabel: string): Point3D | undefined {
   const namedMatch = new RegExp(
-    `${fieldLabel}\\s*[:=]\\s*\\(?\\s*(-?\\d+(?:\\.\\d+)?)\\s*,\\s*(-?\\d+(?:\\.\\d+)?)(?:\\s*,\\s*(-?\\d+(?:\\.\\d+)?))?\\s*\\)?`,
+    `(?<![A-Za-z0-9])${fieldLabel}\\s*[:=]\\s*\\(?\\s*(-?\\d+(?:\\.\\d+)?)\\s*,\\s*(-?\\d+(?:\\.\\d+)?)(?:\\s*,\\s*(-?\\d+(?:\\.\\d+)?))?\\s*\\)?`,
     "i",
   ).exec(request);
 

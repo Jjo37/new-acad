@@ -1,6 +1,6 @@
 import { z, type ZodRawShape, type ZodTypeAny } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { approvalPolicy, getActiveDrawingFingerprint, hasApprovalRisk } from "./approvalPolicy.js";
+import { approvalPolicy, getActiveDrawingFingerprint, hasApprovalRisk, MUTATING_CAPABILITIES } from "./approvalPolicy.js";
 import { captureToolHandler } from "./toolHandlerRegistry.js";
 import { maybeStoreReportResource } from "./reportResourceStore.js";
 import { idempotencyStore } from "./idempotencyStore.js";
@@ -24,15 +24,12 @@ interface ToolProgressExtra {
   }) => Promise<void>;
 }
 
-const MUTATING_CAPABILITIES = new Set<ToolCapability>([
-  "create",
-  "edit",
-  "delete",
-  "manage",
+// 非只读能力 = 改动图纸（approvalPolicy.MUTATING_CAPABILITIES）+ 产生新产物（generate/register）。
+// 审批门禁用前者（只有改图才需审批），这里用于 MCP readOnlyHint，故显式派生而非各写一份（防漂移）。
+const SIDE_EFFECTING_CAPABILITIES = new Set<ToolCapability>([
+  ...MUTATING_CAPABILITIES,
   "generate",
   "register",
-  "export",
-  "import",
 ]);
 const log = createLogger("DomainRuntime");
 
@@ -262,7 +259,7 @@ export function buildExposureAnnotations(
     .map((actionName) => definition.actions[actionName])
     .filter((action): action is DomainActionDefinition => Boolean(action));
   const isReadOnly = actions.every((action) =>
-    action.capabilities.every((capability) => !MUTATING_CAPABILITIES.has(capability))
+    action.capabilities.every((capability) => !SIDE_EFFECTING_CAPABILITIES.has(capability))
   );
   const isDestructive = actions.some((action) => hasApprovalRisk({
     toolName: exposure.toolName,

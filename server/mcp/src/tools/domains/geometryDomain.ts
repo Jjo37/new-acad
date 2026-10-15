@@ -1,10 +1,9 @@
 import { z } from "zod";
 import { withApplicationConnection } from "../../utils/ConnectionManager.js";
 import type { DomainToolDefinition } from "../domainRuntime.js";
+import { Point2DSchema, Point3DSchema } from "./sharedSchemas.js";
 
 const GenericResponseSchema = z.object({}).passthrough();
-const Point2DSchema = z.object({ x: z.number(), y: z.number() });
-const Point3DSchema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 const CourseSchema = z.object({ bearingDegrees: z.number(), distance: z.number().positive(), slope: z.number().optional(), description: z.string().optional() });
 
 const CogoInverseArgs = z.object({ action: z.literal("cogo_inverse"), x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number() });

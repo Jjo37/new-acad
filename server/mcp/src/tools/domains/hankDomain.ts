@@ -8,10 +8,12 @@ import { withApplicationConnection } from "../../utils/ConnectionManager.js";
 const GenericResponseSchema = z.object({}).passthrough();
 
 // Helper to make standard modify tool defs
+// 2026-10-15: capabilities 用合法值 "edit"（原为非法枚举 "modify"，被 @ts-nocheck 掩盖，
+// 导致这批改图工具被审批策略判为“非变更” → 绕过审批门禁）
 function makeModifyTool(method, argsSchema, executeFn) {
   return {
     action: method, inputSchema: argsSchema, responseSchema: GenericResponseSchema,
-    capabilities: ["modify"], requiresActiveDrawing: true, safeForRetry: false, pluginMethods: [method],
+    capabilities: ["edit"], requiresActiveDrawing: true, safeForRetry: false, pluginMethods: [method],
     execute: executeFn,
   };
 }
@@ -273,7 +275,8 @@ const RenderSceneShape = {};
 const AssignMaterialShape = { handle: z.string().min(1), materialName: z.string().min(1) };
 
 // Build actions map
-const mkAct = (action, argsSchema, exec, caps = "modify") => ({
+// 2026-10-15: 默认 caps 用合法值 "edit"（原 "modify" 非法，见 makeModifyTool 注释）
+const mkAct = (action, argsSchema, exec, caps = "edit") => ({
   action, inputSchema: argsSchema, responseSchema: GenericResponseSchema,
   capabilities: [caps], requiresActiveDrawing: true, safeForRetry: false,
   pluginMethods: [action.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase()).replace(/3D$/, "3d")], execute: exec,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { routeIntent, type RouteParams, type RouteResult } from "../orchestration/IntentRouter.js";
 import { findToolCatalogEntry } from "../orchestration/ToolCatalog.js";
+import { ROUTE_PARAM_FIELDS } from "../orchestration/routeParams.js";
 import { getProjectContext } from "../orchestration/ProjectContextService.js";
 import { buildWorkflowPlan } from "../orchestration/WorkflowPlanner.js";
 import { resolveParamsFromSelection } from "../orchestration/SelectionResolver.js";
@@ -68,51 +69,8 @@ const Civil3DOrchestrateInputSchema = z.object(Civil3DOrchestrateInputShape);
 
 export type OrchestrateArgs = z.infer<typeof Civil3DOrchestrateInputSchema>;
 
-const ROUTE_PARAM_KEYS: Array<keyof RouteParams> = [
-  "name",
-  "alignmentName",
-  "corridorName",
-  "profileName",
-  "surfaceName",
-  "projectFolder",
-  "shortcutName",
-  "shortcutType",
-  "templatePath",
-  "saveAs",
-  "limit",
-  "layerPrefix",
-  "networkName",
-  "pipeName",
-  "structureName",
-  "fittingName",
-  "partName",
-  "partsList",
-  "targetType",
-  "targetName",
-  "targetNetwork",
-  "sourceNetwork",
-  "newPartName",
-  "startPoint",
-  "endPoint",
-  "position",
-  "baseSurface",
-  "comparisonSurface",
-  "style",
-  "layer",
-  "labelSet",
-  "filePath",
-  "outputPath",
-  "overwrite",
-  "gridSpacing",
-  "designSpeed",
-  "inflow",
-  "outflow",
-  "bottomElevation",
-  "topElevation",
-  "minCoverDepth",
-  "maxCoverDepth",
-  "payItems",
-];
+// 2026-10-15: 白名单统一到 orchestration/routeParams.ts（与 ToolCatalog 共用，消除漂移）
+const ROUTE_PARAM_KEYS: Array<keyof RouteParams> = [...ROUTE_PARAM_FIELDS];
 
 function pickRouteParams(
   source?: Record<string, unknown>,
@@ -128,104 +86,22 @@ function pickRouteParams(
   ) as Partial<RouteParams>;
 }
 
-function buildMergedParams(args: OrchestrateArgs, routed: ReturnType<typeof routeIntent>) {
-  return {
-    name: args.name ?? routed.extractedParams.name,
-    alignmentName: args.alignmentName ?? routed.extractedParams.alignmentName,
-    corridorName: args.corridorName ?? routed.extractedParams.corridorName,
-    profileName: args.profileName ?? routed.extractedParams.profileName,
-    surfaceName: args.surfaceName ?? routed.extractedParams.surfaceName,
-    projectFolder: args.projectFolder ?? routed.extractedParams.projectFolder,
-    shortcutName: args.shortcutName ?? routed.extractedParams.shortcutName,
-    shortcutType: args.shortcutType ?? routed.extractedParams.shortcutType,
-    templatePath: args.templatePath ?? routed.extractedParams.templatePath,
-    saveAs: args.saveAs ?? routed.extractedParams.saveAs,
-    limit: args.limit ?? routed.extractedParams.limit,
-    layerPrefix: args.layerPrefix ?? routed.extractedParams.layerPrefix,
-    networkName: args.networkName ?? routed.extractedParams.networkName,
-    pipeName: args.pipeName ?? routed.extractedParams.pipeName,
-    structureName: args.structureName ?? routed.extractedParams.structureName,
-    fittingName: args.fittingName ?? routed.extractedParams.fittingName,
-    partName: args.partName ?? routed.extractedParams.partName,
-    partsList: args.partsList ?? routed.extractedParams.partsList,
-    targetType: args.targetType ?? routed.extractedParams.targetType,
-    targetName: args.targetName ?? routed.extractedParams.targetName,
-    targetNetwork: args.targetNetwork ?? routed.extractedParams.targetNetwork,
-    sourceNetwork: args.sourceNetwork ?? routed.extractedParams.sourceNetwork,
-    newPartName: args.newPartName ?? routed.extractedParams.newPartName,
-    startPoint: args.startPoint ?? routed.extractedParams.startPoint,
-    endPoint: args.endPoint ?? routed.extractedParams.endPoint,
-    position: args.position ?? routed.extractedParams.position,
-    baseSurface: args.baseSurface ?? routed.extractedParams.baseSurface,
-    comparisonSurface: args.comparisonSurface ?? routed.extractedParams.comparisonSurface,
-    style: args.style ?? routed.extractedParams.style,
-    layer: args.layer ?? routed.extractedParams.layer,
-    labelSet: args.labelSet ?? routed.extractedParams.labelSet,
-    filePath: args.filePath ?? routed.extractedParams.filePath,
-    outputPath: args.outputPath ?? routed.extractedParams.outputPath,
-    overwrite: args.overwrite ?? routed.extractedParams.overwrite,
-    gridSpacing: args.gridSpacing ?? routed.extractedParams.gridSpacing,
-    designSpeed: args.designSpeed ?? routed.extractedParams.designSpeed,
-    inflow: args.inflow ?? routed.extractedParams.inflow,
-    outflow: args.outflow ?? routed.extractedParams.outflow,
-    bottomElevation: args.bottomElevation ?? routed.extractedParams.bottomElevation,
-    topElevation: args.topElevation ?? routed.extractedParams.topElevation,
-    minCoverDepth: args.minCoverDepth ?? routed.extractedParams.minCoverDepth,
-    maxCoverDepth: args.maxCoverDepth ?? routed.extractedParams.maxCoverDepth,
-    payItems: args.payItems ?? routed.extractedParams.payItems,
-  };
+/** 2026-10-15: 按 ROUTE_PARAM_KEYS 把 args 覆盖到 fallback 之上（buildMerged/Direct 共用，替代两处各手抄 40+ 字段）。 */
+function mapRouteParams(args: OrchestrateArgs, fallback: Partial<RouteParams>): RouteParams {
+  const a = args as Record<string, unknown>;
+  const fb = fallback as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of ROUTE_PARAM_KEYS) out[key] = a[key] !== undefined ? a[key] : fb[key];
+  return out as RouteParams;
+}
+
+function buildMergedParams(args: OrchestrateArgs, routed: ReturnType<typeof routeIntent>): RouteParams {
+  return mapRouteParams(args, routed.extractedParams);
 }
 
 function buildDirectParams(args: OrchestrateArgs): RouteParams {
   const extractedRequestParams = args.request ? routeIntent(args.request).extractedParams : {};
-
-  return {
-    ...extractedRequestParams,
-    name: args.name ?? extractedRequestParams.name,
-    alignmentName: args.alignmentName ?? extractedRequestParams.alignmentName,
-    corridorName: args.corridorName ?? extractedRequestParams.corridorName,
-    profileName: args.profileName ?? extractedRequestParams.profileName,
-    surfaceName: args.surfaceName ?? extractedRequestParams.surfaceName,
-    projectFolder: args.projectFolder ?? extractedRequestParams.projectFolder,
-    shortcutName: args.shortcutName ?? extractedRequestParams.shortcutName,
-    shortcutType: args.shortcutType ?? extractedRequestParams.shortcutType,
-    templatePath: args.templatePath ?? extractedRequestParams.templatePath,
-    saveAs: args.saveAs ?? extractedRequestParams.saveAs,
-    limit: args.limit ?? extractedRequestParams.limit,
-    layerPrefix: args.layerPrefix ?? extractedRequestParams.layerPrefix,
-    networkName: args.networkName ?? extractedRequestParams.networkName,
-    pipeName: args.pipeName ?? extractedRequestParams.pipeName,
-    structureName: args.structureName ?? extractedRequestParams.structureName,
-    fittingName: args.fittingName ?? extractedRequestParams.fittingName,
-    partName: args.partName ?? extractedRequestParams.partName,
-    partsList: args.partsList ?? extractedRequestParams.partsList,
-    targetType: args.targetType ?? extractedRequestParams.targetType,
-    targetName: args.targetName ?? extractedRequestParams.targetName,
-    targetNetwork: args.targetNetwork ?? extractedRequestParams.targetNetwork,
-    sourceNetwork: args.sourceNetwork ?? extractedRequestParams.sourceNetwork,
-    newPartName: args.newPartName ?? extractedRequestParams.newPartName,
-    startPoint: args.startPoint ?? extractedRequestParams.startPoint,
-    endPoint: args.endPoint ?? extractedRequestParams.endPoint,
-    position: args.position ?? extractedRequestParams.position,
-    baseSurface: args.baseSurface ?? extractedRequestParams.baseSurface,
-    comparisonSurface: args.comparisonSurface ?? extractedRequestParams.comparisonSurface,
-    style: args.style ?? extractedRequestParams.style,
-    layer: args.layer ?? extractedRequestParams.layer,
-    labelSet: args.labelSet ?? extractedRequestParams.labelSet,
-    filePath: args.filePath ?? extractedRequestParams.filePath,
-    outputPath: args.outputPath ?? extractedRequestParams.outputPath,
-    overwrite: args.overwrite ?? extractedRequestParams.overwrite,
-    gridSpacing: args.gridSpacing ?? extractedRequestParams.gridSpacing,
-    designSpeed: args.designSpeed ?? extractedRequestParams.designSpeed,
-    inflow: args.inflow ?? extractedRequestParams.inflow,
-    outflow: args.outflow ?? extractedRequestParams.outflow,
-    bottomElevation: args.bottomElevation ?? extractedRequestParams.bottomElevation,
-    topElevation: args.topElevation ?? extractedRequestParams.topElevation,
-    minCoverDepth: args.minCoverDepth ?? extractedRequestParams.minCoverDepth,
-    maxCoverDepth: args.maxCoverDepth ?? extractedRequestParams.maxCoverDepth,
-    payItems: args.payItems ?? extractedRequestParams.payItems,
-    ...pickRouteParams(args.toolParameters),
-  };
+  return { ...extractedRequestParams, ...mapRouteParams(args, extractedRequestParams), ...pickRouteParams(args.toolParameters) };
 }
 
 function buildDirectRoute(args: OrchestrateArgs): RouteResult {

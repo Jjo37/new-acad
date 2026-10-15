@@ -160,6 +160,7 @@ Copy-Item "$ROOT\tools\port-check.ps1" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\port-check.bat" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\port-config.ps1" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\port-config.bat" "$DIST\tools\" -Force
+Copy-Item "$ROOT\tools\ocr-check.ps1" "$DIST\tools\" -Force   # 2026-10-15: OCR 语言包预检（install.ps1 调用）
 Copy-Item "$ROOT\uninstall.ps1" "$DIST\" -Force
 Copy-Item "$ROOT\uninstall-pre.ps1" "$DIST\" -Force  # 2026-08-25: Inno uninstall pre-cleanup (stop node/task, restore acad.lsp)
 Copy-Item "$ROOT\使用手册.html" "$DIST\" -Force

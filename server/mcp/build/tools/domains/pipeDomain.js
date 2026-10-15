@@ -266,25 +266,41 @@ const PipeAddPressureAppurtenanceArgsSchema = z.object({
     rotation: z.number().optional(),
     onPipeName: z.string().optional(),
 });
-function parsePartDiameter(partName) {
+export function parsePartDiameter(partName) {
     const match = partName.match(/(\d+(?:\.\d+)?)/);
     if (!match)
         return null;
     const value = Number(match[1]);
     return Number.isFinite(value) ? value : null;
 }
-function computeFullFlowCapacity(diameter, slopePct, manningsN, k = 1) {
+export function computeFullFlowCapacity(diameter, slopePct, manningsN, k = 1) {
     const slope = Math.max(Math.abs(slopePct) / 100, 1e-6);
     const area = Math.PI * diameter * diameter / 4;
     const hydraulicRadius = diameter / 4;
     // k: Manning 单位常数（SI=1.0 / 英尺=1.486），2026-10-15
     return k * (1 / manningsN) * area * Math.pow(hydraulicRadius, 2 / 3) * Math.sqrt(slope);
 }
-function computeVelocity(flow, diameter) {
+export function computeVelocity(flow, diameter) {
     const area = Math.PI * diameter * diameter / 4;
     return area > 0 ? flow / area : 0;
 }
-function solveRequiredDiameter(flow, slopePct, manningsN, k = 1) {
+// 2026-10-15: 单位自适应（纯函数，便于单测）——args.units 覆盖 > 图纸单位
+export function unitIsMetric(unitsArg, drawingUnits) {
+    const u = String(unitsArg ?? "auto").toLowerCase();
+    if (u === "metric")
+        return true;
+    if (u === "imperial")
+        return false;
+    const d = String(drawingUnits ?? "").toLowerCase();
+    if (!d)
+        return true; // 拿不到图纸单位 → 默认米制（与 handler 一致）
+    return d.startsWith("met");
+}
+// k = Manning 单位常数（SI=1.0 / 英尺=1.486）；目标流速默认值随单位
+export function pipeUnitProfile(isMetric) {
+    return isMetric ? { k: 1.0, vMin: 0.6, vMax: 3.0 } : { k: 1.486, vMin: 2.0, vMax: 10.0 };
+}
+export function solveRequiredDiameter(flow, slopePct, manningsN, k = 1) {
     let low = 0.01;
     let high = 100;
     while (computeFullFlowCapacity(high, slopePct, manningsN, k) < flow && high < 1_000_000)
@@ -504,23 +520,19 @@ export const PIPE_DOMAIN_DEFINITION = {
                 // 2026-10-15: 单位自适应 —— args.units 覆盖 > 图纸单位（getDrawingSettings.units）；
                 // Manning 常数与目标流速默认值随单位（SI: 0.6/3.0 m/s；英制: 2/10 ft/s）
                 const unitsArg = String(args.units ?? "auto").toLowerCase();
-                let isMetric;
-                if (unitsArg === "metric")
-                    isMetric = true;
-                else if (unitsArg === "imperial")
-                    isMetric = false;
-                else {
+                let drawingUnits = "meters";
+                if (unitsArg !== "metric" && unitsArg !== "imperial") {
                     try {
                         const ds = await appClient.sendCommand("getDrawingSettings", {});
-                        isMetric = String(ds?.units ?? "meters").toLowerCase().startsWith("met");
+                        if (ds?.units)
+                            drawingUnits = String(ds.units);
                     }
-                    catch {
-                        isMetric = true;
-                    }
+                    catch { /* 回落 meters */ }
                 }
-                const k = isMetric ? 1.0 : 1.486;
-                const vMin = Number(args.targetVelocityMin ?? (isMetric ? 0.6 : 2.0));
-                const vMax = Number(args.targetVelocityMax ?? (isMetric ? 3.0 : 10.0));
+                const isMetric = unitIsMetric(unitsArg, drawingUnits);
+                const { k, vMin: dVMin, vMax: dVMax } = pipeUnitProfile(isMetric);
+                const vMin = Number(args.targetVelocityMin ?? dVMin);
+                const vMax = Number(args.targetVelocityMax ?? dVMax);
                 for (const pipe of network.pipes) {
                     const designFlow = flowMap.get(pipe.name.toLowerCase()) ?? args.defaultDesignFlow;
                     if (!designFlow) {

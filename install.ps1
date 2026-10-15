@@ -462,6 +462,16 @@ if ($doConfig) {
   }
 }
 
+# ---------- OCR 预检（扫描件 OCR 需要系统 OCR 语言包） ----------
+try {
+  $ocr = Join-Path $PSScriptRoot 'tools\ocr-check.ps1'
+  if (Test-Path $ocr) {
+    & $ocr | Out-Null
+    if ($LASTEXITCODE -eq 1) { Wn "未检测到 Windows OCR 语言包 —— 扫描件 PDF 无法 OCR（设置→时间和语言→语言→语言选项→添加中文「光学字符识别」组件）" }
+    else { Ok "OCR 语言包检查通过" }
+  }
+} catch { Wn "OCR 预检跳过: $_" }
+
 # ---------- 总结 ----------
 Write-Host "`n========================================" -ForegroundColor Cyan
 $total = $PASS + $FAIL + $WARN

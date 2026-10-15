@@ -14,3 +14,5 @@
 *.docx binary
 *.xlsx binary
 *.zip binary
+# 钩子按 LF（Windows autocrlf 会把 .sh 变 CRLF → 钩子失效）
+.githooks/* text eol=lf

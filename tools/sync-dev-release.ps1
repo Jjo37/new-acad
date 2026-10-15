@@ -19,6 +19,7 @@ $files = @(
   # 版本与用户文档
   'package.json',
   'README.md','ONBOARDING.md','POSITIONING.md','PRIVACY.md','workflow-guide.md','使用手册.html',
+  'KNOWN-ISSUES.md',   # 已知问题台账（唯一来源）
   # 运行脚本
   'install.ps1','uninstall.ps1','uninstall-pre.ps1','config.json','relay-launcher.js',
   # 构建脚本
@@ -52,11 +53,16 @@ $files = @(
   'tools/port-check.ps1','tools/port-check.bat','tools/port-config.ps1','tools/port-config.bat',
   'tools/sync-dev-release.ps1',
   'tools/scan-release-leaks.js',
+  'tools/check-doc-coverage.js',
+  'tools/check-release-tag.js',
+  'tools/ocr-check.ps1',
   'tools/push-via-api.js'
 )
 
 # ---- 2) 目录清单（递归，带排除）----
 $dirs = @(
+  '.github',   # CI 工作流（GitHub Actions）
+  '.githooks',  # 本地 git 钩子
   'server',
   'knowledge/sac-templates',
   'server/mcp/build',
@@ -67,7 +73,7 @@ $dirs = @(
 # 2026-10-11: plugin SOURCE travels with the sync too. It used to be excluded on purpose
 # ("only the DLL three-piece"), which is exactly why the public repo source lagged behind
 # the binary. Own exclude list: skip build output only.
-$srcDirs = @('plugin/AcBridge-v24/src')
+$srcDirs = @('plugin/AcBridge-v24/src', 'server/mcp/src')   # 2026-10-15: MCP 源码也随同步（曾因排除 src/ 导致公开仓源码落后 → CI 红）
 $srcExcludePatterns = @('\.log$','\.lock$','\.pdb$','\.user$','\\bin\\','\\obj\\','\\C_References\\','\\\.vs\\')
 
 $excludePatterns = @(

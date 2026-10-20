@@ -1,0 +1,486 @@
+[
+  {
+    "url": "https://help.autodesk.com/view/CIV3D/2026/ENG/?guid=GUID-9AB0843F-9077-473C-8EF5-83C12DFAD712",
+    "resolved_url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-9AB0843F-9077-473C-8EF5-83C12DFAD712.htm",
+    "title": "Videos",
+    "video_urls": [
+      "https://help.autodesk.com/videos/02dnBmbDqu_htk48hbD3qtSC7hPdLyP5/video.mp4",
+      "https://help.autodesk.com/videos/02dnBmbDqu_htk48hbD3qtSC7hPdLyP5/video.webm",
+      "https://help.autodesk.com/videos/1hMXlrbDq5lpkLCkR4C2aRhsBw22Grb-/video.mp4",
+      "https://help.autodesk.com/videos/1hMXlrbDq5lpkLCkR4C2aRhsBw22Grb-/video.webm",
+      "https://help.autodesk.com/videos/4wdHBmbDrmznpEBGL3p9GdBdUOs9Eoyv/video.mp4",
+      "https://help.autodesk.com/videos/4wdHBmbDrmznpEBGL3p9GdBdUOs9Eoyv/video.webm",
+      "https://help.autodesk.com/videos/5wd3BmbDrwiSzrmIKaRg4ChkDLw82N94/video.mp4",
+      "https://help.autodesk.com/videos/5wd3BmbDrwiSzrmIKaRg4ChkDLw82N94/video.webm",
+      "https://help.autodesk.com/videos/80d3hrbDpR3qITXhHEq3At-5f3mXHN_5/video.mp4",
+      "https://help.autodesk.com/videos/80d3hrbDpR3qITXhHEq3At-5f3mXHN_5/video.webm",
+      "https://help.autodesk.com/videos/90bW8wZDE6OE_XPTP3noEq6hOCp7xjc8/video.mp4",
+      "https://help.autodesk.com/videos/90bW8wZDE6OE_XPTP3noEq6hOCp7xjc8/video.webm",
+      "https://help.autodesk.com/videos/9lMXlrbDqKn00wyRYSfFOvimy6nd452q/video.mp4",
+      "https://help.autodesk.com/videos/9lMXlrbDqKn00wyRYSfFOvimy6nd452q/video.webm",
+      "https://help.autodesk.com/videos/BsYzNjYTE6Dx9s8pKpq1V7_c_CZ6Vugl/video.mp4",
+      "https://help.autodesk.com/videos/BsYzNjYTE6Dx9s8pKpq1V7_c_CZ6Vugl/video.webm",
+      "https://help.autodesk.com/videos/Buc3BmbDp1N5GzPYoKRvL-iR4zkIEngu/video.mp4",
+      "https://help.autodesk.com/videos/Buc3BmbDp1N5GzPYoKRvL-iR4zkIEngu/video.webm",
+      "https://help.autodesk.com/videos/FuMHlrbDqFigdPo3itoZtHdJ36mXMo8f/video.mp4",
+      "https://help.autodesk.com/videos/FuMHlrbDqFigdPo3itoZtHdJ36mXMo8f/video.webm",
+      "https://help.autodesk.com/videos/JjeXhrbDpu1V-MzdpFEYgHgfCw0O4SH-/video.mp4",
+      "https://help.autodesk.com/videos/JjeXhrbDpu1V-MzdpFEYgHgfCw0O4SH-/video.webm",
+      "https://help.autodesk.com/videos/MxeHhrbDoEoUG1IKcXqDj18scVc2ph03/video.mp4",
+      "https://help.autodesk.com/videos/MxeHhrbDoEoUG1IKcXqDj18scVc2ph03/video.webm",
+      "https://help.autodesk.com/videos/N2MHlrbDoyrZl1yKejV852JIRnahvWYP/video.mp4",
+      "https://help.autodesk.com/videos/N2MHlrbDoyrZl1yKejV852JIRnahvWYP/video.webm",
+      "https://help.autodesk.com/videos/Nkd3BmbDp0tpMcV1CDAfVJyDEimbxhxV/video.mp4",
+      "https://help.autodesk.com/videos/Nkd3BmbDp0tpMcV1CDAfVJyDEimbxhxV/video.webm",
+      "https://help.autodesk.com/videos/Npd3hrbDqgHJg8o-wLWK_8e4OJ5htCZ6/video.mp4",
+      "https://help.autodesk.com/videos/Npd3hrbDqgHJg8o-wLWK_8e4OJ5htCZ6/video.webm",
+      "https://help.autodesk.com/videos/Nsd3BmbDpKcm-bkQVaWxUw1uuRzfvdaI/video.mp4",
+      "https://help.autodesk.com/videos/Nsd3BmbDpKcm-bkQVaWxUw1uuRzfvdaI/video.webm",
+      "https://help.autodesk.com/videos/Nyd3BmbDpoWMHXlC2cDdtzby1ecNmrgR/video.mp4",
+      "https://help.autodesk.com/videos/Nyd3BmbDpoWMHXlC2cDdtzby1ecNmrgR/video.webm",
+      "https://help.autodesk.com/videos/UweHBmbDpyXHbr0zwsFBVBUnMQGMNqBm/video.mp4",
+      "https://help.autodesk.com/videos/UweHBmbDpyXHbr0zwsFBVBUnMQGMNqBm/video.webm",
+      "https://help.autodesk.com/videos/VjdnBmbDrROP-i2Orq-Wyg4dJ-mTL1Tj/video.mp4",
+      "https://help.autodesk.com/videos/VjdnBmbDrROP-i2Orq-Wyg4dJ-mTL1Tj/video.webm",
+      "https://help.autodesk.com/videos/VtMXlrbDrAARvWD5lCzdAsZ-3Tq_c06W/video.mp4",
+      "https://help.autodesk.com/videos/VtMXlrbDrAARvWD5lCzdAsZ-3Tq_c06W/video.webm",
+      "https://help.autodesk.com/videos/VueHhrbDoYks4O8QdP1Tpo0q41HRfKCb/video.mp4",
+      "https://help.autodesk.com/videos/VueHhrbDoYks4O8QdP1Tpo0q41HRfKCb/video.webm",
+      "https://help.autodesk.com/videos/Y5MHlrbDqgWUCH6esEZnk44YHwgGjuqx/video.mp4",
+      "https://help.autodesk.com/videos/Y5MHlrbDqgWUCH6esEZnk44YHwgGjuqx/video.webm",
+      "https://help.autodesk.com/videos/ZjOHZpbDoy7zidwtINnvDDIgtmSiCcgC/video.mp4",
+      "https://help.autodesk.com/videos/ZjOHZpbDoy7zidwtINnvDDIgtmSiCcgC/video.webm",
+      "https://help.autodesk.com/videos/ZkMHlrbDoRCMoIjCjDgegrEdkSz4xIr4/video.mp4",
+      "https://help.autodesk.com/videos/ZkMHlrbDoRCMoIjCjDgegrEdkSz4xIr4/video.webm",
+      "https://help.autodesk.com/videos/Ztd3hrbDqZzx7pbjn7gTu4rxbwt227up/video.mp4",
+      "https://help.autodesk.com/videos/Ztd3hrbDqZzx7pbjn7gTu4rxbwt227up/video.webm",
+      "https://help.autodesk.com/videos/ZueXBmbDqJYfOsQCK_xUohBlc_Y2TWbR/video.mp4",
+      "https://help.autodesk.com/videos/ZueXBmbDqJYfOsQCK_xUohBlc_Y2TWbR/video.webm",
+      "https://help.autodesk.com/videos/ZvaGp4MTE6RU0QTSY5Rt0kS2mjFZkNOy/video.mp4",
+      "https://help.autodesk.com/videos/ZvaGp4MTE6RU0QTSY5Rt0kS2mjFZkNOy/video.webm",
+      "https://help.autodesk.com/videos/c1YTNjYTE61pEcqoCVGLQdjFguvP3uPM/video.mp4",
+      "https://help.autodesk.com/videos/c1YTNjYTE61pEcqoCVGLQdjFguvP3uPM/video.webm",
+      "https://help.autodesk.com/videos/c4OHZpbDoaWoXMCFbOurwrbwUqlxJCt_/video.mp4",
+      "https://help.autodesk.com/videos/c4OHZpbDoaWoXMCFbOurwrbwUqlxJCt_/video.webm",
+      "https://help.autodesk.com/videos/cyd3hrbDrIwZoqdd0VePtB4abTBfU0om/video.mp4",
+      "https://help.autodesk.com/videos/cyd3hrbDrIwZoqdd0VePtB4abTBfU0om/video.webm",
+      "https://help.autodesk.com/videos/hmdXBmbDrmD4RJG46g4xxLXnNrBqHIIC/video.mp4",
+      "https://help.autodesk.com/videos/hmdXBmbDrmD4RJG46g4xxLXnNrBqHIIC/video.webm",
+      "https://help.autodesk.com/videos/hqMHlrbDp2icnWckLnUbHLF0zAvIOzUL/video.mp4",
+      "https://help.autodesk.com/videos/hqMHlrbDp2icnWckLnUbHLF0zAvIOzUL/video.webm",
+      "https://help.autodesk.com/videos/k0eHBmbDow8hk9fBwnxpn6N6wlHj7CQW/video.mp4",
+      "https://help.autodesk.com/videos/k0eHBmbDow8hk9fBwnxpn6N6wlHj7CQW/video.webm",
+      "https://help.autodesk.com/videos/kzdXBmbDojuf8KYJ063NMC-OS2_pWTWI/video.mp4",
+      "https://help.autodesk.com/videos/kzdXBmbDojuf8KYJ063NMC-OS2_pWTWI/video.webm",
+      "https://help.autodesk.com/videos/ljeHBmbDoSelcMhXzmPPTtxKEbYnmpBv/video.mp4",
+      "https://help.autodesk.com/videos/ljeHBmbDoSelcMhXzmPPTtxKEbYnmpBv/video.webm",
+      "https://help.autodesk.com/videos/lnZnBkYzE6D23z_k_YLvHD-RXnokdC1M/video.mp4",
+      "https://help.autodesk.com/videos/lnZnBkYzE6D23z_k_YLvHD-RXnokdC1M/video.webm",
+      "https://help.autodesk.com/videos/lzY2JvYTE6_1yfBCE8f_fSLAnvib4EAn/video.mp4",
+      "https://help.autodesk.com/videos/lzY2JvYTE6_1yfBCE8f_fSLAnvib4EAn/video.webm",
+      "https://help.autodesk.com/videos/o0OHZpbDqTGLg9IO1DFVi2WZ_KtwA4UB/video.mp4",
+      "https://help.autodesk.com/videos/o0OHZpbDqTGLg9IO1DFVi2WZ_KtwA4UB/video.webm",
+      "https://help.autodesk.com/videos/p2dXBmbDpHhxpiQTSdyffYU7pFnbsnPw/video.mp4",
+      "https://help.autodesk.com/videos/p2dXBmbDpHhxpiQTSdyffYU7pFnbsnPw/video.webm",
+      "https://help.autodesk.com/videos/s2d3hrbDqyDpgoB0r80NP9NTMYNEuWMR/video.mp4",
+      "https://help.autodesk.com/videos/s2d3hrbDqyDpgoB0r80NP9NTMYNEuWMR/video.webm",
+      "https://help.autodesk.com/videos/t4MHlrbDqoo9pWhle56VqFQy14OjhPWk/video.mp4",
+      "https://help.autodesk.com/videos/t4MHlrbDqoo9pWhle56VqFQy14OjhPWk/video.webm",
+      "https://help.autodesk.com/videos/thd3hrbDr1zFZovaUSAzjbnYJjz9wjjZ/video.mp4",
+      "https://help.autodesk.com/videos/thd3hrbDr1zFZovaUSAzjbnYJjz9wjjZ/video.webm",
+      "https://help.autodesk.com/videos/thdnBmbDqq6yFOdKTkpKT8Zel1h6oG1A/video.mp4",
+      "https://help.autodesk.com/videos/thdnBmbDqq6yFOdKTkpKT8Zel1h6oG1A/video.webm",
+      "https://help.autodesk.com/videos/tjd3hrbDqK9X5B9AEdSzhxDQIRLEsq4h/video.mp4",
+      "https://help.autodesk.com/videos/tjd3hrbDqK9X5B9AEdSzhxDQIRLEsq4h/video.webm",
+      "https://help.autodesk.com/videos/tnd3hrbDobYKEPiKQHrDYfad-nUnFwNz/video.mp4",
+      "https://help.autodesk.com/videos/tnd3hrbDobYKEPiKQHrDYfad-nUnFwNz/video.webm",
+      "https://help.autodesk.com/videos/xlNXlrbDqfvcwyrZSE4lBTvIu0GGZSR_/video.mp4",
+      "https://help.autodesk.com/videos/xlNXlrbDqfvcwyrZSE4lBTvIu0GGZSR_/video.webm",
+      "https://help.autodesk.com/videos/xudXBmbDoZGstfjTelWvz_Uh0rNI0LoP/video.mp4",
+      "https://help.autodesk.com/videos/xudXBmbDoZGstfjTelWvz_Uh0rNI0LoP/video.webm"
+    ],
+    "video_count": 94,
+    "video_pages": [
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-1D83362E-A5D9-4FB8-959E-D262D6166260.htm",
+        "title": "Video: Understanding the User Interface",
+        "video_urls": [
+          "https://help.autodesk.com/videos/VtMXlrbDrAARvWD5lCzdAsZ-3Tq_c06W/video.mp4",
+          "https://help.autodesk.com/videos/VtMXlrbDrAARvWD5lCzdAsZ-3Tq_c06W/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-798B4103-4BC8-480E-818D-C5A8689AA6E5.htm",
+        "title": "Video: Import and Purge Styles",
+        "video_urls": [
+          "https://help.autodesk.com/videos/tjd3hrbDqK9X5B9AEdSzhxDQIRLEsq4h/video.mp4",
+          "https://help.autodesk.com/videos/tjd3hrbDqK9X5B9AEdSzhxDQIRLEsq4h/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-2B67DDC6-2FE7-4F0E-A756-22CACAE58FF8.htm",
+        "title": "Video: Create Data Shortcuts",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Nyd3BmbDpoWMHXlC2cDdtzby1ecNmrgR/video.mp4",
+          "https://help.autodesk.com/videos/Nyd3BmbDpoWMHXlC2cDdtzby1ecNmrgR/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-200EAD1B-0CD1-4CE2-A1E1-47743DD13707.htm",
+        "title": "Video: Find and Replace Styles",
+        "video_urls": [
+          "https://help.autodesk.com/videos/tnd3hrbDobYKEPiKQHrDYfad-nUnFwNz/video.mp4",
+          "https://help.autodesk.com/videos/tnd3hrbDobYKEPiKQHrDYfad-nUnFwNz/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-599C7A87-7878-4A90-BDC4-D33B33F73807.htm",
+        "title": "Video: Creating a Pressure Network Parts List",
+        "video_urls": [
+          "https://help.autodesk.com/videos/MxeHhrbDoEoUG1IKcXqDj18scVc2ph03/video.mp4",
+          "https://help.autodesk.com/videos/MxeHhrbDoEoUG1IKcXqDj18scVc2ph03/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-07B17B29-52E4-4458-93F3-EAABF6CAB8B8.htm",
+        "title": "Video: Query Survey Data",
+        "video_urls": [
+          "https://help.autodesk.com/videos/80d3hrbDpR3qITXhHEq3At-5f3mXHN_5/video.mp4",
+          "https://help.autodesk.com/videos/80d3hrbDpR3qITXhHEq3At-5f3mXHN_5/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-9CA4B3A1-9A94-4B8C-A89C-DD5FDF3240C3.htm",
+        "title": "Video: Add Survey Query Results to a Surface",
+        "video_urls": [
+          "https://help.autodesk.com/videos/s2d3hrbDqyDpgoB0r80NP9NTMYNEuWMR/video.mp4",
+          "https://help.autodesk.com/videos/s2d3hrbDqyDpgoB0r80NP9NTMYNEuWMR/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-ADB5245C-8874-4776-A2B2-7ECFAEC29D07.htm",
+        "title": "Video: Update Imported Survey Data",
+        "video_urls": [
+          "https://help.autodesk.com/videos/ZueXBmbDqJYfOsQCK_xUohBlc_Y2TWbR/video.mp4",
+          "https://help.autodesk.com/videos/ZueXBmbDqJYfOsQCK_xUohBlc_Y2TWbR/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-AB5480EC-788A-45A9-8C7C-E67F08AB414E.htm",
+        "title": "Video: Import Points from a Database",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Nsd3BmbDpKcm-bkQVaWxUw1uuRzfvdaI/video.mp4",
+          "https://help.autodesk.com/videos/Nsd3BmbDpKcm-bkQVaWxUw1uuRzfvdaI/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-466D8A1E-6605-4F3E-AE56-58447B7228DA.htm",
+        "title": "Video: Create a Description Key Set and Description Keys",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Nkd3BmbDp0tpMcV1CDAfVJyDEimbxhxV/video.mp4",
+          "https://help.autodesk.com/videos/Nkd3BmbDp0tpMcV1CDAfVJyDEimbxhxV/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-299B2BBB-0314-4F16-9395-73DEF95DD666.htm",
+        "title": "Video: Create a Surface",
+        "video_urls": [
+          "https://help.autodesk.com/videos/lnZnBkYzE6D23z_k_YLvHD-RXnokdC1M/video.mp4",
+          "https://help.autodesk.com/videos/lnZnBkYzE6D23z_k_YLvHD-RXnokdC1M/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-B23B5AA1-47B2-48D7-8189-B4EFFA68BC39.htm",
+        "title": "Video: Create Catchments",
+        "video_urls": [
+          "https://help.autodesk.com/videos/FuMHlrbDqFigdPo3itoZtHdJ36mXMo8f/video.mp4",
+          "https://help.autodesk.com/videos/FuMHlrbDqFigdPo3itoZtHdJ36mXMo8f/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-3FB31D56-73E7-4E57-B387-61655B4885D2.htm",
+        "title": "Video: Create a Grading Criteria Set and Criteria",
+        "video_urls": [
+          "https://help.autodesk.com/videos/hmdXBmbDrmD4RJG46g4xxLXnNrBqHIIC/video.mp4",
+          "https://help.autodesk.com/videos/hmdXBmbDrmD4RJG46g4xxLXnNrBqHIIC/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-BF7D2CFE-0E4C-4F3B-8FD9-107A4BEA2C2D.htm",
+        "title": "Video: Add Data to a Surface",
+        "video_urls": [
+          "https://help.autodesk.com/videos/k0eHBmbDow8hk9fBwnxpn6N6wlHj7CQW/video.mp4",
+          "https://help.autodesk.com/videos/k0eHBmbDow8hk9fBwnxpn6N6wlHj7CQW/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-DE1F608C-2355-49EB-8844-B62DF425A1EE.htm",
+        "title": "Video: Grade from a Building Footprint",
+        "video_urls": [
+          "https://help.autodesk.com/videos/xudXBmbDoZGstfjTelWvz_Uh0rNI0LoP/video.mp4",
+          "https://help.autodesk.com/videos/xudXBmbDoZGstfjTelWvz_Uh0rNI0LoP/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-A196ED22-0B00-4BBC-89C2-ABFC1C51BEDC.htm",
+        "title": "Video: Create Waterdrop Paths",
+        "video_urls": [
+          "https://help.autodesk.com/videos/ljeHBmbDoSelcMhXzmPPTtxKEbYnmpBv/video.mp4",
+          "https://help.autodesk.com/videos/ljeHBmbDoSelcMhXzmPPTtxKEbYnmpBv/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-91E2BE5A-CA0F-401E-A9C2-ED9089341165.htm",
+        "title": "Video: Use a Surface as a Hide Boundary",
+        "video_urls": [
+          "https://help.autodesk.com/videos/xlNXlrbDqfvcwyrZSE4lBTvIu0GGZSR_/video.mp4",
+          "https://help.autodesk.com/videos/xlNXlrbDqfvcwyrZSE4lBTvIu0GGZSR_/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-1FE577CF-69F7-47F2-9D92-3B8ED059D292.htm",
+        "title": "Video: Use Relative Feature Lines to Model a Surface",
+        "video_urls": [
+          "https://help.autodesk.com/videos/lzY2JvYTE6_1yfBCE8f_fSLAnvib4EAn/video.mp4",
+          "https://help.autodesk.com/videos/lzY2JvYTE6_1yfBCE8f_fSLAnvib4EAn/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-3ED4EFF2-52E6-4736-9A9F-25AB1C7798C9.htm",
+        "title": "Video: Create Parcels",
+        "video_urls": [
+          "https://help.autodesk.com/videos/o0OHZpbDqTGLg9IO1DFVi2WZ_KtwA4UB/video.mp4",
+          "https://help.autodesk.com/videos/o0OHZpbDqTGLg9IO1DFVi2WZ_KtwA4UB/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-48470A9F-042D-42E2-A1D8-B2F3B7ABEFBF.htm",
+        "title": "Video: Label Alignment Intersection Points",
+        "video_urls": [
+          "https://help.autodesk.com/videos/1hMXlrbDq5lpkLCkR4C2aRhsBw22Grb-/video.mp4",
+          "https://help.autodesk.com/videos/1hMXlrbDq5lpkLCkR4C2aRhsBw22Grb-/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-5055A683-B430-4C8C-96CD-153A0F48DF82.htm",
+        "title": "Video: Create an Alignment and Profile",
+        "video_urls": [
+          "https://help.autodesk.com/videos/90bW8wZDE6OE_XPTP3noEq6hOCp7xjc8/video.mp4",
+          "https://help.autodesk.com/videos/90bW8wZDE6OE_XPTP3noEq6hOCp7xjc8/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-FED71E61-8C37-41FB-B960-00971F42A7CA.htm",
+        "title": "Video: Grip Edit an Alignment",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Buc3BmbDp1N5GzPYoKRvL-iR4zkIEngu/video.mp4",
+          "https://help.autodesk.com/videos/Buc3BmbDp1N5GzPYoKRvL-iR4zkIEngu/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-74B857D0-A780-4157-BC1D-4C5E24D8390B.htm",
+        "title": "Video: Create a Pipe Network",
+        "video_urls": [
+          "https://help.autodesk.com/videos/9lMXlrbDqKn00wyRYSfFOvimy6nd452q/video.mp4",
+          "https://help.autodesk.com/videos/9lMXlrbDqKn00wyRYSfFOvimy6nd452q/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-AD29AEFE-8A0E-44C2-8665-3AD5E6FC897A.htm",
+        "title": "Video: Alignment Tangency Constraints",
+        "video_urls": [
+          "https://help.autodesk.com/videos/t4MHlrbDqoo9pWhle56VqFQy14OjhPWk/video.mp4",
+          "https://help.autodesk.com/videos/t4MHlrbDqoo9pWhle56VqFQy14OjhPWk/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-F2068AAB-8232-4CF0-88E3-9C878F0A5CAC.htm",
+        "title": "Video: Create a Rail Alignment",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Ztd3hrbDqZzx7pbjn7gTu4rxbwt227up/video.mp4",
+          "https://help.autodesk.com/videos/Ztd3hrbDqZzx7pbjn7gTu4rxbwt227up/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-F6EC4367-2832-4457-9F6C-820499542D94.htm",
+        "title": "Video: Create a Pressure Network from a Water Industry Model",
+        "video_urls": [
+          "https://help.autodesk.com/videos/ZkMHlrbDoRCMoIjCjDgegrEdkSz4xIr4/video.mp4",
+          "https://help.autodesk.com/videos/ZkMHlrbDoRCMoIjCjDgegrEdkSz4xIr4/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-AA8EDD42-8DD5-4D0D-819B-FC8762263538.htm",
+        "title": "Video: Lock a Profile to Alignment Geometry",
+        "video_urls": [
+          "https://help.autodesk.com/videos/5wd3BmbDrwiSzrmIKaRg4ChkDLw82N94/video.mp4",
+          "https://help.autodesk.com/videos/5wd3BmbDrwiSzrmIKaRg4ChkDLw82N94/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-A3AA57CD-9841-44CC-B77D-7D4886407714.htm",
+        "title": "Video: Adjust the Accuracy of a Corridor Model",
+        "video_urls": [
+          "https://help.autodesk.com/videos/4wdHBmbDrmznpEBGL3p9GdBdUOs9Eoyv/video.mp4",
+          "https://help.autodesk.com/videos/4wdHBmbDrmznpEBGL3p9GdBdUOs9Eoyv/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-ED1CF791-D473-4C2E-8149-15ED1513E3BF.htm",
+        "title": "Video: Create a Corridor Assembly",
+        "video_urls": [
+          "https://help.autodesk.com/videos/N2MHlrbDoyrZl1yKejV852JIRnahvWYP/video.mp4",
+          "https://help.autodesk.com/videos/N2MHlrbDoyrZl1yKejV852JIRnahvWYP/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-52974364-4170-4681-A61F-18E1FF553750.htm",
+        "title": "Video: Create a Basic Corridor",
+        "video_urls": [
+          "https://help.autodesk.com/videos/c4OHZpbDoaWoXMCFbOurwrbwUqlxJCt_/video.mp4",
+          "https://help.autodesk.com/videos/c4OHZpbDoaWoXMCFbOurwrbwUqlxJCt_/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-B23A88A9-0CD5-4B2F-BBD0-487D1F0E9C1F.htm",
+        "title": "Video: Create an Intersection",
+        "video_urls": [
+          "https://help.autodesk.com/videos/ZjOHZpbDoy7zidwtINnvDDIgtmSiCcgC/video.mp4",
+          "https://help.autodesk.com/videos/ZjOHZpbDoy7zidwtINnvDDIgtmSiCcgC/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-2FB9FE77-F06E-4B40-982D-A966858569CB.htm",
+        "title": "Video: Edit a Corridor in Section",
+        "video_urls": [
+          "https://help.autodesk.com/videos/hqMHlrbDp2icnWckLnUbHLF0zAvIOzUL/video.mp4",
+          "https://help.autodesk.com/videos/hqMHlrbDp2icnWckLnUbHLF0zAvIOzUL/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-E0B099B0-6A4F-4534-BCAE-B4656F79BFBA.htm",
+        "title": "Video: Superelevation Axis of Rotation",
+        "video_urls": [
+          "https://help.autodesk.com/videos/thd3hrbDr1zFZovaUSAzjbnYJjz9wjjZ/video.mp4",
+          "https://help.autodesk.com/videos/thd3hrbDr1zFZovaUSAzjbnYJjz9wjjZ/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-5D436E99-D726-40EA-A528-CA19854CA878.htm",
+        "title": "Video: Create Sample Lines",
+        "video_urls": [
+          "https://help.autodesk.com/videos/UweHBmbDpyXHbr0zwsFBVBUnMQGMNqBm/video.mp4",
+          "https://help.autodesk.com/videos/UweHBmbDpyXHbr0zwsFBVBUnMQGMNqBm/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-3C695057-7FDE-4ADE-AB9F-C7F7CD81A489.htm",
+        "title": "Video: Calculate Cant Along an Alignment",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Npd3hrbDqgHJg8o-wLWK_8e4OJ5htCZ6/video.mp4",
+          "https://help.autodesk.com/videos/Npd3hrbDqgHJg8o-wLWK_8e4OJ5htCZ6/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-55C99231-DD37-472C-90FA-39BBC977EA4C.htm",
+        "title": "Video: Sample Multiple Baselines",
+        "video_urls": [
+          "https://help.autodesk.com/videos/VueHhrbDoYks4O8QdP1Tpo0q41HRfKCb/video.mp4",
+          "https://help.autodesk.com/videos/VueHhrbDoYks4O8QdP1Tpo0q41HRfKCb/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-C21A3B2A-BF60-4509-A3F4-DE70312653B5.htm",
+        "title": "Video: Leveraging Corridors in Site Design",
+        "video_urls": [
+          "https://help.autodesk.com/videos/ZvaGp4MTE6RU0QTSY5Rt0kS2mjFZkNOy/video.mp4",
+          "https://help.autodesk.com/videos/ZvaGp4MTE6RU0QTSY5Rt0kS2mjFZkNOy/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-78713F6C-81EE-4C09-88CA-F28215887B18.htm",
+        "title": "Video: Clear Corridor Bowties",
+        "video_urls": [
+          "https://help.autodesk.com/videos/c1YTNjYTE61pEcqoCVGLQdjFguvP3uPM/video.mp4",
+          "https://help.autodesk.com/videos/c1YTNjYTE61pEcqoCVGLQdjFguvP3uPM/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-BCA0D0E2-C808-40DB-8A8F-D9E613482F8D.htm",
+        "title": "Video: Create a Mass Haul Diagram",
+        "video_urls": [
+          "https://help.autodesk.com/videos/VjdnBmbDrROP-i2Orq-Wyg4dJ-mTL1Tj/video.mp4",
+          "https://help.autodesk.com/videos/VjdnBmbDrROP-i2Orq-Wyg4dJ-mTL1Tj/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-3156040D-0AB3-4555-B356-EC8B57486390.htm",
+        "title": "Video: Drive Along a Linear Object",
+        "video_urls": [
+          "https://help.autodesk.com/videos/Y5MHlrbDqgWUCH6esEZnk44YHwgGjuqx/video.mp4",
+          "https://help.autodesk.com/videos/Y5MHlrbDqgWUCH6esEZnk44YHwgGjuqx/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-3C5BE973-805D-464E-BE19-E46EA4A19C8A.htm",
+        "title": "Video: Calculating Cut and Fill Volumes",
+        "video_urls": [
+          "https://help.autodesk.com/videos/cyd3hrbDrIwZoqdd0VePtB4abTBfU0om/video.mp4",
+          "https://help.autodesk.com/videos/cyd3hrbDrIwZoqdd0VePtB4abTBfU0om/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-7BC43809-B587-41AD-A9E9-BF87E5A77394.htm",
+        "title": "Video: Rotating Unanchored Labels",
+        "video_urls": [
+          "https://help.autodesk.com/videos/JjeXhrbDpu1V-MzdpFEYgHgfCw0O4SH-/video.mp4",
+          "https://help.autodesk.com/videos/JjeXhrbDpu1V-MzdpFEYgHgfCw0O4SH-/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-7FD03EF2-DE1F-4A90-A9E0-F4DCEB9D4203.htm",
+        "title": "Video: Convert Parcel Segment Labels to Tags for Display in a Table",
+        "video_urls": [
+          "https://help.autodesk.com/videos/02dnBmbDqu_htk48hbD3qtSC7hPdLyP5/video.mp4",
+          "https://help.autodesk.com/videos/02dnBmbDqu_htk48hbD3qtSC7hPdLyP5/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-CD130887-ADBF-4BFE-A4A6-3BAAFCBD8808.htm",
+        "title": "Video: Edit Text in a Label",
+        "video_urls": [
+          "https://help.autodesk.com/videos/thdnBmbDqq6yFOdKTkpKT8Zel1h6oG1A/video.mp4",
+          "https://help.autodesk.com/videos/thdnBmbDqq6yFOdKTkpKT8Zel1h6oG1A/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-4565F768-F100-48AE-A316-DE86E7306493.htm",
+        "title": "Video: Add a Watershed Legend Table",
+        "video_urls": [
+          "https://help.autodesk.com/videos/p2dXBmbDpHhxpiQTSdyffYU7pFnbsnPw/video.mp4",
+          "https://help.autodesk.com/videos/p2dXBmbDpHhxpiQTSdyffYU7pFnbsnPw/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-DA528DFC-0D56-4549-AD4D-8AAE32234132.htm",
+        "title": "Video: Label Corridor Points in Section View",
+        "video_urls": [
+          "https://help.autodesk.com/videos/kzdXBmbDojuf8KYJ063NMC-OS2_pWTWI/video.mp4",
+          "https://help.autodesk.com/videos/kzdXBmbDojuf8KYJ063NMC-OS2_pWTWI/video.webm"
+        ]
+      },
+      {
+        "url": "https://help.autodesk.com/cloudhelp/2026/ENG/Civil3D-UserGuide/files/GUID-199ACB95-843B-4CF5-A5C4-5364AD74E485.htm",
+        "title": "Video: Bind Drafting Elements to Section Views and Move Section Views to a Section View Group",
+        "video_urls": [
+          "https://help.autodesk.com/videos/BsYzNjYTE6Dx9s8pKpq1V7_c_CZ6Vugl/video.mp4",
+          "https://help.autodesk.com/videos/BsYzNjYTE6Dx9s8pKpq1V7_c_CZ6Vugl/video.webm"
+        ]
+      }
+    ],
+    "video_page_count": 47,
+    "linked_pages_scanned": 55,
+    "crawl_errors": [],
+    "status": "success"
+  }
+]

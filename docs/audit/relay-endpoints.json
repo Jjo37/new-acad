@@ -1,0 +1,185 @@
+{
+  "updated": "2026-10-21",
+  "endpoints": [
+    {
+      "id": "GET /chat",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /chat/scopes",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /health",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /inbox",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /inbox/stream",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /llm/options",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /locale",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /project",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /projects",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /replies",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /replies/stream",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /status",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "GET /workflows*",
+      "kind": "read",
+      "sideEffects": "",
+      "note": ""
+    },
+    {
+      "id": "POST /cancel",
+      "kind": "write",
+      "sideEffects": "Aborts the in-flight task via AbortController; does not rewrite history",
+      "note": ""
+    },
+    {
+      "id": "POST /clear",
+      "kind": "write",
+      "sideEffects": "Clears chat/logs/cache/reports by scope; never touches long-term memory, knowledge base or user files",
+      "note": ""
+    },
+    {
+      "id": "POST /inbox/done",
+      "kind": "write",
+      "sideEffects": "Marks an inbox message as processed (persisted)",
+      "note": ""
+    },
+    {
+      "id": "POST /llm/config",
+      "kind": "write",
+      "sideEffects": "Hot-updates LLM settings and writes config.json (contains apiKey)",
+      "note": ""
+    },
+    {
+      "id": "POST /llm/models",
+      "kind": "write",
+      "sideEffects": "Outbound call to the provider API to list models (uses apiKey)",
+      "note": ""
+    },
+    {
+      "id": "POST /locale",
+      "kind": "write",
+      "sideEffects": "Writes config.json locale and rebuilds the palette UI",
+      "note": ""
+    },
+    {
+      "id": "POST /plan/clear",
+      "kind": "write",
+      "sideEffects": "Drops the current task plan",
+      "note": ""
+    },
+    {
+      "id": "POST /project",
+      "kind": "write",
+      "sideEffects": "Switches the active project scope",
+      "note": ""
+    },
+    {
+      "id": "POST /project/clear",
+      "kind": "write",
+      "sideEffects": "Deletes the whole project directory (destructive); falls back to global scope if it was active",
+      "note": ""
+    },
+    {
+      "id": "POST /project/create",
+      "kind": "write",
+      "sideEffects": "Creates a project directory and switches to it (disk write)",
+      "note": ""
+    },
+    {
+      "id": "POST /push",
+      "kind": "write",
+      "sideEffects": "Pushes a message to the palette UI",
+      "note": ""
+    },
+    {
+      "id": "POST /reply",
+      "kind": "write",
+      "sideEffects": "Appends a reply into the queue/history (used by external drivers)",
+      "note": ""
+    },
+    {
+      "id": "POST /restart",
+      "kind": "write",
+      "sideEffects": "Graceful exit; launcher restarts in ~3s (short disconnect)",
+      "note": ""
+    },
+    {
+      "id": "POST /send",
+      "kind": "write",
+      "sideEffects": "Starts one LLM turn (writes history, may call CAD); abortable via /cancel",
+      "note": ""
+    },
+    {
+      "id": "POST /tcp",
+      "kind": "write",
+      "sideEffects": "Passes JSON-RPC through to the plugin on :8080 - the AI main channel, can run any registered method",
+      "note": ""
+    },
+    {
+      "id": "POST /workflows/*",
+      "kind": "write",
+      "sideEffects": "Writes an exported workflow artifact (json / markdown) to a user-chosen path; POST .../replay only re-runs read-only steps (dry-run) and refuses both side-effect steps and unimplemented modes (501).",
+      "note": ""
+    },
+    {
+      "id": "POST /workflows/purge",
+      "kind": "write",
+      "sideEffects": "Moves workflow record files into <scope>/_trash/ (recoverable, never unlinks). Body {ids?:[...]}; empty ids clears the whole current scope.",
+      "note": ""
+    }
+  ]
+}

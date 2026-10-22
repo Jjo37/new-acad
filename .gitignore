@@ -1,0 +1,75 @@
+node_modules/
+obj/
+bin/
+*.dll
+*.pdb
+exchange/agent-work/
+exchange/panel-chat-*.jsonl
+exchange/llm-history.json
+exchange/workflows/
+exchange/projects/*/panel-chat-*.jsonl
+exchange/projects/*/llm-history.json
+exchange/_out/
+exchange/trace/
+exchange/export/
+exchange/import/
+exchange/scratch/
+exchange/_to_bmo/
+exchange/_to_hank/
+exchange/missing-report.jsonl
+reports/*.json
+.DS_Store
+*.log
+# relay 运行时状态（消息持久化，非源码）
+server/relay-inbox.json
+config.json
+
+# Autodesk references (licensed, not distributable)
+C_References/
+
+# Build output
+obj/
+bin/
+*.user
+*.suo
+*.sln.DotSettings.user
+
+# Temp
+*.tmp
+*.bak
+
+# P3 打包产物（dist 可重建，zip 太大不入库）
+dist/
+*.zip
+
+tmp/
+
+# Open-source MCP references (not our code)
+refs/mcp-open-source/
+build-tmp/
+exchange/remembered_coords.json
+
+build_out/
+
+# llm ����ʱ���䣨����⣩
+server/memory/agent-memory.md
+
+# relay ��ʵ����(����ʱ����)
+server/relay-launcher.lock
+
+# ��ͼѡ�񻺴�(����ʱ)
+exchange/selection-cache.json
+
+# runtime-generated (install.ps1 regenerates it)
+server/start-relay-hidden.vbs
+
+exchange/projects/
+# ��װ�����build-installer.ps1 ���ؽ���
+*.exe
+installer.iss
+
+
+# tools scan 产物
+tools/_catch-review.txt
+user-knowledge/*
+!user-knowledge/_README.md

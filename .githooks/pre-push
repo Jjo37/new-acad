@@ -1,0 +1,30 @@
+#!/bin/sh
+# new-acad · pre-push —— 推送前跑更全的门禁 + MCP 单元测试
+#
+# 跳过：git push --no-verify
+# 启用：git config core.hooksPath .githooks
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$root" || exit 0
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[pre-push] 未找到 node，跳过门禁"
+  exit 0
+fi
+
+echo "[pre-push] release-gate --fast ..."
+if ! node tools/release-gate.js --fast; then
+  echo "[pre-push] ✗ 门禁未通过，已阻止推送。"
+  exit 1
+fi
+
+# MCP 单元测试（有 node_modules 才跑，避免拖垮无依赖环境）
+if [ -f server/mcp/node_modules/vitest/vitest.mjs ]; then
+  echo "[pre-push] MCP vitest ..."
+  if ! ( cd server/mcp && node node_modules/vitest/vitest.mjs run ); then
+    echo "[pre-push] ✗ MCP 单元测试未通过，已阻止推送。"
+    exit 1
+  fi
+else
+  echo "[pre-push] 跳过 MCP 测试（server/mcp/node_modules 缺失）"
+fi

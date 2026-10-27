@@ -62,7 +62,7 @@ public static partial class EditCommands
     var radius = PluginRuntime.GetRequiredDouble(parameters, "radius");
     var h1 = PluginRuntime.GetRequiredString(parameters, "handle1");
     var h2 = PluginRuntime.GetRequiredString(parameters, "handle2");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var modelSpace = ModelSpace(transaction, database);
       CornerPrep(transaction, database, h1, h2, out var l1, out var l2, out var corner, out var d1, out var d2, out var theta);
@@ -102,7 +102,7 @@ public static partial class EditCommands
     var dist2 = PluginRuntime.GetRequiredDouble(parameters, "distance2");
     var h1 = PluginRuntime.GetRequiredString(parameters, "handle1");
     var h2 = PluginRuntime.GetRequiredString(parameters, "handle2");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var modelSpace = ModelSpace(transaction, database);
       CornerPrep(transaction, database, h1, h2, out var l1, out var l2, out var corner, out var d1, out var d2, out _);
@@ -146,7 +146,7 @@ public static partial class EditCommands
     }
     bool InWin(double x, double y) => !HasWin || (x >= x1 && x <= x2 && y >= y1 && y <= y2);
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var movedVertices = 0; var movedEntities = 0; var skipped = new List<string>();
       foreach (var h in handles)
@@ -194,7 +194,7 @@ public static partial class EditCommands
     var h2 = PluginRuntime.GetRequiredString(parameters, "handle2");
     var dimX = PluginRuntime.GetRequiredDouble(parameters, "dimX");
     var dimY = PluginRuntime.GetRequiredDouble(parameters, "dimY");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var modelSpace = ModelSpace(transaction, database);
       CornerPrep(transaction, database, h1, h2, out _, out _, out var corner, out var d1, out var d2, out var theta);
@@ -232,7 +232,7 @@ public static partial class EditCommands
   // ── SECTIONPLANE：真 API Section（原 _.SECTIONPLANE 命令壳）────────────
   internal static Task<object?> SectionPlaneGeoAsync(JsonObject? parameters)
   {
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var modelSpace = ModelSpace(transaction, database);
       var pts = new Point3dCollection();

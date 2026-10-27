@@ -17,7 +17,7 @@ public static class PdfCommands
     var path = PluginRuntime.GetRequiredString(parameters, "path");
     var maxChars = PluginRuntime.GetOptionalInt(parameters, "maxChars") ?? 20000;
     var maxPages = PluginRuntime.GetOptionalInt(parameters, "maxPages") ?? 0;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var full = ResolvePath(path);
       var sb = new StringBuilder();

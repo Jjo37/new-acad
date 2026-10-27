@@ -1,6 +1,6 @@
 # ONBOARDING.md — 快速上手（AI / 新接手）
 
-> 更新：2026-10-15（收缩去重；不可用方法表 / 方法速查 / 架构已归 BOOTSTRAP + knowledge）
+> 更新：2026-10-15（收缩去重：只讲「连哪、怎么调、出事怎么修」；架构与方法清单不在本文件）
 
 ## 0. 一句话
 
@@ -37,4 +37,4 @@ new-acad = 让 AI 直接操作 AutoCAD / Civil 3D。
 
 ## 5. 深入（去重后各归其位）
 
-- **描摹（图片→CAD）** → `knowledge/image-to-cad.md` ｜ **SAC** → `knowledge/sac-xaml-guide.md`
+- **描摹（图片→CAD）** → `knowledge/image-to-cad.md`

@@ -21,7 +21,7 @@ public static class FileFormatCommands
     {
         var path = PluginRuntime.GetRequiredString(parameters, "path");
         var maxChars = PluginRuntime.GetOptionalInt(parameters, "maxChars") ?? 8000;
-        return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
         {
             var full = ResolveReadPath(path, ".docx", ".doc");
             // 2026-09-11: .doc（Word 97-2003 二进制）走自带解析器；.docx 走 zip+XML
@@ -39,7 +39,7 @@ public static class FileFormatCommands
     {
         var path = PluginRuntime.GetRequiredString(parameters, "path");
         var maxRows = PluginRuntime.GetOptionalInt(parameters, "maxRows") ?? 50;
-        return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
         {
             var full = ResolveReadPath(path, ".xlsx", ".xls");
             // 2026-09-11: .xls（Excel 97-2003 BIFF8 二进制）走自带解析器
@@ -66,7 +66,7 @@ public static class FileFormatCommands
     {
         var path = PluginRuntime.GetRequiredString(parameters, "path");
         var maxChars = PluginRuntime.GetOptionalInt(parameters, "maxChars") ?? 8000;
-        return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
         {
             var full = ResolveReadPath(path, ".pptx");
             using var zip = OpenZipShared(full);
@@ -96,7 +96,7 @@ public static class FileFormatCommands
     {
         var path = PluginRuntime.GetRequiredString(parameters, "path");
         var entryName = PluginRuntime.GetOptionalString(parameters, "entry");
-        return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
         {
             var full = ResolveReadPath(path, ".zip");
             using var zip = OpenZipShared(full);

@@ -1,7 +1,6 @@
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.EditorInput;
-using Autodesk.Civil.ApplicationServices;
 using App = Autodesk.AutoCAD.ApplicationServices.Application;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -15,7 +14,7 @@ public static class AcadCommands
 
   public static Task<object?> SaveSelectionAsync(JsonObject? parameters)
   {
-    return CivilExecution.ExecuteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ExecuteAsync<object?>((doc, database, transaction) =>
     {
       var ed = doc.Editor;
       var selRes = ed.SelectImplied();
@@ -147,7 +146,7 @@ public static class AcadCommands
     var closed = PluginRuntime.GetOptionalInt(parameters, "closed") == 1;
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -209,7 +208,7 @@ public static class AcadCommands
     var rotation = PluginRuntime.GetOptionalDouble(parameters, "rotation") ?? 0d;
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -258,7 +257,7 @@ public static class AcadCommands
     var closed = PluginRuntime.GetOptionalInt(parameters, "closed") == 1;
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -321,7 +320,7 @@ public static class AcadCommands
     var endZ = PluginRuntime.GetOptionalDouble(parameters, "endZ") ?? 0d;
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -365,7 +364,7 @@ public static class AcadCommands
     var rotation = PluginRuntime.GetOptionalDouble(parameters, "rotation") ?? 0d;
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -414,7 +413,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     if (!long.TryParse(handle, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out var handleValue))
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", Loc.Tk("error.handleBadFormat", ("handle", handle)));
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var h = new Autodesk.AutoCAD.DatabaseServices.Handle(handleValue);
       // 2026-10-19: 不存在的 handle 可能抛 eNullObjectId/eWrongObjectType —— 不能让它变成 INTERNAL_ERROR
@@ -554,7 +553,7 @@ public static class AcadCommands
   public static Task<object?> GetBlockInfoAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var h = new Autodesk.AutoCAD.DatabaseServices.Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -608,7 +607,7 @@ public static class AcadCommands
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var colorIndex = PluginRuntime.GetRequiredInt(parameters, "color");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Autodesk.AutoCAD.DatabaseServices.Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -623,7 +622,7 @@ public static class AcadCommands
   public static Task<object?> MirrorEntityAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Autodesk.AutoCAD.DatabaseServices.Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -756,7 +755,7 @@ public static class AcadCommands
   public static Task<object?> DeleteEntityAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -773,7 +772,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var dx = PluginRuntime.GetRequiredDouble(parameters, "dx");
     var dy = PluginRuntime.GetRequiredDouble(parameters, "dy");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -791,7 +790,7 @@ public static class AcadCommands
     var handles = ParseHandleArray(parameters, "handles");
     var dx = PluginRuntime.GetOptionalDouble(parameters, "dx") ?? 0;
     var dy = PluginRuntime.GetOptionalDouble(parameters, "dy") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       foreach (var handle in handles)
@@ -819,7 +818,7 @@ public static class AcadCommands
   public static Task<object?> MirrorEntitiesAsync(JsonObject? parameters)
   {
     var handles = ParseHandleArray(parameters, "handles");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       foreach (var handle in handles)
@@ -850,7 +849,7 @@ public static class AcadCommands
     var angleDeg = PluginRuntime.GetRequiredDouble(parameters, "angle");
     var cx = PluginRuntime.GetOptionalDouble(parameters, "cx") ?? 0;
     var cy = PluginRuntime.GetOptionalDouble(parameters, "cy") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       var rad = angleDeg * System.Math.PI / 180.0;
@@ -878,7 +877,7 @@ public static class AcadCommands
     var factor = PluginRuntime.GetRequiredDouble(parameters, "factor");
     var cx = PluginRuntime.GetOptionalDouble(parameters, "cx") ?? 0;
     var cy = PluginRuntime.GetOptionalDouble(parameters, "cy") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       var scaleMat = Autodesk.AutoCAD.Geometry.Matrix3d.Scaling(factor, new Autodesk.AutoCAD.Geometry.Point3d(cx, cy, 0));
@@ -904,7 +903,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var dx = PluginRuntime.GetOptionalDouble(parameters, "dx") ?? 0;
     var dy = PluginRuntime.GetOptionalDouble(parameters, "dy") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -927,7 +926,7 @@ public static class AcadCommands
     var angleDeg = PluginRuntime.GetRequiredDouble(parameters, "angle");
     var cx = PluginRuntime.GetOptionalDouble(parameters, "cx") ?? 0;
     var cy = PluginRuntime.GetOptionalDouble(parameters, "cy") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -947,7 +946,7 @@ public static class AcadCommands
     var factor = PluginRuntime.GetRequiredDouble(parameters, "factor");
     var cx = PluginRuntime.GetOptionalDouble(parameters, "cx") ?? 0;
     var cy = PluginRuntime.GetOptionalDouble(parameters, "cy") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var h = new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
       var id = database.GetObjectId(false, h, 0);
@@ -964,7 +963,7 @@ public static class AcadCommands
 
   public static Task<object?> GetLayersAsync()
   {
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       var layers = new List<Dictionary<string, object?>>();
@@ -988,7 +987,7 @@ public static class AcadCommands
   {
     var name = PluginRuntime.GetRequiredString(parameters, "name");
     var colorIndex = PluginRuntime.GetOptionalInt(parameters, "color") ?? 7;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (lt.Has(name))
@@ -1010,7 +1009,7 @@ public static class AcadCommands
   {
     var name = PluginRuntime.GetRequiredString(parameters, "layer");
     var colorIndex = PluginRuntime.GetRequiredInt(parameters, "color");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (!lt.Has(name)) return new Dictionary<string, object?> { ["error"] = "layer not found: " + name };
@@ -1024,7 +1023,7 @@ public static class AcadCommands
   {
     var name = PluginRuntime.GetRequiredString(parameters, "layer");
     var linetype = PluginRuntime.GetRequiredString(parameters, "linetype");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (!lt.Has(name)) return new Dictionary<string, object?> { ["error"] = "layer not found: " + name };
@@ -1040,7 +1039,7 @@ public static class AcadCommands
   {
     var name = PluginRuntime.GetRequiredString(parameters, "layer");
     var lw = PluginRuntime.GetRequiredInt(parameters, "lineweight");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (!lt.Has(name)) return new Dictionary<string, object?> { ["error"] = "layer not found: " + name };
@@ -1056,7 +1055,7 @@ public static class AcadCommands
     // 0-100 百分比: 0=不透明, 100=全透明 → alpha 255-0
     var pct = PluginRuntime.GetRequiredInt(parameters, "transparency");
     var alpha = (byte)(255 - Math.Clamp(pct, 0, 100) * 255 / 100);
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (!lt.Has(name)) return new Dictionary<string, object?> { ["error"] = "layer not found: " + name };
@@ -1070,7 +1069,7 @@ public static class AcadCommands
   {
     var name = PluginRuntime.GetRequiredString(parameters, "name");
     var newName = PluginRuntime.GetRequiredString(parameters, "newName");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (!lt.Has(name)) return new Dictionary<string, object?> { ["error"] = "layer not found: " + name };
@@ -1085,7 +1084,7 @@ public static class AcadCommands
   public static Task<object?> DeleteLayerAsync(JsonObject? parameters)
   {
     var name = PluginRuntime.GetRequiredString(parameters, "name");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var lt = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
       if (!lt.Has(name)) return new Dictionary<string, object?> { ["error"] = "layer not found: " + name };
@@ -1121,7 +1120,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var distance = PluginRuntime.GetRequiredDouble(parameters, "distance");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var curve = CivilObjectUtils.GetRequiredObject<Curve>(transaction, id, OpenMode.ForRead);
@@ -1152,7 +1151,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var x = PluginRuntime.GetRequiredDouble(parameters, "x");
     var y = PluginRuntime.GetRequiredDouble(parameters, "y");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var curve = CivilObjectUtils.GetRequiredObject<Curve>(transaction, id, OpenMode.ForRead);
@@ -1184,7 +1183,7 @@ public static class AcadCommands
     if (handlesNode == null || handlesNode.Count < 2)
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "JOIN requires at least 2 handles.");
     var handles = handlesNode.Select(n => n?.GetValue<string>() ?? "").Where(h => !string.IsNullOrEmpty(h)).ToList();
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var curves = new List<Entity>();
       foreach (var h in handles)
@@ -1223,7 +1222,7 @@ public static class AcadCommands
   public static Task<object?> ExplodeEntityAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -1263,31 +1262,28 @@ public static class AcadCommands
 
   public static Task<object?> TrimEntityAsync(JsonObject? parameters)
   {
-    var cuttingHandle = PluginRuntime.GetRequiredString(parameters, "cuttingHandle");
-    var targetHandle = PluginRuntime.GetRequiredString(parameters, "targetHandle");
-    // 2026-08-07 P1-5: App.Invoke 后台线程全坏 → SendStringToExecute 入队;返回语义变化:无同步结果。
-    return CivilExecution.ExecuteInCommandContextAsync(async () =>
+    // 2026-10-24: retired. The old shell dispatched (command "_.TRIM" ...) and answered "queued",
+    // so the caller could never tell whether anything was trimmed. trimEntityGeo computes the
+    // result synchronously (Curve.IntersectWith + GetSplitCurves) -- same call as OVERKILL above.
+    return Task.FromResult<object?>(new Dictionary<string, object?>
     {
-      var doc = App.DocumentManager.MdiActiveDocument;
-      if (doc == null) return (object?)new Dictionary<string, object?> { ["error"] = "no active document" };
-      var lisp = "(command \"_.TRIM\" (handent \"" + cuttingHandle + "\") \"\" (handent \"" + targetHandle + "\") \"\" \"\")";
-      doc.SendStringToExecute(lisp + " ", true, false, false);
-      return (object?)new Dictionary<string, object?> { ["trimmed"] = targetHandle, ["status"] = "queued", ["note"] = "Command queued (asynchronous; no synchronous result)" };
+      ["deprecated"] = true,
+      ["status"] = "not_dispatched",
+      ["use"] = "trimEntityGeo",
+      ["note"] = "Deprecated: no command is dispatched. Use trimEntityGeo for a synchronous trim with a real result.",
     });
   }
 
   public static Task<object?> ExtendEntityAsync(JsonObject? parameters)
   {
-    var boundaryHandle = PluginRuntime.GetRequiredString(parameters, "boundaryHandle");
-    var targetHandle = PluginRuntime.GetRequiredString(parameters, "targetHandle");
-    // 2026-08-07 P1-5: App.Invoke 后台线程全坏 → SendStringToExecute 入队;返回语义变化:无同步结果。
-    return CivilExecution.ExecuteInCommandContextAsync(async () =>
+    // 2026-10-24: retired for the same reason -- "queued" is not a result.
+    // extendEntityGeo computes it (Curve.IntersectWith(ExtendThis) + Curve.Extend).
+    return Task.FromResult<object?>(new Dictionary<string, object?>
     {
-      var doc = App.DocumentManager.MdiActiveDocument;
-      if (doc == null) return (object?)new Dictionary<string, object?> { ["error"] = "no active document" };
-      var lisp = "(command \"_.EXTEND\" (handent \"" + boundaryHandle + "\") \"\" (handent \"" + targetHandle + "\") \"\" \"\")";
-      doc.SendStringToExecute(lisp + " ", true, false, false);
-      return (object?)new Dictionary<string, object?> { ["extended"] = targetHandle, ["status"] = "queued", ["note"] = "Command queued (asynchronous; no synchronous result)" };
+      ["deprecated"] = true,
+      ["status"] = "not_dispatched",
+      ["use"] = "extendEntityGeo",
+      ["note"] = "Deprecated: no command is dispatched. Use extendEntityGeo for a synchronous extend with a real result.",
     });
   }
 
@@ -1306,7 +1302,7 @@ public static class AcadCommands
     var dy = PluginRuntime.GetOptionalDouble(parameters, "dy") ?? 0.0;
     var rows = PluginRuntime.GetOptionalInt(parameters, "rows") ?? 1;
     var cols = PluginRuntime.GetOptionalInt(parameters, "cols") ?? 1;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -1352,7 +1348,7 @@ public static class AcadCommands
     var srcY = PluginRuntime.GetRequiredDouble(parameters, "srcY");
     var dstX = PluginRuntime.GetRequiredDouble(parameters, "dstX");
     var dstY = PluginRuntime.GetRequiredDouble(parameters, "dstY");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForWrite);
@@ -1405,7 +1401,7 @@ public static class AcadCommands
   public static Task<object?> LayerOffAsync(JsonObject? parameters)
   {
     var layerName = PluginRuntime.GetRequiredString(parameters, "layerName");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var rec = GetLayerRecordForWrite(transaction, database, layerName);
       rec.IsOff = true;
@@ -1416,7 +1412,7 @@ public static class AcadCommands
   public static Task<object?> LayerFreezeAsync(JsonObject? parameters)
   {
     var layerName = PluginRuntime.GetRequiredString(parameters, "layerName");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var rec = GetLayerRecordForWrite(transaction, database, layerName);
       rec.IsFrozen = true;
@@ -1427,7 +1423,7 @@ public static class AcadCommands
   public static Task<object?> LayerLockAsync(JsonObject? parameters)
   {
     var layerName = PluginRuntime.GetRequiredString(parameters, "layerName");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var rec = GetLayerRecordForWrite(transaction, database, layerName);
       rec.IsLocked = true;
@@ -1438,7 +1434,7 @@ public static class AcadCommands
   public static Task<object?> LayerUnlockAsync(JsonObject? parameters)
   {
     var layerName = PluginRuntime.GetRequiredString(parameters, "layerName");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var rec = GetLayerRecordForWrite(transaction, database, layerName);
       rec.IsLocked = false;
@@ -1449,7 +1445,7 @@ public static class AcadCommands
   public static Task<object?> LayerIsolateAsync(JsonObject? parameters)
   {
     var handles = PluginRuntime.GetParameter(parameters, "handles") as JsonArray;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       // 收集需要保留的图层名(选中图元所在图层)
       var keepLayers = new HashSet<string>();
@@ -1488,7 +1484,7 @@ public static class AcadCommands
   {
     var sourceHandle = PluginRuntime.GetRequiredString(parameters, "sourceHandle");
     var targetHandle = PluginRuntime.GetRequiredString(parameters, "targetHandle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var sourceId = HandleToObjectId(database, sourceHandle);
       var targetId = HandleToObjectId(database, targetHandle);
@@ -1507,7 +1503,7 @@ public static class AcadCommands
     var handles = PluginRuntime.GetParameter(parameters, "handles") as JsonArray;
     var x = PluginRuntime.GetOptionalDouble(parameters, "x") ?? 0;
     var y = PluginRuntime.GetOptionalDouble(parameters, "y") ?? 0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForWrite);
       if (blockTable.Has(name))
@@ -1551,7 +1547,7 @@ public static class AcadCommands
     var scale = PluginRuntime.GetOptionalDouble(parameters, "scale") ?? 1.0;
     var rotation = PluginRuntime.GetOptionalDouble(parameters, "rotation") ?? 0.0;
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       if (!blockTable.Has(blockName))
@@ -1573,7 +1569,7 @@ public static class AcadCommands
   public static Task<object?> ExplodeBlockAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -1602,7 +1598,7 @@ public static class AcadCommands
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var filePath = PluginRuntime.GetRequiredString(parameters, "filePath");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var dir = Path.GetDirectoryName(filePath);
       if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -1624,7 +1620,7 @@ public static class AcadCommands
     var x2 = PluginRuntime.GetRequiredDouble(parameters, "x2"); var y2 = PluginRuntime.GetRequiredDouble(parameters, "y2");
     var dimX = PluginRuntime.GetRequiredDouble(parameters, "dimX"); var dimY = PluginRuntime.GetRequiredDouble(parameters, "dimY");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -1646,7 +1642,7 @@ public static class AcadCommands
     var x2 = PluginRuntime.GetRequiredDouble(parameters, "x2"); var y2 = PluginRuntime.GetRequiredDouble(parameters, "y2");
     var dimX = PluginRuntime.GetRequiredDouble(parameters, "dimX"); var dimY = PluginRuntime.GetRequiredDouble(parameters, "dimY");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -1670,7 +1666,7 @@ public static class AcadCommands
     var dimX = PluginRuntime.GetOptionalDouble(parameters, "dimX");
     var dimY = PluginRuntime.GetOptionalDouble(parameters, "dimY");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var circle = CivilObjectUtils.GetRequiredObject<Circle>(transaction, id, OpenMode.ForRead);
@@ -1702,7 +1698,7 @@ public static class AcadCommands
     var dimX = PluginRuntime.GetOptionalDouble(parameters, "dimX");
     var dimY = PluginRuntime.GetOptionalDouble(parameters, "dimY");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var circle = CivilObjectUtils.GetRequiredObject<Circle>(transaction, id, OpenMode.ForRead);
@@ -1730,7 +1726,7 @@ public static class AcadCommands
   public static Task<object?> GetDimensionInfoAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var dim = CivilObjectUtils.GetRequiredObject<Dimension>(transaction, id, OpenMode.ForRead);
@@ -1778,7 +1774,7 @@ public static class AcadCommands
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var newText = PluginRuntime.GetRequiredString(parameters, "newText");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var dbText = CivilObjectUtils.GetRequiredObject<DBText>(transaction, id, OpenMode.ForWrite);
@@ -1791,7 +1787,7 @@ public static class AcadCommands
   {
     var handles = PluginRuntime.GetParameter(parameters, "handles") as JsonArray;
     var scaleFactor = PluginRuntime.GetRequiredDouble(parameters, "scaleFactor");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var scaled = new List<string>();
       if (handles != null)
@@ -1818,7 +1814,7 @@ public static class AcadCommands
     var y = PluginRuntime.GetRequiredDouble(parameters, "y");
     var scale = PluginRuntime.GetOptionalDouble(parameters, "scale") ?? 1.0;
     var rotation = PluginRuntime.GetOptionalDouble(parameters, "rotation") ?? 0.0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       if (!File.Exists(filePath))
         throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "File not found: " + filePath);
@@ -1848,7 +1844,7 @@ public static class AcadCommands
     var x2 = PluginRuntime.GetRequiredDouble(parameters, "x2"); var y2 = PluginRuntime.GetRequiredDouble(parameters, "y2");
     var z1 = PluginRuntime.GetOptionalDouble(parameters, "z1") ?? 0.0;
     var z2 = PluginRuntime.GetOptionalDouble(parameters, "z2") ?? 0.0;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var dx = x2 - x1; var dy = y2 - y1; var dz = z2 - z1;
       var distance = Math.Sqrt(dx * dx + dy * dy + dz * dz);
@@ -1868,7 +1864,7 @@ public static class AcadCommands
   public static Task<object?> MeasureAreaAsync(JsonObject? parameters)
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -1994,7 +1990,7 @@ public static class AcadCommands
     var width = PluginRuntime.GetRequiredDouble(parameters, "width");
     var height = PluginRuntime.GetRequiredDouble(parameters, "height");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       using var solid = new Solid3d();
       solid.CreateBox(length, width, height);
@@ -2011,7 +2007,7 @@ public static class AcadCommands
     var radius = PluginRuntime.GetRequiredDouble(parameters, "radius");
     var height = PluginRuntime.GetRequiredDouble(parameters, "height");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       using var solid = new Solid3d();
       solid.CreateFrustum(height, radius, radius, radius);
@@ -2027,7 +2023,7 @@ public static class AcadCommands
     var z = PluginRuntime.GetOptionalDouble(parameters, "z") ?? 0.0;
     var radius = PluginRuntime.GetRequiredDouble(parameters, "radius");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       using var solid = new Solid3d();
       solid.CreateSphere(radius);
@@ -2044,7 +2040,7 @@ public static class AcadCommands
     var radius = PluginRuntime.GetRequiredDouble(parameters, "radius");
     var height = PluginRuntime.GetRequiredDouble(parameters, "height");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       using var solid = new Solid3d();
       solid.CreateFrustum(height, radius, radius, 0.0);
@@ -2062,7 +2058,7 @@ public static class AcadCommands
     var width = PluginRuntime.GetRequiredDouble(parameters, "width");
     var height = PluginRuntime.GetRequiredDouble(parameters, "height");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       using var solid = new Solid3d();
       solid.CreateWedge(length, width, height);
@@ -2079,7 +2075,7 @@ public static class AcadCommands
     var majorRadius = PluginRuntime.GetRequiredDouble(parameters, "majorRadius");
     var minorRadius = PluginRuntime.GetRequiredDouble(parameters, "minorRadius");
     var layerName = PluginRuntime.GetOptionalString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       using var solid = new Solid3d();
       solid.CreateTorus(majorRadius, minorRadius);
@@ -2114,7 +2110,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var height = PluginRuntime.GetRequiredDouble(parameters, "height");
     var taperAngle = PluginRuntime.GetOptionalDouble(parameters, "taperAngle") ?? 0.0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -2138,7 +2134,7 @@ public static class AcadCommands
     var axisX1 = PluginRuntime.GetRequiredDouble(parameters, "axisX1"); var axisY1 = PluginRuntime.GetRequiredDouble(parameters, "axisY1");
     var axisX2 = PluginRuntime.GetRequiredDouble(parameters, "axisX2"); var axisY2 = PluginRuntime.GetRequiredDouble(parameters, "axisY2");
     var angle = PluginRuntime.GetRequiredDouble(parameters, "angle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -2178,7 +2174,7 @@ public static class AcadCommands
     var thickness = PluginRuntime.GetOptionalDouble(parameters, "thickness") ?? 1.0;
     var bothSides = PluginRuntime.GetOptionalBool(parameters, "bothSides") ?? false;
     if (thickness <= 0) throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "thickness must be > 0.");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var sections = new Entity[crossArr.Count];
       for (int i = 0; i < crossArr.Count; i++)
@@ -2250,7 +2246,7 @@ public static class AcadCommands
     var ptsArr = PluginRuntime.GetParameter(parameters, "points") as JsonArray;
     if (ptsArr == null || ptsArr.Count < uCnt * vCnt)
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "points array must contain uCount*vCount [x,y,z] entries.");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ctrlPts = new Point3dCollection();
       for (int i = 0; i < uCnt * vCnt; i++)
@@ -2297,7 +2293,7 @@ public static class AcadCommands
     var movesArr = PluginRuntime.GetParameter(parameters, "moves") as JsonArray;
     if ((ptsArr == null || ptsArr.Count == 0) && (movesArr == null || movesArr.Count == 0))
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "Need points or moves array.");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var surf = CivilObjectUtils.GetRequiredObject<Autodesk.AutoCAD.DatabaseServices.NurbSurface>(transaction, id, OpenMode.ForWrite);
@@ -2337,7 +2333,7 @@ public static class AcadCommands
     var thickness = PluginRuntime.GetRequiredDouble(parameters, "thickness");
     var bothSides = PluginRuntime.GetOptionalBool(parameters, "bothSides") ?? false;
     if (thickness <= 0) throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "thickness must be > 0.");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       // 2026-08-11：NurbSurface → Surface 基类（兼容 LoftedSurface 等所有曲面）
@@ -2352,7 +2348,7 @@ public static class AcadCommands
   {
     var profileHandle = PluginRuntime.GetRequiredString(parameters, "profileHandle");
     var pathHandle = PluginRuntime.GetRequiredString(parameters, "pathHandle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var profileId = HandleToObjectId(database, profileHandle);
       var pathId = HandleToObjectId(database, pathHandle);
@@ -2376,7 +2372,7 @@ public static class AcadCommands
     var handles = PluginRuntime.GetParameter(parameters, "handles") as JsonArray;
     if (handles == null || handles.Count < 2)
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "booleanUnion requires at least 2 handles.");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var solids = new List<Solid3d>();
       foreach (var n in handles)
@@ -2403,7 +2399,7 @@ public static class AcadCommands
   {
     var mainHandle = PluginRuntime.GetRequiredString(parameters, "mainHandle");
     var toolHandle = PluginRuntime.GetRequiredString(parameters, "toolHandle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var main = CivilObjectUtils.GetRequiredObject<Solid3d>(transaction, HandleToObjectId(database, mainHandle), OpenMode.ForWrite);
       var tool = CivilObjectUtils.GetRequiredObject<Solid3d>(transaction, HandleToObjectId(database, toolHandle), OpenMode.ForWrite);
@@ -2420,7 +2416,7 @@ public static class AcadCommands
     var dx = PluginRuntime.GetRequiredDouble(parameters, "dx");
     var dy = PluginRuntime.GetRequiredDouble(parameters, "dy");
     var dz = PluginRuntime.GetRequiredDouble(parameters, "dz");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForWrite);
@@ -2434,7 +2430,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var p1x = PluginRuntime.GetRequiredDouble(parameters, "p1x"); var p1y = PluginRuntime.GetRequiredDouble(parameters, "p1y"); var p1z = PluginRuntime.GetRequiredDouble(parameters, "p1z");
     var p2x = PluginRuntime.GetRequiredDouble(parameters, "p2x"); var p2y = PluginRuntime.GetRequiredDouble(parameters, "p2y"); var p2z = PluginRuntime.GetRequiredDouble(parameters, "p2z");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForWrite);
@@ -2455,7 +2451,7 @@ public static class AcadCommands
     var ax = PluginRuntime.GetRequiredDouble(parameters, "ax"); var ay = PluginRuntime.GetRequiredDouble(parameters, "ay"); var az = PluginRuntime.GetRequiredDouble(parameters, "az");
     var bx = PluginRuntime.GetRequiredDouble(parameters, "bx"); var by = PluginRuntime.GetRequiredDouble(parameters, "by"); var bz = PluginRuntime.GetRequiredDouble(parameters, "bz");
     var angleDeg = PluginRuntime.GetRequiredDouble(parameters, "angle");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForWrite);
@@ -2478,7 +2474,7 @@ public static class AcadCommands
     var dx = PluginRuntime.GetOptionalDouble(parameters, "dx") ?? 1.0;
     var dy = PluginRuntime.GetOptionalDouble(parameters, "dy") ?? 1.0;
     var dz = PluginRuntime.GetOptionalDouble(parameters, "dz") ?? 1.0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -2523,7 +2519,7 @@ public static class AcadCommands
     var p2x = PluginRuntime.GetRequiredDouble(parameters, "p2x"); var p2y = PluginRuntime.GetRequiredDouble(parameters, "p2y");
     var p3x = PluginRuntime.GetRequiredDouble(parameters, "p3x"); var p3y = PluginRuntime.GetRequiredDouble(parameters, "p3y");
     var keepBoth = PluginRuntime.GetOptionalBool(parameters, "keepBoth") ?? false;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var solid = CivilObjectUtils.GetRequiredObject<Solid3d>(transaction, id, OpenMode.ForWrite);
@@ -2563,7 +2559,7 @@ public static class AcadCommands
   {
     var handle1 = PluginRuntime.GetRequiredString(parameters, "handle1");
     var handle2 = PluginRuntime.GetRequiredString(parameters, "handle2");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var s1 = CivilObjectUtils.GetRequiredObject<Solid3d>(transaction, HandleToObjectId(database, handle1), OpenMode.ForRead);
       var s2 = CivilObjectUtils.GetRequiredObject<Solid3d>(transaction, HandleToObjectId(database, handle2), OpenMode.ForRead);
@@ -2577,7 +2573,7 @@ public static class AcadCommands
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     // 2026-10-10 6.2 API 化：原走 `_.CONVTOSURFACE` 命令（投递即返回、无结果）→ 改真 API `Surface.CreateFrom(Entity)`
     // 实测（api-inspect 25.0.58）：Surface.CreateFrom(Entity) 存在。
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -2601,7 +2597,7 @@ public static class AcadCommands
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     // 2026-10-10 6.2 API 化：原走 `_.CONVTOSOLID` 命令（投递即返回、无结果）→ Region.CreateFromCurves + Solid3d.Extrude（同步返回）
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);
@@ -2643,7 +2639,7 @@ public static class AcadCommands
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var materialName = PluginRuntime.GetRequiredString(parameters, "materialName");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForWrite);
@@ -2656,7 +2652,7 @@ public static class AcadCommands
   public static Task<object?> SetVisualStyleAsync(JsonObject? parameters)
   {
     var style = PluginRuntime.GetRequiredString(parameters, "style");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var opt = style.ToLowerInvariant() switch
       {
@@ -2687,7 +2683,7 @@ public static class AcadCommands
 
   public static Task<object?> GetVisualStyleAsync(JsonObject? parameters)
   {
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       object? vscurrent = null;
       string? readError = null;
@@ -2715,7 +2711,7 @@ public static class AcadCommands
     // 2026-08-13: z 范围过滤（服务端筛异常点，AI 不用拉全量被截断）——如 minZ=-1 maxZ=3 找异常低点
     var minZ = PluginRuntime.GetOptionalDouble(parameters, "minZ");
     var maxZ = PluginRuntime.GetOptionalDouble(parameters, "maxZ");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
@@ -2761,7 +2757,7 @@ public static class AcadCommands
   {
     var block = PluginRuntime.GetRequiredString(parameters, "blockName");
     var maxCount = PluginRuntime.GetOptionalCount(parameters) ?? 500;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
@@ -2806,7 +2802,7 @@ public static class AcadCommands
     var blockName = PluginRuntime.GetOptionalString(parameters, "blockName"); // optional filter
     var minZ = PluginRuntime.GetOptionalDouble(parameters, "minZ");
     var maxZ = PluginRuntime.GetOptionalDouble(parameters, "maxZ");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
@@ -2876,7 +2872,7 @@ public static class AcadCommands
   public static Task<object?> SelectEntitiesAsync(JsonObject? parameters)
   {
     var handles = ParseHandleArray(parameters, "handles");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var ids = new List<ObjectId>();
       foreach (var handle in handles)
@@ -2922,7 +2918,7 @@ public static class AcadCommands
       typeFilter = typeFilter == null ? [typeName] : typeFilter.Append(typeName).ToArray();
     var color = PluginRuntime.GetOptionalInt(parameters, "color");
     var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 5000;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
@@ -3007,7 +3003,7 @@ public static class AcadCommands
 
   public static Task<object?> GetDrawingOverviewAsync(JsonObject? parameters)
   {
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
@@ -3050,7 +3046,7 @@ public static class AcadCommands
   public static Task<object?> AnalyzeLayerAsync(JsonObject? parameters)
   {
     var layer = PluginRuntime.GetRequiredString(parameters, "layer");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
@@ -3104,7 +3100,7 @@ public static class AcadCommands
   public static Task<object?> ListDirectoryAsync(JsonObject? parameters)
   {
     var path = PluginRuntime.GetRequiredString(parameters, "path");
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       if (!Path.IsPathFullyQualified(path))
         throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"Path must be absolute: {path}");
@@ -3152,7 +3148,7 @@ public static class AcadCommands
     var maxBytes = PluginRuntime.GetOptionalInt(parameters, "maxBytes") ?? 4096;
     // 2026-08-13: startLine 行偏移——AI 分页读大文件（读中段/末尾，不再"放大参数读全文"被截断）
     var startLine = PluginRuntime.GetOptionalInt(parameters, "startLine") ?? 0;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       if (!Path.IsPathFullyQualified(path))
         throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"Path must be absolute: {path}");
@@ -3203,7 +3199,7 @@ public static class AcadCommands
   {
     var path = PluginRuntime.GetRequiredString(parameters, "path");
     var content = PluginRuntime.GetOptionalString(parameters, "content") ?? "";
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       if (!Path.IsPathFullyQualified(path))
         throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"Path must be absolute: {path}");
@@ -3236,7 +3232,7 @@ public static class AcadCommands
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", Loc.Tk("error.formatUnsupported", ("format", format)));
     if (string.IsNullOrEmpty(delimiter)) delimiter = format == "csv" ? "," : " ";
     // 2026-08-08: 用户指示的导出 = 已授权写该路径,允许覆盖(writeFile 工具红线不变)--修复"连续导出同路径被拒"
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var selFile = PluginRuntime.SelectionSnapshotPath();
       var handles = new List<string>();
@@ -3345,7 +3341,7 @@ public static class AcadCommands
 
   public static Task<object?> GetSelectionDetailAsync(JsonObject? parameters)
   {
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var selFile = PluginRuntime.SelectionSnapshotPath();
       var handles = new List<string>();
@@ -3418,7 +3414,7 @@ public static class AcadCommands
   {
     var handles = ParseHandleArray(parameters, "handles");
     var color = PluginRuntime.GetRequiredInt(parameters, "color");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       foreach (var handle in handles)
@@ -3442,7 +3438,7 @@ public static class AcadCommands
   {
     var handles = ParseHandleArray(parameters, "handles");
     var layer = PluginRuntime.GetRequiredString(parameters, "layer");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var layerId = LookupUtils.GetLayerId(database, transaction, layer, strict: true); // 2026-08-12 M3: 用户指定图层必须存在
       var ok = 0; var failed = new List<string>();
@@ -3466,7 +3462,7 @@ public static class AcadCommands
   {
     var handles = ParseHandleArray(parameters, "handles");
     var linetype = PluginRuntime.GetRequiredString(parameters, "linetype");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var linetypeId = LookupUtils.GetLinetypeId(database, transaction, linetype);
       if (linetypeId.IsNull && !linetype.Equals("ByLayer", StringComparison.OrdinalIgnoreCase) && !linetype.Equals("ByBlock", StringComparison.OrdinalIgnoreCase))
@@ -3492,7 +3488,7 @@ public static class AcadCommands
   {
     var handles = ParseHandleArray(parameters, "handles");
     var lw = PluginRuntime.GetRequiredInt(parameters, "lineweight");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       foreach (var handle in handles)
@@ -3517,7 +3513,7 @@ public static class AcadCommands
     // 0-100 百分比: 0=不透明, 100=全透明 → alpha 255-0
     var pct = PluginRuntime.GetRequiredInt(parameters, "transparency");
     var alpha = (byte)(255 - Math.Clamp(pct, 0, 100) * 255 / 100);
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       foreach (var handle in handles)
@@ -3542,7 +3538,7 @@ public static class AcadCommands
     var dx = PluginRuntime.GetRequiredDouble(parameters, "dx");
     var dy = PluginRuntime.GetRequiredDouble(parameters, "dy");
     var dz = PluginRuntime.GetOptionalDouble(parameters, "dz") ?? 0.0;
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       var disp = Autodesk.AutoCAD.Geometry.Matrix3d.Displacement(new Autodesk.AutoCAD.Geometry.Vector3d(dx, dy, dz));
@@ -3565,7 +3561,7 @@ public static class AcadCommands
   public static Task<object?> DeleteEntitiesAsync(JsonObject? parameters)
   {
     var handles = ParseHandleArray(parameters, "handles");
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var ok = 0; var failed = new List<string>();
       foreach (var handle in handles)
@@ -3631,7 +3627,7 @@ public static class AcadCommands
   {
     var handle = PluginRuntime.GetRequiredString(parameters, "handle");
     var maxDepth = PluginRuntime.GetOptionalInt(parameters, "maxDepth") ?? 12;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var id = HandleToObjectId(database, handle);
       var ent = CivilObjectUtils.GetRequiredObject<Entity>(transaction, id, OpenMode.ForRead);

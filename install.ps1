@@ -93,17 +93,23 @@ if ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsI
   } catch { Wn "运行时写权限设置失败: $_" }
 }
 
-# ---------- 2. C3D 是否安装（P2: 注册表动态检测）----------
-Write-Host "`n--- 2/11 C3D 安装检查 ---" -ForegroundColor Yellow
-try { $c3d = & "$ROOT\tools\find-civil3d.ps1" | ConvertFrom-Json } catch { $c3d = [pscustomobject]@{ found = $false }; Wn "C3D 检测脚本异常: $_" } # 2026-08-14 P2-4
+# ---------- 2. Autodesk 宿主检测：Civil 3D 或纯 AutoCAD（2026-10-27 v1.11.0-fix）----------
+Write-Host "`n--- 2/11 Autodesk 宿主检查 ---" -ForegroundColor Yellow
+try { $c3d = & "$ROOT\tools\find-civil3d.ps1" | ConvertFrom-Json } catch { $c3d = [pscustomobject]@{ found = $false }; Wn "宿主检测脚本异常: $_" } # 2026-08-14 P2-4
+$hostKind = $(if ($c3d.PSObject.Properties['kind'] -and $c3d.kind) { $c3d.kind } else { 'civil3d' })
 if ($c3d.found) {
-  Ok "C3D $($c3d.year) 安装: $($c3d.installDir)"
+  if ($hostKind -eq 'autocad') {
+    Ok "AutoCAD $($c3d.year) 安装（未检测到 Civil 3D）: $($c3d.installDir)"
+    Ok "纯 AutoCAD 模式：绘图 / 图层 / 块 / 文件读写等能力可用；Civil 3D 专有方法会明确返回 CIVIL3D.CIVIL_NOT_INSTALLED"
+  } else {
+    Ok "Civil 3D $($c3d.year) 安装: $($c3d.installDir)"
+  }
   if ($c3d.PSObject.Properties['supported'] -and -not $c3d.supported) {
-    Wn "Civil 3D $($c3d.year) 不受支持：本插件为 .NET 8 构建，仅支持 2025/2026。装到 2024 会静默不加载。"
+    Wn "Autodesk $($c3d.year) 不受支持：本插件为 .NET 8 构建，仅支持 2025/2026。装到 2024 会静默不加载。"
   }
   if (Test-Path "$($c3d.installDir)acad.exe") { Ok "acad.exe 就绪" } else { Wn "acad.exe 未找到（目录存在但无 acad.exe）" }
 } else {
-  Wn "未检测到 C3D（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无 Civil 3D 产品），用户需手动安装"
+  Wn "未检测到 Autodesk AutoCAD 2025/2026（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无产品），用户需手动安装"
 }
 
 # ---------- 3. accoreconsole ----------
@@ -255,9 +261,9 @@ if (-not $cfg.llm.apiKey) {
   Ok "AI 已配置: $($cfg.llm.provider)/$($cfg.llm.model)（key 已存在，仅本机）"
 }
 
-# 9b. C3D 自动加载插件 (Hank.lsp -> acad.lsp)  [P2: 路径动态化 + Hank.lsp 模板生成]
+# 9b. 宿主自动加载插件 (Hank.lsp -> acad.lsp)  [P2: 路径动态化 + Hank.lsp 模板生成]
 if (-not $c3d.found) {
-  Wn "C3D 未检测到，跳过自动加载配置"
+  Wn "未检测到 AutoCAD / Civil 3D，跳过自动加载配置"
 } else {
   $c3dSupport = $c3d.supportDir
   $acadLspPath = "$c3dSupport\acad.lsp"
@@ -265,7 +271,7 @@ if (-not $c3d.found) {
 
   # 确保支持目录存在
   if (-not (Test-Path $c3dSupport)) {
-    Wn "C3D 支持目录不存在: $c3dSupport（版本可能不是 $($c3d.year)，需手动确认）"
+    Wn "宿主支持目录不存在: $c3dSupport（版本可能不是 $($c3d.year)，需手动确认）"
   } else {
     # 生成 Hank.lsp（注入实际 DLL 路径，异机可用）
     $dllPath = "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.dll"
@@ -358,7 +364,7 @@ if (-not $c3d.found) {
         $touched++
       }
     }
-    if ($touched -eq 0 -and $profiles.Count -eq 0) { Wn "TRUSTEDPATHS: 未找到 C3D profile（跳过）" }
+    if ($touched -eq 0 -and $profiles.Count -eq 0) { Wn "TRUSTEDPATHS: 未找到 宿主 profile（跳过）" }
   } catch {
     Wn "TRUSTEDPATHS 写入失败: $_"
   }

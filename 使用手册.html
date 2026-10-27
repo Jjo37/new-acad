@@ -297,7 +297,7 @@
 
     <h3 id="ch1-2-zh">1.2 安装（4 步）</h3>
     <ol class="steps">
-      <li><b>下载</b>安装包 <code>new-acad-setup-v1.10.0.exe</code>（或绿色版 zip）。</li>
+      <li><b>下载</b>安装包 <code>new-acad-setup-v1.11.0.exe</code>（或绿色版 zip）。</li>
       <li><b>双击运行</b>，允许管理员权限。安装向导支持中文 / English。</li>
       <li><b>走完向导</b>。装完会调用 <code>install.ps1</code>：检测 C3D 版本、注册插件自启、引导你填 AI 配置。</li>
       <li><b>完成</b>。勾选"打开使用手册"会打开本文件；随后启动 Civil 3D。</li>
@@ -308,7 +308,7 @@
     </div>
 
     <h3 id="ch1-3-zh">1.3 静默安装（企业 / 批量部署）</h3>
-    <p><code>new-acad-setup-v1.10.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.11.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">静默安装会跳过配置向导</span>
       向导被跳过（<code>skipifsilent</code>），所以<b>不会</b>自动检测 C3D、不会写配置。装完需要人工打开面板填 Key，或直接预置 <code>config.json</code>（字段见 <a href="#ch3">第 3 章</a>）。
@@ -355,7 +355,7 @@
 
     <h3 id="ch1-2-en">1.2 Install (4 steps)</h3>
     <ol class="steps">
-      <li><b>Download</b> <code>new-acad-setup-v1.10.0.exe</code> (or the portable zip).</li>
+      <li><b>Download</b> <code>new-acad-setup-v1.11.0.exe</code> (or the portable zip).</li>
       <li><b>Run it</b> and allow administrator rights. The wizard speaks Chinese and English.</li>
       <li><b>Finish the wizard.</b> It runs <code>install.ps1</code>: detect Civil 3D, register autoload, guide you through the AI settings.</li>
       <li><b>Done.</b> Tick "open the manual" and start Civil 3D.</li>
@@ -366,7 +366,7 @@
     </div>
 
     <h3 id="ch1-3-en">1.3 Silent install (enterprise)</h3>
-    <p><code>new-acad-setup-v1.10.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.11.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">Silent install skips the setup wizard</span>
       Because of <code>skipifsilent</code> it does <b>not</b> detect Civil 3D and does <b>not</b> write configuration. Fill in the key from the palette afterwards, or pre-seed <code>config.json</code> (fields in <a href="#ch3">chapter 3</a>).
@@ -1243,7 +1243,7 @@
 
     <h3 id="ch6-6-zh">6.6 方法与能力</h3>
     <ul>
-      <li>约 <b>12 个方法没有公开 API</b>（fillet / chamfer / trim / extend / stretch / overkill / dimAngular / sectionPlane / convertTo* / render 等）——保留命令通道 + 超时兜底，部分已几何自研。</li>
+      <li><b>14 个方法底层走命令通道</b>（托管 API 缺口）：10 个投递即返回、拿不到同步结果（render / undo / redo / 数据快捷方式 / SSA 等），3 个可回读（setVisualStyle / selectByCriteria / selectEntities），runLisp 按设计不返回值；带 25 秒超时兜底。fillet / chamfer / stretch / dimAngular / sectionPlane / convertTo* 已改为几何自研或真 API，同步返回；trim / extend / overkill 的命令版**已停投命令**，请用 trimEntityGeo / extendEntityGeo / overkillGeo。</li>
       <li>全量方法清单以面板「方法目录」或 <code>listMethods</code> 为准（当前 423 个）。</li>
     </ul>
 
@@ -1306,7 +1306,7 @@
 
     <h3 id="ch6-6-en">6.6 Methods</h3>
     <ul>
-      <li>About <b>12 methods have no public API</b> (fillet / chamfer / trim / extend / stretch / overkill / dimAngular / sectionPlane / convertTo* / render …) — they keep the command path with a timeout guard; several are re-implemented geometrically.</li>
+      <li><b>14 methods fall back to the command channel</b> (managed-API gaps): 10 dispatch a command and return &quot;queued&quot; with no synchronous result (render / undo / redo / data shortcuts / SSA), 3 can be verified (setVisualStyle / selectByCriteria / selectEntities), and runLisp returns nothing by design; a 25 s timeout guard applies. fillet / chamfer / stretch / dimAngular / sectionPlane / convertTo* are now custom geometry or real API calls and return synchronously; the command versions of trim / extend / overkill no longer dispatch anything &mdash; use trimEntityGeo / extendEntityGeo / overkillGeo.</li>
       <li>The authoritative list is the "method catalog" or <code>listMethods</code> (423 at the moment).</li>
     </ul>
 
@@ -1456,7 +1456,7 @@
 
 <footer>
   <span class="zh">new-acad 使用手册 · 对应版本 v1.11.0 · 2026-10-23</span>
-  <span class="en">new-acad User Guide · for version v1.10.0 · 2026-10-23</span>
+  <span class="en">new-acad User Guide · for version v1.11.0 · 2026-10-23</span>
 </footer>
 
 </main>

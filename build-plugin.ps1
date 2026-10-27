@@ -28,9 +28,17 @@ Write-Host "===== new-acad 插件编译 (P2 自动版本适配) ====="
 
 # ---------- 1. 检测 C3D ----------
 $c3d = & "$ROOT\tools\find-civil3d.ps1" | ConvertFrom-Json
+# 2026-10-27: 编译插件必须要有 Civil 3D 的引用程序集（AeccDbMgd 等）——
+# 纯 AutoCAD 机器只能跑已编译产物，不能在本机编译。
+$hostKind = $(if ($c3d.PSObject.Properties['kind'] -and $c3d.kind) { $c3d.kind } else { 'civil3d' })
 if (-not $c3d.found) {
-  Write-Host "[FAIL] 未检测到 Civil 3D（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无 Civil 3D 产品）" -ForegroundColor Red
+  Write-Host "[FAIL] 未检测到 AutoCAD / Civil 3D（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无产品）" -ForegroundColor Red
   Write-Host "       如已安装请检查注册表，或手动放置引用 DLL 到 plugin\AcBridge-v24\C_References" -ForegroundColor Yellow
+  exit 1
+}
+if ($hostKind -ne 'civil3d') {
+  Write-Host "[FAIL] 本机只有纯 AutoCAD $($c3d.year)，没有 Civil 3D —— 无法编译（缺 AeccDbMgd 等引用程序集）" -ForegroundColor Red
+  Write-Host "       纯 AutoCAD 上直接跑已编译产物即可；要编译请在装了 Civil 3D 的机器上执行。" -ForegroundColor Yellow
   exit 1
 }
 Write-Host "[OK] 检测到 C3D $($c3d.year) : $($c3d.productName)" -ForegroundColor Green

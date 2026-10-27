@@ -26,7 +26,11 @@ Write-Host "[OK] dist module closure: server/i18n files present" -ForegroundColo
   部署流程: 解压 → 双击 install.ps1（右键"使用 PowerShell 运行"）→ 开 C3D
   打包内容遵循 knowledge/deployment-package.md
 #>
-param([switch]$Zip)
+param(
+  [switch]$Zip,
+  # 2026-10-27: 修正版产物（版本号不变，文件名带 -fix）
+  [string]$ArtifactSuffix = ""
+)
 
 $ErrorActionPreference = "Stop"
 $ROOT = $PSScriptRoot
@@ -34,8 +38,10 @@ if (-not $ROOT) { $ROOT = "D:\new-acad" }
 # 版本号从 package.json 读取，避免打包时忘改
 $VERSION = try { ([System.IO.File]::ReadAllText("$ROOT\package.json", [System.Text.Encoding]::UTF8) | ConvertFrom-Json).version } catch { "0.0.0" }
 $DIST = "$ROOT\dist"
+$SUFFIX = if ($ArtifactSuffix) { "-" + $ArtifactSuffix } else { "" }
+$ARTIFACT = "v$VERSION$SUFFIX"
 
-Write-Host "===== new-acad 打包 v$VERSION ====="
+Write-Host "===== new-acad 打包 $ARTIFACT ====="
 
 # ---------- 0. 检查必需文件 ----------
 $need = @(
@@ -308,7 +314,7 @@ Write-Host "[OK] dist/ 总大小: $([math]::Round($total/1MB,1)) MB" -Foreground
 
 # ---------- 7. 压缩 ----------
 if ($Zip) {
-  $zipPath = "$ROOT\new-acad-v$VERSION.zip"
+  $zipPath = "$ROOT\new-acad-$ARTIFACT.zip"
   if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
   Compress-Archive -Path "$DIST\*" -DestinationPath $zipPath -CompressionLevel Optimal
   $zipSize = (Get-Item $zipPath).Length

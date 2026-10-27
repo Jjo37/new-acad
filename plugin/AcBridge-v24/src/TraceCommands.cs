@@ -167,7 +167,7 @@ public static class TraceCommands
   {
     var path = PluginRuntime.GetRequiredString(parameters, "path");
     var maxSide = PluginRuntime.GetOptionalInt(parameters, "maxSide") ?? 1400;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var full = ResolveImagePath(path);
       if (maxSide < 64) maxSide = 64;
@@ -296,7 +296,7 @@ public static class TraceCommands
     var quality = PluginRuntime.GetOptionalInt(parameters, "quality") ?? 85;
     var format = (PluginRuntime.GetOptionalString(parameters, "format") ?? "jpeg").ToLowerInvariant();
     var cropNode = parameters?["crop"] as JsonObject;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var full = ResolveImagePath(path);
       if (quality < 10) quality = 10;
@@ -413,7 +413,7 @@ public static class TraceCommands
     if (itemsNode.Count > 20000)
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"items too many ({itemsNode.Count} > 20000)");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);

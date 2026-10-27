@@ -7,8 +7,9 @@ namespace Civil3DMcpPlugin;
 
 /// <summary>
 /// D2.x（2026-09-28）：编辑类操作的**几何自研版**（不再走 LISP 命令通道）。
-/// 现有 `trimEntity`/`extendEntity`/`overkillEntities` 都是 SendStringToExecute 命令壳：
-/// 异步、无返回值、无法并行/断言。这里用真 API 实现，**同步返回结果**，可验证。
+/// 现有 `trimEntity`/`extendEntity`/`overkillEntities` 曾是 SendStringToExecute 命令壳：
+/// 异步、无返回值、无法并行/断言。这三个同名命令壳现已**停投命令**（直接返回 deprecated +
+/// `use: xxxGeo`），这里用真 API 实现，**同步返回结果**，可验证。
 ///   - Trim：Curve.IntersectWith + Curve.GetSplitCurves
 ///   - Extend：Curve.IntersectWith(ExtendThis) + Curve.Extend(bool, Point3d)
 ///   - Overkill：几何指纹去重（Line/Arc/Circle/Polyline）
@@ -40,7 +41,7 @@ public static partial class EditCommands
     var pickY = PluginRuntime.GetRequiredDouble(parameters, "pickY");
     var pickZ = PluginRuntime.GetOptionalDouble(parameters, "pickZ") ?? 0;
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var modelSpace = ModelSpace(transaction, database);
       var target = CivilObjectUtils.GetRequiredObject<Curve>(transaction, ToObjectId(database, targetHandle), OpenMode.ForWrite);
@@ -108,7 +109,7 @@ public static partial class EditCommands
     var boundaryHandle = PluginRuntime.GetRequiredString(parameters, "boundaryHandle");
     var extendStartParam = PluginRuntime.GetOptionalBool(parameters, "extendStart");
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var target = CivilObjectUtils.GetRequiredObject<Curve>(transaction, ToObjectId(database, targetHandle), OpenMode.ForWrite);
       var boundary = CivilObjectUtils.GetRequiredObject<Entity>(transaction, ToObjectId(database, boundaryHandle), OpenMode.ForRead);
@@ -148,7 +149,7 @@ public static partial class EditCommands
   // ── OVERKILL：按几何指纹去重（保留第一个） ────────────────────────────
   public static Task<object?> OverkillGeoAsync(JsonObject? parameters)
   {
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var modelSpace = ModelSpace(transaction, database);
       var tol = PluginRuntime.GetOptionalDouble(parameters, "tolerance") ?? 1e-4;

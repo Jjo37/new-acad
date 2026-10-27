@@ -509,34 +509,16 @@ public static class CommandDispatcher
   };
 
   /// <summary>
-  /// 列出所有可用方法（反射扫描静态命令类 + 注册名修正，AI 先查清单再调用，避免猜方法名）。
+  /// 列出所有可用方法（构建期生成的 MethodNames.g.cs，AI 先查清单再调用，避免猜方法名）。
+  /// 不用反射：纯 AutoCAD 宿主下 Assembly.GetTypes() 会整体抛异常（见下方注释）。
   /// </summary>
   private static Task<object?> ListMethodsAsync()
   {
-    var names = new HashSet<string>();
-    try
-    {
-      var asm = typeof(CommandDispatcher).Assembly;
-      foreach (var t in asm.GetTypes())
-      {
-        if (!t.IsClass || !t.IsAbstract || !t.IsSealed) continue; // 静态类
-        foreach (var m in t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
-        {
-          if (!m.Name.EndsWith("Async") || m.ReturnType != typeof(Task<object?>)) continue;
-          var n = m.Name[..^"Async".Length];
-          if (n.Length > 0 && char.IsUpper(n[0])) n = char.ToLowerInvariant(n[0]) + n[1..];
-          if (RegisteredNameOverrides.TryGetValue(n, out var registered))
-          {
-            foreach (var r in registered) names.Add(r);
-          }
-          else
-          {
-            names.Add(n);
-          }
-        }
-      }
-    }
-    catch (System.Exception ex) { PluginLog.Warn("Dispatcher", "反射扫描方法清单失败(清单可能不全): " + ex.Message); }
+    // 2026-10-27 v1.11.0-fix2: 清单改为构建期生成（MethodNames.g.cs，来源 = dispatcher switch）。
+    // 旧实现反射扫所有类型的 public static Task<object?> *Async：纯 AutoCAD 宿主下有少数类型
+    // 引用 Civil 3D 类型、Assembly.GetTypes() 整体抛 ReflectionTypeLoadException，异常被吞后
+    // 清单只剩硬编码的 AdditionalRegisteredNames（23 条），AI 因此"看不见" createCircle 等基础方法。
+    var names = new HashSet<string>(MethodNames.All, StringComparer.Ordinal);
     foreach (var extra in AdditionalRegisteredNames) names.Add(extra);
     names.Remove("dispatch"); // 内部入口，不对外
     var sorted = names.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
@@ -720,7 +702,7 @@ public static class CommandDispatcher
       ["exportSelectionToFile"] = "导出选中集到文件 {path, format:\"csv\"|\"json\", delimiter?, header?}：用户要坐标文件→csv(x,y,z 每行)，AI 自用/跨图→json——⚠️ 文件已存在则拒绝覆盖(换新路径)",
       ["exportSheetSet"] = "导出图纸集 {sheetSetName, outputPath}——导出图纸集数据/清单",
       ["exportStm"] = "导出 STM（雨污模型）文件 {filePath?}（命令投递：ExportSSA 弹交互对话框，无同步结果）",
-      ["extendEntity"] = "【已弃用】延伸图元 {boundaryHandle, targetHandle}（命令投递：入队异步执行、无同步结果；需同步结果请用 extendEntityGeo）",
+      ["extendEntity"] = "【已弃用】延伸图元 {boundaryHandle, targetHandle}（已停投命令，不再入队；请改用 extendEntityGeo，同步返回真实结果）",
       ["extractSurfaceContours"] = "提取等高线 {name, minorInterval, majorInterval}",
       ["extrudeSolid"] = "拉伸成实体 {handle, height, taperAngle?}",
       ["featureLineToGradingWorkflow"] = "特征线转放坡向导（多步）",
@@ -866,7 +848,7 @@ public static class CommandDispatcher
       ["openDrawing"] = "打开已有图纸 {path, readOnly?}——切换到指定 dwg（当前图有未保存修改会先自动保存）；半自动化多图工作流用",
       ["offsetEntity"] = "偏移图元 {handle, distance, layer?}",
       ["openStormSanitaryAnalysis"] = "打开风暴/雨污分析模块 {}（命令投递：打开模块，无同步结果）",
-      ["overkillEntities"] = "【已弃用】清理重复图元 {handles:[]}（命令投递：入队异步执行、无同步结果；需同步结果请用 overkillGeo）",
+      ["overkillEntities"] = "【已弃用】清理重复图元 {handles:[]}（已停投命令，不再入队；请改用 overkillGeo，同步返回真实结果）",
       ["planProductionPublishWorkflow"] = "图纸生产发布向导（多步）",
       ["profileAddCurve"] = "纵断面添加竖曲线 {alignmentName, passThroughX, passThroughY, radius}",
       ["profileAddPvi"] = "纵断面添加 PVI（变坡点） {alignmentName, profileName, station, elevation}",
@@ -959,7 +941,7 @@ public static class CommandDispatcher
       ["traceHydrologyFlowPath"] = "追踪汇流路径 {surfaceName, x, y, stepDistance?, maxSteps?}",
       ["transformCogoPoints"] = "转换 Cogo 点坐标 {pointNumbers:[], translateX?, translateY?, translateZ?, rotateRadians?, scaleFactor?, groupName?}",
       ["transformCoordinates"] = "坐标转换（当前坐标系/经纬度等） {fromSystem, toSystem, x, y, z?}",
-      ["trimEntity"] = "【已弃用】修剪图元 {cuttingHandle, targetHandle}（命令投递：入队异步执行、无同步结果；需同步结果请用 trimEntityGeo）",
+      ["trimEntity"] = "【已弃用】修剪图元 {cuttingHandle, targetHandle}（已停投命令，不再入队；请改用 trimEntityGeo，同步返回真实结果）",
       ["journalList"] = "\u5217\u51fa\u52a8\u4f5c\u8d26\u672c\uff08\u53ef\u64a4\u9500\u7684\u6a21\u5757\uff09{limit?}\u2014\u2014\u6bcf\u6761\u542b seq/method/created/snapshots/reversible\uff1b\u9762\u677f\u300c\u64a4\u9500\u8fd9\u4e00\u6b65\u300d\u7528",
       ["revertEntry"] = "\u64a4\u9500\u8d26\u672c\u91cc\u67d0\u4e00\u6761\u52a8\u4f5c {seq}\u2014\u2014\u53ea\u64a4\u8fd9\u4e00\u6761\uff1b\u5220\u6389\u5b83\u65b0\u5efa\u7684\u3001\u6062\u590d\u5b83\u5220\u9664/\u4fee\u6539\u524d\u7684\u5feb\u7167\uff1b\u65e0\u9006\u64cd\u4f5c\u4f1a\u62d2\u7edd",
       ["journalPrune"] = "\u6e05\u7406\u56de\u9000\u6e05\u5355\u91cc\u64a4\u4e0d\u56de\u7684\u8bb0\u5f55 {scope?: blocked|expired|all}\uff0c\u8fd4\u56de\u6e05\u6389\u591a\u5c11\u6761",
@@ -976,6 +958,9 @@ public static class CommandDispatcher
       ["count"] = sorted.Count,
       ["methods"] = sorted,
       ["descriptions"] = descriptions,
+      // 2026-10-27 v1.11.0-fix2: 纯 AutoCAD 宿主下明确告知能力边界，避免 AI 反复试 Civil 3D 方法
+      ["civilAvailable"] = CivilSupport.Available,
+      ["hostNote"] = CivilSupport.Available ? null : CivilSupport.NotInstalledMessage,
     });
   }
 }

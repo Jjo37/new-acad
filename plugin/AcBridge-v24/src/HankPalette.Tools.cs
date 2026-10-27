@@ -60,6 +60,10 @@ public static partial class HankPalette
     private static bool toolsFirstOpen;
     private static Button toolsUndoBtn;   // first show in this session -> open the records view
     private static bool toolsCatalogLoading;
+    // 2026-10-27 v1.11.0-fix3: 用显式标志记录目录是否已加载。
+    // 旧实现用 `methodRows.Count < 10` 猜“要不要加载”——用户先调过十几次方法（每次调用都会
+    // 在面板里新增一行），行数≥10 后目录就永远不再加载，工具页只剩“调过的那几条”且没有说明。
+    private static bool toolsCatalogLoaded;
 
     // ---------------- 构建 ----------------
     private static void BuildToolsView(Control host)
@@ -750,9 +754,7 @@ public static partial class HankPalette
     // ---------------- 方法目录（listMethods，420 条）----------------
     private static async void EnsureCatalogLoaded()
     {
-        if (toolsCatalogLoading) return;
-        var need = methodRows.Count < 10;
-        if (!need) return;
+        if (toolsCatalogLoading || toolsCatalogLoaded) return;
         toolsCatalogLoading = true;
         try
         {
@@ -783,6 +785,7 @@ public static partial class HankPalette
                     }
                 }
                 toolsDirty = true;
+                toolsCatalogLoaded = true;
                 UpdateToolsCount();
                 if (toolsView != null && toolsView.Visible) RefreshToolsGrid();
                 PluginLog.Info("Palette", "tool catalog loaded: " + methodRows.Count + " methods");

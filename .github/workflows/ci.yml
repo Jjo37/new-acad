@@ -3,6 +3,8 @@ name: CI
 # 工程纪律：每次 push / PR 自动跑已有自动化，不再靠人肉 QC。
 # 覆盖：MCP 单元测试（vitest）+ 语法检查 + 文档覆盖门禁。
 # 说明：插件(C#)编译需要 Autodesk 托管程序集，CI 不跑（本地 build-plugin.ps1 负责）。
+# 2026-10-24：公开快照不发布开发者文档（docs/、KNOWN-ISSUES 等），所以依赖它们的门禁用
+# `if: hashFiles(...)` 按文件存在与否跳过 —— 本地 release-gate 仍然全跑，这里只是不假红。
 
 on:
   push:
@@ -34,6 +36,7 @@ jobs:
       - name: 文档数字口径（MCP 工具数，需先构建）
         run: npm run build && node ../../tools/check-doc-claims.js
       - name: 覆盖契约（含 MCP 工具面）
+        if: ${{ hashFiles('docs/audit/contract.json') != '' }}
         run: node ../../tools/check-coverage-contract.js
 
   checks:
@@ -57,19 +60,25 @@ jobs:
       - name: 文档数字口径门禁 (check-doc-claims --methods-only)
         run: node tools/check-doc-claims.js --methods-only
       - name: 覆盖契约 (check-coverage-contract --skip-mcp)
+        if: ${{ hashFiles('docs/audit/contract.json') != '' }}
         run: node tools/check-coverage-contract.js --skip-mcp
       - name: 决策记录 (check-adr)
-        if: ${{ hashFiles('tools/check-adr.js') != '' }}
+        if: ${{ hashFiles('docs/adr/README.md') != '' }}
         run: node tools/check-adr.js
       - name: 回归矩阵是否陈旧 (gen-regression-matrix --check)
-        if: ${{ hashFiles('tools/gen-regression-matrix.js') != '' }}
+        if: ${{ hashFiles('docs/audit/regression-matrix.md') != '' }}
         run: node tools/gen-regression-matrix.js --check
       - name: relay 端点清单 (check-relay-endpoints)
+        if: ${{ hashFiles('docs/audit/relay-endpoints.json') != '' }}
         run: node tools/check-relay-endpoints.js
       - name: 红线映射提示（不阻断，发版门禁阻断）
-        if: ${{ hashFiles('tools/check-redlines.js') != '' }}
+        if: ${{ hashFiles('docs/audit/redlines.json') != '' }}
         run: node tools/check-redlines.js --list
+      - name: 命令通道清单 (check-command-channel)
+        if: ${{ hashFiles('docs/audit/command-channel.json') != '' }}
+        run: node tools/check-command-channel.js
       - name: 已知问题台账门禁 (check-known-issues)
+        if: ${{ hashFiles('KNOWN-ISSUES.md') != '' }}
         run: node tools/check-known-issues.js
 
   cs-unit:

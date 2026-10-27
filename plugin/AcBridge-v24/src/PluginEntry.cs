@@ -45,7 +45,7 @@ public sealed class PluginEntry : IExtensionApplication
       }
       catch (System.Exception ex) { PluginLog.Warn("PluginEntry", "post-startup init step failed: " + ex.Message); }
 
-      PluginLog.Info("PluginEntry", $"Civil3D MCP plugin initialized on port {PluginRuntime.Port}. Log file: {PluginLog.LogFilePath}");
+      PluginLog.Info("PluginEntry", $"Civil3D MCP plugin initialized on port {PluginRuntime.Port}. Host: {CivilSupport.HostProduct()} (civilAvailable={CivilSupport.Available}). Log file: {PluginLog.LogFilePath}");
       WriteMessage("Civil3D MCP plugin initialized.");
 
       // C3D 加载完毕后自动显示聊天面板

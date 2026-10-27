@@ -542,6 +542,14 @@ public static class PluginRuntime
       OperationTrace.Record(method, parameters, "cancelled", "CIVIL3D.CANCELLED", null, timer.ElapsedMilliseconds);
       return JsonRpcProtocol.SerializeError(id, -32010, "CIVIL3D.CANCELLED", $"Operation '{method}' was cancelled.");
     }
+    catch (Exception ex) when (CivilSupport.IsMissingCivilAssembly(ex))
+    {
+      // 2026-10-27 v1.11.0-fix: plain AutoCAD has no AeccDbMgd, so Civil 3D handlers fault at
+      // JIT time. Report it as a capability gap instead of an internal error.
+      PluginLog.Warn("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] needs Civil 3D (host is plain AutoCAD) durationMs={timer.ElapsedMilliseconds}");
+      OperationTrace.Record(method, parameters, "error", "CIVIL3D.CIVIL_NOT_INSTALLED", CivilSupport.Detail, timer.ElapsedMilliseconds);
+      return JsonRpcProtocol.SerializeError(id, -32603, "CIVIL3D.CIVIL_NOT_INSTALLED", CivilSupport.NotInstalledMessage);
+    }
     catch (Exception ex)
     {
       PluginLog.Error("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] unhandled failure durationMs={timer.ElapsedMilliseconds} category={ex.GetType().Name}", ex);

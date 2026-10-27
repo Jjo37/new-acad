@@ -84,11 +84,13 @@ new-acad is made of three parts:
 ## Requirements
 
 - **Windows**
-- **AutoCAD / Civil 3D 2025 / 2026** (licensed copy — bring your own)
+- **AutoCAD 2025 / 2026** (licensed copy — bring your own). With **Civil 3D 2025 / 2026** installed you get the full civil toolkit (alignments / surfaces / corridors / pipe networks); on plain AutoCAD those Civil 3D-only methods return `CIVIL3D.CIVIL_NOT_INSTALLED`, while drafting, layer, block and file-I/O methods keep working
 - An **LLM API key** (the only thing you must supply in the default mode)
 - Runtime prerequisites (Node, etc.) are handled by the installer
 
-> ⚠️ **Civil 3D 2024 and earlier are not supported.** The plugin is built for **.NET 8**; AutoCAD 2024 and older still run on .NET Framework 4.8, and the two assembly models are incompatible.
+> ⚠️ **2024 and earlier are not supported.** The plugin is built for **.NET 8**; AutoCAD / Civil 3D 2024 and older still run on .NET Framework 4.8, and the two assembly models are incompatible.
+>
+> 📌 **Plain AutoCAD note (since the v1.11.0 corrected build):** on a plain-AutoCAD host the plugin runs normally; Civil 3D-only methods return `CIVIL3D.CIVIL_NOT_INSTALLED` instead of failing silently or reporting an internal error.
 
 > This project is **not an Autodesk product** and is neither affiliated with nor endorsed by Autodesk.
 
@@ -103,14 +105,14 @@ new-acad is made of three parts:
 
 ## Quick start
 
-> Don't want to build it yourself? Grab `setup.exe` or the portable zip from the [Releases](../../releases) page.
+> Don't want to build it yourself? Grab `setup.exe` or the portable zip from the [Releases](https://github.com/Jjo37/new-acad/releases) page.
 
 ```
-1. Make sure Civil 3D (2025 / 2026) is installed
+1. Make sure AutoCAD 2025 / 2026 is installed (add Civil 3D for the full civil toolkit)
 2. Double-click install.bat  (recommended — bypasses the PowerShell execution policy)
    or: right-click install.ps1 → Run with PowerShell
 3. Step 11 of the wizard: pick your LLM provider and paste your API key
-4. Launch Civil 3D — Hank.lsp auto-NETLOADs the plugin
+4. Launch AutoCAD / Civil 3D — the installer already registered autoload (Applications key + acad.lsp), so the plugin starts and shows its palette
 5. Just type into the palette: "raise the selected polyline by 0.5 m"
 ```
 
@@ -127,7 +129,7 @@ This project is literally about letting AI drive CAD, so it ships a handover man
 
 - [`ONBOARDING.md`](ONBOARDING.md) (Chinese) — environment self-checks (plugin / relay / MCP ports), correct way to call tools, troubleshooting, method-call priority. Point your agent at this file and it knows where to start.
 - `使用手册.html` (Chinese) — end-user manual for the palette
-- [`knowledge/`](knowledge/) (Chinese) — API inventory, Civil 3D object model, C3D API references, SAC XAML guide and templates
+- [`knowledge/image-to-cad.en.md`](knowledge/image-to-cad.en.md) — image / drawing → CAD guide (tracing, dimension recognition, common misreads)
 
 ---
 
@@ -169,7 +171,7 @@ new-acad/
 │   ├── sacred-mcp.js       MCP server launcher (:3000)
 │   └── mcp/                MCP server (TS sources + build output + 274 tools)
 ├── tools/                  environment checks, port checks, self-tests, scanners
-├── knowledge/              technical docs (API inventory / object model / SAC guide)
+├── knowledge/              user-facing docs (image → CAD guide)
 ├── install.bat / install.ps1 / uninstall.ps1 / uninstall-pre.ps1
 ├── config.json             local config (ports / tokens / LLM settings) — gitignored
 └── ONBOARDING.md           onboarding guide for AI agents
@@ -179,7 +181,7 @@ new-acad/
 
 ## Known limitations
 
-- 12 methods fall back to the command channel (no public managed API), with a 25 s timeout guard
+- **14 methods fall back to the command channel** (managed-API gaps): of these, **10 dispatch a command and return "queued" with no synchronous result** (`renderScene`/`undoDrawing`/`redoDrawing`/data shortcuts/SSA), **3 can be verified** (`setVisualStyle`/`selectByCriteria`/`selectEntities`), and `runLisp` returns nothing by design; a 25 s timeout guard applies. `trimEntity`/`extendEntity`/`overkillEntities` no longer dispatch anything (use their `*Geo` versions)
 - The plugin DLL is locked while Civil 3D runs — close it before rebuilding
 - The palette receives replies over **SSE push** (`/replies/stream`) — not polling. Status and task progress are pushed in real time too (the 10 s `/status` poll is only a fallback for dropped connections)
 - A few Civil 3D features (grading group editing, parcel line editing) are not wrapped by the managed API and are therefore unreachable for the AI — see `ONBOARDING.md`

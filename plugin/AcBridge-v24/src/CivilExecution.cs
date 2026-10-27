@@ -19,7 +19,7 @@ public static class CivilExecution
   private static readonly object BusyLock = new();                 // busy 状态互斥（定时器/清除竞态保护）
   private static CancellationTokenSource? HostBusyTimerCts = null; // 置位时挂的恢复定时器
 
-  public static async Task<T> ExecuteAsync<T>(Func<Document, CivilDocument, Database, Transaction, T> action, bool write)
+  public static async Task<T> ExecuteCoreAsync<T>(Func<Document, Database, Transaction, T> action, bool write)
   {
     return await ExecuteSerializedAsync(async () =>
     {
@@ -40,13 +40,12 @@ public static class CivilExecution
               "CIVIL3D.CONFLICT",
               $"The active drawing changed from '{expectedDrawingIdentity}' to '{activeDrawingIdentity}' while the operation was queued. No drawing changes were made.");
           }
-          var civilDoc = CivilApplication.ActiveDocument ?? throw new JsonRpcDispatchException("CIVIL3D.NO_DRAWING", "No active Civil 3D document is available.");
           var database = doc.Database;
 
           using var documentLock = doc.LockDocument();
           using var transaction = database.TransactionManager.StartTransaction();
 
-          result = action(doc, civilDoc, database, transaction);
+          result = action(doc, database, transaction);
 
           if (write)
           {
@@ -97,6 +96,25 @@ public static class CivilExecution
       return result!;
     });
   }
+
+  // ---------------------------------------------------------------------------------------
+  // 2026-10-27 v1.11.0-fix: dual host support (Civil 3D + plain AutoCAD).
+  // Plain AutoCAD has no AeccDbMgd, so any method whose signature mentions CivilDocument
+  // would fault at JIT time. Therefore the AutoCAD-only paths below never reference it;
+  // the Civil 3D overloads are thin wrappers that resolve the document lazily, and only
+  // Civil 3D command handlers are allowed to call them.
+  // ---------------------------------------------------------------------------------------
+  public static Task<T> ExecuteAsync<T>(Func<Document, CivilDocument, Database, Transaction, T> action, bool write)
+    => ExecuteCoreAsync((doc, database, transaction) => action(doc, CivilSupport.RequireDocument(), database, transaction), write);
+
+  public static Task<T> ExecuteAsync<T>(Func<Document, Database, Transaction, T> action, bool write)
+    => ExecuteCoreAsync(action, write);
+
+  public static Task<T> ReadAsync<T>(Func<Document, Database, Transaction, T> action)
+    => ExecuteCoreAsync(action, false);
+
+  public static Task<T> WriteAsync<T>(Func<Document, Database, Transaction, T> action)
+    => ExecuteCoreAsync(action, true);
 
   public static Task<T> ReadAsync<T>(Func<Document, CivilDocument, Database, Transaction, T> action)
   {

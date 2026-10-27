@@ -34,7 +34,7 @@ public static class SummarizeCommands
     if (budgetBytes < 512) throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "budgetBytes must be >= 512");
     if (gridCells < 2 || gridCells > 64) throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "gridCells must be in [2, 64]");
 
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(

@@ -317,7 +317,7 @@ public static class UndoJournal
     var snaps = new List<Snapshot>(entry.Snapshots);
     var createdHandles = new List<string>(entry.Created);
 
-    CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var space = (BlockTableRecord)transaction.GetObject(database.CurrentSpaceId, OpenMode.ForWrite);
 
@@ -438,7 +438,7 @@ public static class UndoJournal
 
     // Pass 1: resolve handles, skip erased objects and Civil 3D objects (they cannot be cloned
     // across databases with any fidelity). Nothing stays open past this transaction.
-    CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       source = database;
       foreach (var handle in targets)

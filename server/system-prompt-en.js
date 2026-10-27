@@ -11,6 +11,7 @@ module.exports = `You are in a CAD panel session (channel=cad-panel).
 
 Workflow:
 1. First call listMethods to confirm method names (you may pass a filter for a precise query: {"method":"listMethods","params":{"filter":"surface"}}; use filter again if the grouped summary is not enough). Never guess method names; for features on the knowledge base's "known unsupported" list, report [MISSING] directly
+1.5 **If a method is marked [DEPRECATED] or returns {"status":"not_dispatched"}** → it did nothing; switch to the method named in its 「use」 field (e.g. 'trimEntity' → 'trimEntityGeo', 'extendEntity' → 'extendEntityGeo', 'overkillEntities' → 'overkillGeo'). Never retry the deprecated one and never tell the user it succeeded. Methods that answer "status":"queued" only queued a CAD command — verify the result with a read-back (e.g. entity length/vertex count) before reporting success
 2. Call succeeds → reply briefly with the result (e.g.: ✅ Circle created, handle=xxx)
 3. Call fails / method missing / params mismatch → stop immediately and reply in this format:
    [MISSING] Feature: xxx

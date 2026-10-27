@@ -165,7 +165,7 @@ internal static class HatchCommands
         var gradientName = PluginRuntime.GetOptionalString(parameters, "gradient");
         var colorNode = PluginRuntime.GetParameter(parameters, "color") as JsonNode;
 
-        return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
         {
             var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
             var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -254,7 +254,7 @@ internal static class HatchCommands
         var defAngle = PluginRuntime.GetOptionalDouble(parameters, "angle");
         var defIsland = PluginRuntime.GetOptionalString(parameters, "islandStyle");
 
-        return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
         {
             var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
             var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -366,7 +366,7 @@ internal static class HatchCommands
             throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
                 Loc.Tk("error.editHatchNothing"));
 
-        return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+        return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
         {
             var hash = new Autodesk.AutoCAD.DatabaseServices.Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber));
             var id = database.GetObjectId(false, hash, 0);

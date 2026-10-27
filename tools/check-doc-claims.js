@@ -29,8 +29,12 @@ const MCP_DIR = path.join(ROOT, 'server', 'mcp');
 // required: must exist everywhere (dev + public snapshot).
 // optional: internal docs the public snapshot intentionally drops.
 const DOCS = [
-  { path: 'tools/public-templates/README.md', required: true },
-  { path: 'tools/public-templates/README_EN.md', required: true },
+  // The public snapshot ships the rendered READMEs at the repo root and drops the template dir
+  // (developer docs stay local since 2026-10-24), so both locations are optional-on-presence.
+  { path: 'README.md', required: false },
+  { path: 'README_EN.md', required: false },
+  { path: 'tools/public-templates/README.md', required: false },
+  { path: 'tools/public-templates/README_EN.md', required: false },
   { path: 'POSITIONING.md', required: false },
   { path: 'BOOTSTRAP.md', required: false },
   { path: '\u4f7f\u7528\u624b\u518c.html', required: true },
@@ -81,6 +85,10 @@ function mcpCounts() {
 // ---------- claim scanning ----------
 const RULES = [
   { metric: 'pluginMethods', re: /(\d{3,4})\s*(?:\u4e2a)?\s*CAD\s*\u65b9\u6cd5|(\d{3,4})\s+CAD\s+methods/gi },
+  // bare "423 \u65b9\u6cd5" / "423 methods" -- no "CAD" in front. Restricted to 3-4 digits on purpose:
+  // the manual legitimately says "12 \u4e2a\u65b9\u6cd5\u6ca1\u6709\u516c\u5f00 API", and that is not the method surface.
+  // 2026-10-24: the public README said "420 \u65b9\u6cd5\u76ee\u5f55" for a release and no gate fired.
+  { metric: 'pluginMethods', re: /(\d{3,4})\s*(?:\u4e2a)?\s*\u65b9\u6cd5|(\d{3,4})\s+methods/gi },
   { metric: 'mcpToolsAlias', re: /(\d{3,4})\s*(?:\u4e2a)?\s*MCP\s*(?:\u5de5\u5177|tools)/gi },
   // diagram / shorthand forms: "（server/mcp，270 工具）" / "(server/mcp, 270 tools)" -- only on lines that mention MCP
   { metric: 'mcpToolsAlias', re: /(\d{3,4})\s*(?:\u4e2a)?\s*(?:\u5de5\u5177|tools)/gi, needLine: /mcp/i },
@@ -110,6 +118,42 @@ function scanDoc(file, expected) {
 
 const METHODS_ONLY = process.argv.includes('--methods-only');
 
+// ---------- version claims ----------
+// Docs that tell a user "download this file / this is the version you are reading" must name the
+// version we actually ship. The manual said v1.10.0 in its English footer and in four install
+// commands for a whole release, and nothing checked it (2026-10-24).
+const VERSION_DOCS = ['README.md', 'README_EN.md', 'tools/public-templates/README.md', 'tools/public-templates/README_EN.md', '\u4f7f\u7528\u624b\u518c.html'];
+const VERSION_RES = [
+  /new-acad-setup-v(\d+\.\d+\.\d+)\.exe/g,
+  /new-acad-v(\d+\.\d+\.\d+)\.zip/g,
+  /(?:\u5bf9\u5e94\u7248\u672c|for version)\s*v?(\d+\.\d+\.\d+)/gi,
+];
+
+function versionClaims(wantVersion) {
+  const bad = [];
+  let total = 0;
+  for (const file of VERSION_DOCS) {
+    const abs = path.join(ROOT, file);
+    if (!fs.existsSync(abs)) continue;
+    const lines = fs.readFileSync(abs, 'utf8').split(/\r?\n/);
+    lines.forEach((raw, i) => {
+      for (const re of VERSION_RES) {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(raw)) !== null) {
+          total++;
+          if (m[1] !== wantVersion) {
+            bad.push({ file, line: i + 1, got: m[1], want: wantVersion, text: raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 110) });
+          }
+        }
+      }
+    });
+  }
+  return { total, bad };
+}
+
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+
 (async () => {
   let pluginMethods, mcp;
   try {
@@ -134,16 +178,25 @@ const METHODS_ONLY = process.argv.includes('--methods-only');
     for (const h of hits) if (h.got !== h.want) bad.push({ file: doc.path, ...h });
   }
 
+  const ver = METHODS_ONLY ? { total: 0, bad: [] } : versionClaims(PKG_VERSION);
+  total += ver.total;
+  for (const b of ver.bad) bad.push({ ...b, metric: 'version' });
+
   if (bad.length) {
     console.log('  doc numbers do not match inventory (' + bad.length + ' of ' + total + ' claims):');
     for (const b of bad) {
       if (b.reason) { console.log('    x ' + b.file + ' -- ' + b.reason); continue; }
+      if (b.metric === 'version') {
+        console.log('    x ' + b.file + ':' + b.line + '  version = ' + b.got + '  (shipping ' + b.want + ')');
+        console.log('      | ' + b.text);
+        continue;
+      }
       console.log('    x ' + b.file + ':' + b.line + '  ' + b.metric + ' = ' + b.got + '  (actual ' + b.want + ')');
       console.log('      | ' + b.text);
     }
     console.log('  actual: pluginMethods=' + pluginMethods + '  mcpToolsAlias=' + mcp.alias + '  mcpToolsDefault=' + mcp.def);
     process.exit(1);
   }
-  console.log('  ' + total + ' numeric claims in ' + DOCS.length + ' docs match: pluginMethods=' + pluginMethods + (METHODS_ONLY ? ' (methods-only mode)' : '  mcpTools=' + mcp.alias + ' (default ' + mcp.def + ')'));
+  console.log('  ' + total + ' numeric claims in ' + DOCS.length + ' docs match: pluginMethods=' + pluginMethods + (METHODS_ONLY ? ' (methods-only mode)' : '  mcpTools=' + mcp.alias + ' (default ' + mcp.def + ')  version=' + PKG_VERSION));
   process.exit(0);
 })().catch((e) => { console.log('  FAILED: ' + e.message); process.exit(2); });

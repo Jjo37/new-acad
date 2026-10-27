@@ -26,6 +26,11 @@ public static class DrawingCommands
       ["pluginVersion"] = typeof(PluginEntry).Assembly.GetName().Version?.ToString(),
       // 2026-10-20 审计：编译期 build stamp —— 区分「文件换了」与「进程真加载了新代码」
       ["buildStamp"] = PluginRuntime.BuildStamp(),
+      // 2026-10-27 v1.11.0-fix: 纯 AutoCAD 宿主（无 AeccDbMgd）下为 false，
+      // 面板/AI 据此避免调用 Civil 3D 方法（那些方法会返回 CIVIL3D.CIVIL_NOT_INSTALLED）。
+      ["civilAvailable"] = CivilSupport.Available,
+      ["civilApiDetail"] = CivilSupport.Detail,
+      ["hostProduct"] = CivilSupport.HostProduct(),
       // 2026-10-19: 暴露解析出的根目录（排障一眼可见；装在哪都该指向真实安装）
       ["projectRoot"] = PluginRuntime.ProjectRoot(),
       ["rootSource"] = PluginRuntime.RootSource(),
@@ -63,6 +68,19 @@ public static class DrawingCommands
 
   public static Task<object?> GetDrawingInfoAsync()
   {
+    if (CivilSupport.Available)
+    {
+      return GetDrawingInfoCivilAsync();
+    }
+
+    // Plain AutoCAD host: same shape, Civil 3D collections reported as unavailable.
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
+      BuildDrawingInfoCore(doc, database, transaction));
+  }
+
+  // Civil 3D-only branch, kept in its own method so a plain-AutoCAD session never JITs it.
+  private static Task<object?> GetDrawingInfoCivilAsync()
+  {
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
       BuildDrawingInfo(doc, civilDoc, database, transaction));
   }
@@ -72,6 +90,22 @@ public static class DrawingCommands
     var requestedLimit = PluginRuntime.GetOptionalInt(parameters, "selectedObjectLimit") ?? 25;
     var selectedObjectLimit = Math.Clamp(requestedLimit, 1, 100);
 
+    if (CivilSupport.Available)
+    {
+      return GetProjectContextCivilAsync(selectedObjectLimit);
+    }
+
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
+      new Dictionary<string, object?>
+      {
+        ["drawingInfo"] = BuildDrawingInfoCore(doc, database, transaction),
+        ["objectTypes"] = BuildCivilObjectTypes(),
+        ["selectedObjects"] = BuildSelectedCivilObjects(doc, transaction, selectedObjectLimit),
+      });
+  }
+
+  private static Task<object?> GetProjectContextCivilAsync(int selectedObjectLimit)
+  {
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
       new Dictionary<string, object?>
       {
@@ -112,7 +146,7 @@ public static class DrawingCommands
   public static Task<object?> SaveDrawingAsync(JsonObject? parameters)
   {
     var overwrite = PluginRuntime.GetAiOverwrite(parameters);
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var saveAs = PluginRuntime.GetOptionalString(parameters, "saveAs");
       var targetPath = string.IsNullOrWhiteSpace(saveAs) ? database.Filename : saveAs;
@@ -298,7 +332,7 @@ public static class DrawingCommands
   public static Task<object?> UndoDrawingAsync(JsonObject? parameters)
   {
     var steps = PluginRuntime.GetOptionalInt(parameters, "steps") ?? 1;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       doc.SendStringToExecute($"_.UNDO {steps} ", true, false, false);
       return new Dictionary<string, object?>
@@ -312,7 +346,7 @@ public static class DrawingCommands
   public static Task<object?> RedoDrawingAsync(JsonObject? parameters)
   {
     var steps = PluginRuntime.GetOptionalInt(parameters, "steps") ?? 1;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       doc.SendStringToExecute($"_.REDO {steps} ", true, false, false);
       return new Dictionary<string, object?>
@@ -334,7 +368,7 @@ public static class DrawingCommands
     var layerFilter = PluginRuntime.GetOptionalString(parameters, "layer");
     var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount");
     var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
       var ms = (BlockTableRecord)transaction.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
@@ -471,8 +505,36 @@ public static class DrawingCommands
   {
     var limit = PluginRuntime.GetOptionalInt(parameters, "limit") ?? 100;
 
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
       BuildSelectedCivilObjects(doc, transaction, limit));
+  }
+
+  /// <summary>
+  /// Plain-AutoCAD variant of BuildDrawingInfo (2026-10-27 v1.11.0-fix): no CivilDocument,
+  /// no Civil 3D collections. Same keys so callers do not branch on host type.
+  /// </summary>
+  private static Dictionary<string, object?> BuildDrawingInfoCore(
+    Document doc,
+    Database database,
+    Transaction transaction)
+  {
+    var unsavedChanges = Convert.ToInt32(App.GetSystemVariable("DBMOD") ?? 0) != 0;
+    var angularUnits = CivilObjectUtils.AngularUnits(Convert.ToInt16(App.GetSystemVariable("AUNITS") ?? 0));
+
+    return new Dictionary<string, object?>
+    {
+      ["fileName"] = Path.GetFileName(database.Filename),
+      ["filePath"] = database.Filename,
+      ["coordinateSystem"] = null,
+      ["linearUnits"] = CivilObjectUtils.LinearUnits(database),
+      ["angularUnits"] = angularUnits,
+      ["unsavedChanges"] = unsavedChanges,
+      ["objectCounts"] = null,
+      ["drawingName"] = doc.Name,
+      ["projectName"] = null,
+      ["units"] = CivilObjectUtils.LinearUnits(database),
+      ["civilAvailable"] = false,
+    };
   }
 
   private static Dictionary<string, object?> BuildDrawingInfo(
@@ -506,6 +568,7 @@ public static class DrawingCommands
       ["drawingName"] = doc.Name,
       ["projectName"] = null,
       ["units"] = CivilObjectUtils.LinearUnits(database),
+      ["civilAvailable"] = true,
     };
   }
 
@@ -610,7 +673,7 @@ public static class DrawingCommands
     var cy = centerArr[1]?.GetValue<double>() ?? 0;
     var cz = centerArr.Count > 2 ? centerArr[2]?.GetValue<double>() ?? 0 : 0;
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var bt = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
       var btr = (BlockTableRecord)transaction.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -644,7 +707,7 @@ public static class DrawingCommands
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "createEllipse requires ratio in (0, 1] (minor/major).");
     }
 
-    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
     {
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);

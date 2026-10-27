@@ -29,6 +29,26 @@ internal static class Civil3DCompatibility
   private static readonly ConcurrentDictionary<LoadedStaticMethodKey, CachedMethods> LoadedStaticMethodCache = new();
   private static readonly ConcurrentDictionary<string, CachedType> TypeCache = new(StringComparer.Ordinal);
 
+  /// <summary>
+  /// 2026-10-27 (v1.11.0-fix): host probe. Lives here because this file is the sanctioned
+  /// reflection boundary (tests/reflection_boundary). A plain-AutoCAD host simply does not ship
+  /// AeccDbMgd, so Assembly.Load throws and we run in AutoCAD-only mode.
+  /// </summary>
+  internal static bool IsCivilAssemblyLoadable(out string? detail)
+  {
+    try
+    {
+      var asm = Assembly.Load("AeccDbMgd");
+      detail = "AeccDbMgd " + (asm.GetName().Version?.ToString() ?? "unknown");
+      return true;
+    }
+    catch (Exception ex)
+    {
+      detail = ex.GetType().Name + ": " + ex.Message;
+      return false;
+    }
+  }
+
   public static T? GetPropertyValue<T>(object? target, string propertyName)
   {
     var raw = GetPropertyValue(target, propertyName);

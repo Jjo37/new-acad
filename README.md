@@ -57,7 +57,7 @@ new-acad 由三块拼成，各司其职：
 | **知识库**（用户资料库） | 把你的**规范 / 图纸说明 / 计算规则 / 项目做法**放进 `user-knowledge/`（面板「更多 → 打开知识库文件夹」直达）；回面板说一句 **“整理知识库”** 即抽取文本、建索引 `_index.md`，之后按需引用；**扫描版 PDF 自动走 Windows OCR**（md/txt/csv/Word/Excel/PPT/PDF 均可） |
 | **多源知识库**（只读引用） | 已有规范文件夹不用搬——`config.json` 加 `knowledgeSources`（可多个，带标签）即可；**源目录只读**，缓存/索引单独存放；系统目录、网络路径、密钥文件自动跳过。 |
 | **决策链可验证**（v1.7） | 每个请求落结构化日志（`readTrace` / `traceStats`，含结果指纹与耗时）；`tools/replay.js` 回放对比（只读漂移=失败 / 变更类=正常 / 错误比错误码）；`assertChecks` 断言（图元存在、计数、长度/面积/半径/顶点数、曲面已构建）。排障时**直接拿到真实异常**，不再只有一句"unexpected error" |
-| **工具页签**（v1.10.0） | 状态栏「工具」→ 实时**调用流**（方法 / 通道 / 耗时 / 字节 / 状态，失败带错误码）+ **420 方法目录**（调用次数 / 最近耗时 / 失败数）。事件只带摘要，**永不携带结果内容** |
+| **工具页签**（v1.10.0） | 状态栏「工具」→ 实时**调用流**（方法 / 通道 / 耗时 / 字节 / 状态，失败带错误码）+ **423 方法目录**（调用次数 / 最近耗时 / 失败数）。事件只带摘要，**永不携带结果内容** |
 | **工作流记录**（v1.10.0） | 任务完成后把**成功路径**清洗成记录（方法 + 参数骨架 + 结果指纹，**不存结果体**）：可在面板里查看、导出 JSON / Markdown、跑 **dry-run 回放**（只重跑只读步骤，结果变了判失败）。**不会自动执行写操作** |
 | **大图纸上下文**（v1.7） | `summarizeDrawing` 预算化画像（图层 + 空间网格 + 全局计数，**输出字节硬约束**，1.5 万实体摘要约 3 KB）；所有大结果自动降级为结构化裁剪（保留原结构、数组截断成前缀并附说明），需要全量时加 `fullResult:true` |
 | **土方专项**（v1.7） | 廊道土方 `computeCorridorEarthwork`（网格 + 桩号归属，实测与 C3D 曲面体积法差 **0.1%**）；**放坡优化** `optimizeGrading`（坡率上限 + 平台标高 + 挡墙/台阶 `walls` + 土方平衡 → 自动生成设计面并落成 TIN）；场地调配 `computeSiteMassHaul`（曲面 → 逐桩挖填 → 平衡区间/就近配对/免费与超运距/弃借方） |
@@ -88,11 +88,13 @@ new-acad 由三块拼成，各司其职：
 ## 环境要求
 
 - **Windows**
-- **AutoCAD / Civil 3D 2025 / 2026**（正版授权，自行准备）
+- **AutoCAD 2025 / 2026**（正版授权，自行准备）—— 装了 **Civil 3D 2025 / 2026** 则自动获得路线 / 曲面 / 廊道 / 管网等全套专业能力；只有纯 AutoCAD 时，这些 Civil 3D 专有方法会明确返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，绘图、图层、块、文件读写等普通能力照常可用
 - 一个 LLM 的 **API Key**（默认模式下唯一需要你自己准备的东西）
 - 运行环境（Node 等）由安装脚本自动处理
 
-> ⚠️ **Civil 3D 2024 及更早版本不支持。** 插件基于 **.NET 8** 构建；2024 及更早的 AutoCAD 仍跑在 .NET Framework 4.8 上，两者程序集不兼容。
+> ⚠️ **2024 及更早版本不支持。** 插件基于 **.NET 8** 构建；2024 及更早的 AutoCAD / Civil 3D 仍跑在 .NET Framework 4.8 上，两者程序集不兼容。
+>
+> 📌 **纯 AutoCAD 说明（v1.11.0 修正版起）**：宿主是纯 AutoCAD 时插件正常工作，Civil 3D 专有方法返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，不会静默失败、也不会报"内部错误"。
 
 > 本项目 **非 Autodesk 官方产品**，与 Autodesk 无隶属或背书关系。
 
@@ -107,14 +109,14 @@ new-acad 由三块拼成，各司其职：
 
 ## 快速开始
 
-> 不想自己编译？到 [Releases](../../releases) 页面下载 `setup.exe` 安装包或绿色版 zip。
+> 不想自己编译？到 [Releases](https://github.com/Jjo37/new-acad/releases) 页面下载 `setup.exe` 安装包或绿色版 zip。
 
 ```
-① 确保已安装 Civil 3D（2025 / 2026）
+① 确保已安装 AutoCAD 2025 / 2026（有 Civil 3D 更好，能力更全）
 ② 双击 install.bat（推荐；自动绕过 PowerShell 执行策略）
    或：右键 install.ps1 → 使用 PowerShell 运行
 ③ 安装向导第 11 步会让你选 LLM 服务商 + 填 API Key
-④ 打开 Civil 3D —— Hank.lsp 会自动 NETLOAD 插件
+④ 打开 AutoCAD / Civil 3D —— 安装器已写好自动加载（Applications 注册表 + acad.lsp），插件自动启动并显示面板
 ⑤ 在面板里直接说话：「把选中的多段线整体抬高 0.5 米」
 ```
 
@@ -131,7 +133,7 @@ new-acad 由三块拼成，各司其职：
 
 - [`ONBOARDING.md`](ONBOARDING.md) —— 环境自检（插件 / relay / MCP 三个端口）、工具调用姿势、常见故障处理、方法调用优先级。把你的 AI agent 指向这个文件，它就知道怎么开始。
 - [`使用手册.html`](使用手册.html) —— 面向人的界面与操作说明
-- [`knowledge/`](knowledge/) —— 技术资料：API 清单、Civil 3D 对象模型、C3D API 参考、SAC XAML 语法指南与模板
+- [`knowledge/image-to-cad.md`](knowledge/image-to-cad.md) —— 图片 / 图纸 → CAD 的落地指南（描摹、尺寸标注识别、常见误判）
 
 ---
 
@@ -172,7 +174,7 @@ new-acad/
 │   ├── sacred-mcp.js       MCP 服务器启动器（:3000）
 │   └── mcp/                MCP 服务器本体（TS 源码 + 编译产物 + 274 工具）
 ├── tools/                  环境检测、端口检查、自测与扫描脚本
-├── knowledge/              技术资料（API 清单 / 对象模型 / SAC 指南）
+├── knowledge/              用户向资料（图片 → CAD 指南）
 ├── install.bat / install.ps1 / uninstall.ps1 / uninstall-pre.ps1
 ├── config.json             本地配置（端口 / token / LLM 设置）—— 已 gitignore，不入库
 └── ONBOARDING.md           给 AI agent 的上手指南
@@ -182,7 +184,7 @@ new-acad/
 
 ## 已知限制
 
-- 12 个方法底层走命令通道（无公开托管 API），带 25 秒超时兜底
+- **14 个方法底层走命令通道**（托管 API 缺口）：其中 **10 个投递即返回、拿不到同步结果**（`renderScene`/`undoDrawing`/`redoDrawing`/数据快捷方式/SSA 等），**3 个可回读**（`setVisualStyle`/`selectByCriteria`/`selectEntities`），`runLisp` 按设计不返回值；带 25 秒超时兜底。清单以 `docs/audit/command-channel.json` 为准（门禁与代码比对）；`trimEntity`/`extendEntity`/`overkillEntities` 已停投命令（改用 `*Geo` 同步版）
 - C3D 开着时插件 DLL 被锁，更新需关闭 C3D 后重新编译、重启
 - 面板接收回复走 **SSE 实时推送**（`/replies/stream`），不是轮询；状态与执行进度同样实时推送（10 秒 `/status` 轮询仅作断线兜底）
 - 少数 C3D 能力（如放坡组编辑、地块线编辑）托管 API 未封装，AI 暂不可调，见 `ONBOARDING.md`

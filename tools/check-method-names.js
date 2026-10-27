@@ -168,6 +168,30 @@ if (LIVE) {
   console.log('(未加 --live，跳过真机交叉校验)');
 }
 
+// ---- F. 构建期清单是否与 switch 同步（v1.11.0-fix2）----
+// 运行时 listMethods 不再反射，改用 MethodNames.g.cs；它一旦漂移，AI 就会看不到某些方法。
+try {
+  const genPath = path.join(SRC, 'MethodNames.g.cs');
+  if (!fs.existsSync(genPath)) {
+    problem += 1;
+    console.log('F. MethodNames.g.cs 缺失 [FAIL] — 跑 node tools/gen-method-names.js');
+  } else {
+    const genNames = new Set([...fs.readFileSync(genPath, 'utf8').matchAll(/"([A-Za-z0-9_]+)"/g)].map((m) => m[1]));
+    const missing = [...registered].filter((n) => !genNames.has(n));
+    const extra = [...genNames].filter((n) => !registered.has(n));
+    if (missing.length || extra.length) {
+      problem += missing.length + extra.length;
+      console.log('F. MethodNames.g.cs 与 switch 不同步 [FAIL]: 缺 ' + missing.length + ' / 多 ' + extra.length);
+      if (missing.length) console.log('   缺: ' + missing.slice(0, 20).join(', '));
+      if (extra.length) console.log('   多: ' + extra.slice(0, 20).join(', '));
+      console.log('   → node tools/gen-method-names.js');
+    } else console.log('F. MethodNames.g.cs 与 switch 同步 (' + genNames.size + ' 个方法) [PASS]');
+  }
+} catch (e) {
+  problem += 1;
+  console.log('F. MethodNames 校验异常 [FAIL]: ' + e.message);
+}
+
 if (!problem) console.log('结果: PASS — 广告面 == 可调用面' + (LIVE ? '，静态与真机一致' : '') + '，且全有描述。');
 console.log('');
 console.log(problem ? ('一致性: FAIL (' + problem + ' 处)') : '一致性: PASS');

@@ -11,6 +11,10 @@
   2026-08-25 新建：安装器 = Inno 外壳(文件部署/快捷方式/卸载) + install.ps1(环境配置向导)
   前置：先跑 build-dist.ps1 生成 dist/
 #>
+param(
+  # 2026-10-27: v1.11.0-fix —— 版本号不升（这是修正，不是新版本），产物名带 -fix 以示区别
+  [string]$ArtifactSuffix = ""
+)
 $ErrorActionPreference = "Stop"
 $ROOT = $PSScriptRoot
 if (-not $ROOT) { $ROOT = "D:\new-acad" }
@@ -32,7 +36,9 @@ Write-Host "[OK] dist/: $DIST" -ForegroundColor Green
 
 # ---------- 2. 版本号 ----------
 $VERSION = try { ([System.IO.File]::ReadAllText("$ROOT\package.json", [System.Text.Encoding]::UTF8) | ConvertFrom-Json).version } catch { "0.0.0" }
-Write-Host "===== 编译安装器 v$VERSION =====" -ForegroundColor Cyan
+$SUFFIX = if ($ArtifactSuffix) { "-" + $ArtifactSuffix } else { "" }
+$ARTIFACT = "v$VERSION$SUFFIX"
+Write-Host "===== 编译安装器 $ARTIFACT =====" -ForegroundColor Cyan
 
 # ---------- 3. 生成 installer.iss ----------
 $ISS = @"
@@ -53,7 +59,7 @@ DisableProgramGroupPage=no
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#SourcePath}
-OutputBaseFilename=new-acad-setup-v{#MyAppVersion}
+OutputBaseFilename=new-acad-setup-$ARTIFACT
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -95,7 +101,7 @@ Write-Host "[OK] 生成 installer.iss" -ForegroundColor Green
 & $ISCC $ISS_PATH
 if ($LASTEXITCODE -ne 0) { Write-Host "[FAIL] ISCC 编译失败 (code $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 
-$OUT = "$ROOT\new-acad-setup-v$VERSION.exe"
+$OUT = "$ROOT\new-acad-setup-$ARTIFACT.exe"
 if (Test-Path $OUT) {
   $sz = (Get-Item $OUT).Length
   Write-Host "[OK] 安装器: $OUT ($([math]::Round($sz/1MB,1)) MB)" -ForegroundColor Green
@@ -104,10 +110,10 @@ if (Test-Path $OUT) {
 }
 
 # 2026-09-11: 编完安装器后自动并入同目录 new-acad-v<版本>.zip（异机一步到位；先跑 build-dist.ps1 -Zip）
-$zipPath = "$ROOT\new-acad-v$VERSION.zip"
+$zipPath = "$ROOT\new-acad-$ARTIFACT.zip"
 if (Test-Path $zipPath) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
-  $zipEntry = "new-acad-setup-v$VERSION.exe"
+  $zipEntry = "new-acad-setup-$ARTIFACT.exe"
   $za = [System.IO.Compression.ZipFile]::Open($zipPath, 'Update')
   try {
     $old = $za.GetEntry($zipEntry)

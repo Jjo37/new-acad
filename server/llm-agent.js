@@ -382,6 +382,7 @@ const SYSTEM_PROMPT = `你当前在 CAD 面板会话（channel=cad-panel）。
 
 工作流程：
 1. 先调 listMethods 确认方法名（可带 filter 参数精确查：{"method":"listMethods","params":{"filter":"surface"}}；分组摘要不够时再 filter），禁止猜方法名；知识库"已知不支持"清单里的功能直接报 [MISSING]
+1.5 方法名旁标【已弃用】/返回 {"status":"not_dispatched"} → **它什么都没做**：按返回里的 「use」 字段换用替代方法（trimEntity→trimEntityGeo、extendEntity→extendEntityGeo、overkillEntities→overkillGeo），**不要重试同名方法，也不许告诉用户"已完成"**。返回 "status":"queued" 的只代表命令已入队 —— 必须回读（长度/顶点数等）核实后才能报成功
 2. 调通 → 简短回复结果（如: ✅ 圆已创建 handle=xxx）
 3. 调不通/方法不存在/参数对不上 → 立即停止，回复格式：
    [MISSING] 功能名: xxx

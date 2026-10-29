@@ -1,0 +1,212 @@
+﻿# sync-dev-release.ps1 — 把 dev 仓的可分发文件同步到 release 仓（显式清单，默认干跑）
+#
+# 用法：
+#   powershell -File tools/sync-dev-release.ps1              # 干跑：只报告差异
+#   powershell -File tools/sync-dev-release.ps1 -Apply       # 实际复制
+#
+# 原则：**绝不删除 release 仓里的东西**（产物、历史安装包等都保留）；只按清单覆盖/新增。
+# 不入清单的东西（内部文档、源码、日志、锁文件、产物）永远不会被同步。
+param(
+  [string]$From = "D:\new-acad",
+  [string]$To   = "D:\new-acad-release",
+  [switch]$Apply
+)
+
+$ErrorActionPreference = 'Stop'
+
+# ---- 1) 单文件清单（相对路径）----
+$files = @(
+  # 版本与用户文档
+  'package.json',
+  'README.md','ONBOARDING.md','POSITIONING.md','PRIVACY.md','workflow-guide.md','使用手册.html',
+  'KNOWN-ISSUES.md',   # 已知问题台账（唯一来源）
+  # 运行脚本
+  'install.ps1','uninstall.ps1','uninstall-pre.ps1','config.json','relay-launcher.js',
+  # 构建脚本
+  'build-dist.ps1','build-installer.ps1','build-plugin.ps1','build-plugin.bat','.gitignore',
+  # 插件产物（只同步 DLL 三件套，不同步 src/）
+  'plugin/Hank.lsp',
+  'plugin/AcBridge-v24/Civil3DMcpPlugin.dll',
+  'plugin/AcBridge-v24/Civil3DMcpPlugin.deps.json',
+  'plugin/AcBridge-v24/Civil3DMcpPlugin.runtimeconfig.json',
+  # 2026-10-14 M6 PdfPig 依赖（readPdf 需要，必须随插件目录同步）
+  'plugin/AcBridge-v24/UglyToad.PdfPig.dll',
+  'plugin/AcBridge-v24/UglyToad.PdfPig.Core.dll',
+  'plugin/AcBridge-v24/UglyToad.PdfPig.Fonts.dll',
+  'plugin/AcBridge-v24/UglyToad.PdfPig.Tokenization.dll',
+  'plugin/AcBridge-v24/UglyToad.PdfPig.Tokens.dll',
+  'plugin/AcBridge-v24/SixLabors.ImageSharp.dll',   # 2026-10-14 webp 解码器
+  # 服务端运行时
+  'server/panel-relay.js',
+  'server/slot-policy.js',   # 2026-10-28: slot whitelist single entry (workflow-slots require)
+  'server/time-policy.js',   # 2026-10-28: one storage format for time (relay + store require it)
+  'server/judgement.js',   # 2026-10-28: outcome judgement single entry (workflow-store require)
+  'server/workflow-store.js',
+  'server/workflow-replay.js','server/workflow-assisted.js','server/workflow-slots.js','server/workflow-describe.js','server/llm-agent.js','server/compact.js','server/cad-tools.js',
+  'server/file-tools.js','server/trace-image.js','server/relay-launcher.js','server/sacred-mcp.js',
+  'user-knowledge/_README.md',   # 2026-10-15 用户知识库说明
+  'server/ocr.js','server/ocr-win.ps1','server/i18n-en.js','server/system-prompt-en.js',
+  'server/knowledge-sources.js',   # 2026-10-19 multi-source KB (llm-agent require)
+  'i18n/messages.json',   # 2026-10-19 UI copy catalog (Loc.Tk / i18n.t)
+  'server/memory/knowledge.md',
+  # 知识库白名单（被运行时引用 + 面向用户）
+  'knowledge/api-inventory.md','knowledge/c3d-api-refs.md','knowledge/civil3d-objects.md',
+  'knowledge/image-to-cad.md','knowledge/method-description-spec.md','knowledge/sac-xaml-guide.md',
+  'knowledge/image-to-cad.en.md','knowledge/sac-xaml-guide.en.md',   # 2026-10-13 i18n A
+  # 发布工具
+  'tools/build-bundle.ps1','tools/publish-public.ps1','tools/publish-release.ps1',
+  'tools/find-civil3d.ps1','tools/locale.ps1','tools/clean-runtime.ps1',
+  'tools/port-check.ps1','tools/port-check.bat','tools/port-config.ps1','tools/port-config.bat',
+  'tools/sync-dev-release.ps1',
+  'tools/scan-release-leaks.js',
+  'tools/live-regression.js',   # 真机回归套件
+  'tools/check-doc-coverage.js',
+  'tools/check-release-tag.js',
+  'tools/check-known-issues.js',   # 2026-10-15: CI 要用（publish-public 重建快照时曾把它删掉）
+  'tools/ocr-check.ps1',
+  'tools/push-via-api.js'
+  ,'tools/check-doc-claims.js'
+  ,'tools/check-coverage-contract.js'
+  ,'tools/check-relay-endpoints.js'
+  ,'docs/audit/contract.json'
+  ,'docs/audit/relay-endpoints.json'
+  ,'tools/check-method-names.js'
+  ,'tools/gen-method-names.js'
+  ,'tools/audit-host-modes.js'
+  ,'tools/check-supported-hosts.js'
+  ,'tools/smoke-plain-acad.js'
+  ,'tools/run-host-probe.ps1'
+  ,'tools/ensure-drawing.js'
+  ,'tools/set-release-body.js'
+  ,'docs/audit/supported-hosts.json'
+)
+
+# ---- 2) 目录清单（递归，带排除）----
+$dirs = @(
+  '.github',   # CI 工作流（GitHub Actions）
+  'plugin/AcBridge-v24/tests',   # C# 纯函数单测工程（UnitSystemTests）
+  '.githooks',  # 本地 git 钩子
+  'server',
+  'knowledge/sac-templates',
+  'server/mcp/build',
+  'tools/public-templates',
+  'tools/bundle'
+)
+# 目录同步时排除：产物/源码/日志/锁/依赖
+# 2026-10-11: plugin SOURCE travels with the sync too. It used to be excluded on purpose
+# ("only the DLL three-piece"), which is exactly why the public repo source lagged behind
+# the binary. Own exclude list: skip build output only.
+$srcDirs = @('plugin/AcBridge-v24/src', 'server/mcp/src')   # 2026-10-15: MCP 源码也随同步（曾因排除 src/ 导致公开仓源码落后 → CI 红）
+$srcExcludePatterns = @('\.log$','\.lock$','\.pdb$','\.user$','\\bin\\','\\obj\\','\\C_References\\','\\\.vs\\')
+
+$excludePatterns = @(
+  '\.log$','\.lock$','-inbox\.json$','\.pdb$','\.zip$','\.exe$',
+  '\\node_modules\\','\\bin\\','\\obj\\','\\src\\','\\C_References\\','\\\.vs\\','\\dist',
+  '\\server\\memory\\agent-memory\.md$'   # 2026-10-28: dev runtime memory must never enter the release tree (build-dist already neutralises dist/ copy)
+)
+
+function Rel([string]$base, [string]$full) {
+  return $full.Substring($base.Length).TrimStart('\','/') -replace '\\','/'
+}
+function Same([string]$a, [string]$b) {
+  if (-not (Test-Path $a) -or -not (Test-Path $b)) { return $false }
+  $ha = (Get-FileHash $a -Algorithm SHA1).Hash
+  $hb = (Get-FileHash $b -Algorithm SHA1).Hash
+  return ($ha -eq $hb)
+}
+
+$plan = @()
+foreach ($f in $files) {
+  $src = Join-Path $From $f
+  if (-not (Test-Path $src)) { $plan += [pscustomobject]@{ Action='MISSING-IN-DEV'; Path=$f }; continue }
+  $dst = Join-Path $To $f
+  $action = if (-not (Test-Path $dst)) { 'NEW' } elseif (Same $src $dst) { 'SAME' } else { 'CHANGED' }
+  $plan += [pscustomobject]@{ Action=$action; Path=$f }
+}
+foreach ($d in $dirs) {
+  $srcDir = Join-Path $From $d
+  if (-not (Test-Path $srcDir)) { $plan += [pscustomobject]@{ Action='MISSING-IN-DEV'; Path=$d }; continue }
+  Get-ChildItem $srcDir -Recurse -File | ForEach-Object {
+    $rel = Join-Path $d (Rel $srcDir $_.FullName)
+    $skip = $false
+    foreach ($p in $excludePatterns) { if ($_.FullName -match $p) { $skip = $true; break } }
+    if ($skip) { return }
+    $dst = Join-Path $To $rel
+    $action = if (-not (Test-Path $dst)) { 'NEW' } elseif (Same $_.FullName $dst) { 'SAME' } else { 'CHANGED' }
+    $plan += [pscustomobject]@{ Action=$action; Path=$rel }
+  }
+}
+
+foreach ($d in $srcDirs) {
+  $srcDir = Join-Path $From $d
+  if (-not (Test-Path $srcDir)) { $plan += [pscustomobject]@{ Action='MISSING-IN-DEV'; Path=$d }; continue }
+  Get-ChildItem $srcDir -Recurse -File | ForEach-Object {
+    $rel = Join-Path $d (Rel $srcDir $_.FullName)
+    $skip = $false
+    foreach ($p in $srcExcludePatterns) { if ($_.FullName -match $p) { $skip = $true; break } }
+    if ($skip) { return }
+    $dst = Join-Path $To $rel
+    $action = if (-not (Test-Path $dst)) { 'NEW' } elseif (Same $_.FullName $dst) { 'SAME' } else { 'CHANGED' }
+    $plan += [pscustomobject]@{ Action=$action; Path=$rel }
+  }
+}
+
+$toSync = $plan | Where-Object { $_.Action -in @('NEW','CHANGED') }
+$mode = if ($Apply) { '（执行）' } else { '（干跑）' }
+Write-Host "===== dev → release 同步$mode =====" -ForegroundColor Cyan
+Write-Host ("清单文件 {0} 个 + 目录 {1} 个；需同步 {2}，相同 {3}，dev 缺失 {4}" -f `
+  $files.Count, $dirs.Count, $toSync.Count, ($plan | Where-Object Action -eq 'SAME').Count, ($plan | Where-Object Action -eq 'MISSING-IN-DEV').Count)
+# 2026-09-28: 兜底提醒 —— tools/ 顶层脚本若未登记到 $files，公开仓不会包含它（踩过两次）
+$listedTop = $files | Where-Object { $_ -match '^tools/[^/]+$' }
+$devTools = Get-ChildItem (Join-Path $From 'tools') -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.js', '.ps1', '.bat') }
+$unlisted = @()
+foreach ($tf in $devTools) {
+  $rel = 'tools/' + $tf.Name
+  $skipIt = $false
+  foreach ($p in $excludePatterns) { if ($tf.FullName -match $p) { $skipIt = $true; break } }
+  if (-not $skipIt -and ($listedTop -notcontains $rel)) { $unlisted += $tf.Name }
+}
+if ($unlisted.Count -gt 0) {
+  $show = ($unlisted | Sort-Object | Select-Object -First 8) -join ', '
+  Write-Host ('[WARN] tools/ 顶层有未登记脚本（不会同步）：' + $show + ' 等 ' + $unlisted.Count + ' 个') -ForegroundColor Yellow
+}
+if ($toSync.Count -gt 0) {
+  Write-Host "`n-- 待同步 --" -ForegroundColor Yellow
+  $toSync | Sort-Object Path | ForEach-Object { Write-Host ("  [{0}] {1}" -f $_.Action, $_.Path) }
+}
+$missing = $plan | Where-Object Action -eq 'MISSING-IN-DEV'
+if ($missing.Count -gt 0) { Write-Host "`n-- dev 缺失（清单项不存在）--" -ForegroundColor Red; $missing | ForEach-Object { Write-Host ("  " + $_.Path) } }
+
+if (-not $Apply) {
+  Write-Host "`n干跑结束。加 -Apply 才会复制。" -ForegroundColor Cyan
+  exit 0
+}
+
+foreach ($item in $toSync) {
+  $src = Join-Path $From $item.Path
+  $dst = Join-Path $To $item.Path
+  $dstDir = Split-Path $dst -Parent
+  if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
+  Copy-Item $src $dst -Force
+}
+Write-Host ("`n[OK] 已同步 {0} 个文件到 {1}" -f $toSync.Count, $To) -ForegroundColor Green
+
+# release 仓的记忆骨架必须中性（dev 副本含开发者个人偏好）
+$mem = Join-Path $To 'server\memory\agent-memory.md'
+if (Test-Path $mem) {
+  $neutral = @'
+# new-acad LLM Agent 长期记忆
+
+<!-- 准入原则（最高优先）：只存"规则类 / 用户习惯 / 工具方法"。
+     具体任务数据、图纸内容、一次性上下文（算量结果 / 选中集 / 某张图的处理）禁止写入——会污染记忆。
+     由 AI 通过 writeMemory 覆盖式维护；写入前先 readMemory，保留仍有价值的旧条目。 -->
+
+## 用户偏好
+（空。由 AI 在对话中逐步积累。）
+
+## 工具方法
+（空。）
+'@
+  [System.IO.File]::WriteAllText($mem, $neutral, (New-Object System.Text.UTF8Encoding $true))
+  Write-Host "[OK] release/server/memory/agent-memory.md 已置为中性骨架"
+}

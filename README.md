@@ -1,0 +1,201 @@
+# new-acad
+
+> AutoCAD / Civil 3D 里的**内置 AI 工程助手**：自带大脑、直连 CAD，用户只需要一个自己的模型 Key
+
+ <img width="2559" height="1518" alt="image" src="https://github.com/user-attachments/assets/7d0d09a2-1e50-424d-ba16-2508bd3ee6cc" />
+
+**中文** | [English](README_EN.md)
+
+不是"给 AI 加一堆 CAD 工具"，而是**把一个懂 C3D 工程实践的 Agent 装进 CAD 里**。
+内置 Agent 对模型**只暴露 2 个工具**（调插件、调 MCP）—— **426 个 CAD 方法一个都不直接丢给模型**，由一层工程判断决定"这个任务该走哪条通道"。
+
+| 层 | 是什么 | 为什么重要 |
+|---|---|---|
+| **大脑** | 内置独立 Agent：自带 LLM 代理 + 上下文压缩 + 长期记忆 | **不依赖任何外部平台** —— 不接我们的云、不装 Claude Desktop、不用网关；用户只填自己的 API Key |
+| **神经** | 面板 ↔ 插件 **TCP 常驻通道**（含 **job 通道** / **文件通道**） | 为真实 CAD 任务设计：跑几分钟的廊道重建排队执行、不撞超时；>500 条数据走文件通道不走对话 |
+| **插口** | **274** 个 MCP 工具（`:3000`） | 兼容出口：Claude Desktop / Cursor 等任何 MCP 客户端都能接。面板与 Agent 的原子操作走 TCP；只有白名单内的高层语义工具（向导 / 文档 / 标准）经 MCP，且底层与 TCP 同源 |
+
+> **关于界面语言**：我是中国开发者，做这个插件时**满脑子都是中文用户怎么用，压根没想起"语言"这回事**。直到有人在安装包里选了 English、装完发现界面还是全中文，我才意识到这是个问题。
+> 现在补上了（v1.4.0）：**安装向导里选什么语言，装完就是什么语言**，装完之后面板里也能随时切。
+> 目前界面语言**只有「中文 / English」两套**，没有第三语言；「自动（跟随系统）」的规则是：中文系统 → 中文，其它语言 → 英文。
+
+---
+
+## 这是什么
+
+new-acad 由三块拼成，各司其职：
+
+| 组件 | 位置 | 干什么 |
+|------|------|--------|
+| **C3D 插件**（C#） | `plugin/AcBridge-v24/` | 跑在 AutoCAD / Civil 3D 进程内，执行真实的绘图与 C3D 建模 API；对外是 TCP JSON-RPC 服务（默认 `:8080`） |
+| **面板 + relay**（Node） | `plugin/AcBridge-v24/src/HankPalette.cs`、`server/` | 面板内嵌在 C3D 里（调色板）；relay 是中枢：把你这边的自然语言转给 AI，再把 AI 的调用转成插件调用，然后把结果推回面板 |
+| **MCP 服务器**（Node + TypeScript） | `server/mcp/` | 274 个 MCP 工具（默认 `:3000`；不开别名只暴露 35 个 canonical，`CIVIL3D_ENABLE_TOOL_ALIASES=true` 才是全量），任何支持 MCP 的客户端都能直接接，不限于本项目的面板 |
+
+### 两种 AI 模式
+
+| 模式 | 说明 |
+|------|------|
+| `llm`（**默认**） | relay 自带 LLM 代理（OpenAI 兼容协议）。填自己的 API Key 就能跑，**不依赖任何外部平台**。安装向导里可选 DeepSeek / OpenAI / 通义 / Kimi / 智谱 / MiniMax / OpenRouter / xAI / 自定义 |
+| `openclaw` | 把面板接到自建的 agent 平台或网关上（进阶用法，需要自己配 token / session） |
+
+---
+
+## 核心能力
+
+| 类别 | 能做什么 |
+|------|----------|
+| **图元操作** | 读选中图元、查属性、按图层 / 块 / 类型 / 高程范围筛选；改颜色图层、移动、旋转、缩放、复制、镜像、删除；批量接口一次处理 N 个对象（`handles` 数组） |
+| **绘图** | 直线、圆、圆弧、多段线、矩形、文字、标注、填充 |
+| **三维** | 基本体（盒 / 柱 / 球 / 锥 / 楔 / 环）；拉伸、旋转、扫掠、放样（走真 API 链路）；NURBS 曲面创建与编辑、曲面加厚；布尔并 / 差（交集用双重差集模拟）、干涉检查；体积与质量属性 |
+| **Civil 3D 专业域** | **曲面**（创建、批量加点，支持任意文本格式走文件通道）；**路线**（样式、标签集、桩号查询）；**纵断面 / 图框**（样式与带集）；**装配与子装配**（含 AI 生成 SAC 部件：写 XAML → 打包 `.pkt` → 导入）；**廊道**（一条龙创建、区域编辑、廊道曲面）；**放坡 / 管网 / 地块 / 汇水 / 交叉口 / 数据快捷方式**；工程量与造价估算 |
+| **图层 / 块 / 外部参照** | 创建、改名、属性读写、写块、附着 Xref |
+| **位图 → CAD 描摹**（v1.6.0） | 面板「上传文件」选一张图（或直接给路径），说"画进 CAD"就自动描成矢量线条：**色块区域**（扁平 / 纯色 / 卡通 / logo / 矢量壁纸首选，线最少）｜**圆弧拟合**（线稿、手绘、照片）｜**骨架细线**（便于继续编辑）｜**描边**（保笔画粗细）。不指定时按图片类型自动判定。支持 PNG / BMP / JPEG / GIF / TIFF |
+| **图片 / 图纸分诊**（v1.6.0） | 图上有尺寸标注时，AI 不照像素描，而是先列尺寸表 → 尺寸链自检 → 拿不准的问你 → 按真实尺寸画 → 回读对账；完全没有尺寸时只问你一次"有没有哪一段长度你知道"，绝不硬猜 |
+| **文件通道** | 读 `docx` / `xlsx` / `pptx` / `zip`，以及老格式 `doc` / `xls`（自带 OLE2 / BIFF8 解析，**零依赖、不需要装 Office**）；列目录；在工作区内写文件；开图 / 新建 / 保存图纸（半自动多图流程） |
+| **选择集** | 发指令时自动快照当时的选中集；带文档名，切图纸不会读到上一张图的选中集 |
+| **任务与记忆** | 多步任务计划、真中断取消、选择性清理；AI 长期记忆按关键词注入 |
+| **知识库**（用户资料库） | 把你的**规范 / 图纸说明 / 计算规则 / 项目做法**放进 `user-knowledge/`（面板「更多 → 打开知识库文件夹」直达）；回面板说一句 **“整理知识库”** 即抽取文本、建索引 `_index.md`，之后按需引用；**扫描版 PDF 自动走 Windows OCR**（md/txt/csv/Word/Excel/PPT/PDF 均可） |
+| **多源知识库**（只读引用） | 已有规范文件夹不用搬——`config.json` 加 `knowledgeSources`（可多个，带标签）即可；**源目录只读**，缓存/索引单独存放；系统目录、网络路径、密钥文件自动跳过。 |
+| **决策链可验证**（v1.7） | 每个请求落结构化日志（`readTrace` / `traceStats`，含结果指纹与耗时）；`tools/replay.js` 回放对比（只读漂移=失败 / 变更类=正常 / 错误比错误码）；`assertChecks` 断言（图元存在、计数、长度/面积/半径/顶点数、曲面已构建）。排障时**直接拿到真实异常**，不再只有一句"unexpected error" |
+| **工具页签**（v1.10.0） | 状态栏「工具」→ 实时**调用流**（方法 / 通道 / 耗时 / 字节 / 状态，失败带错误码）+ **426 方法目录**（调用次数 / 最近耗时 / 失败数）。事件只带摘要，**永不携带结果内容** |
+| **工作流记录**（v1.10.0） | 任务完成后把**成功路径**清洗成记录（方法 + 参数骨架 + 结果指纹，**不存结果体**）：可在面板里查看、导出 JSON / Markdown、跑 **dry-run 回放**（只重跑只读步骤，结果变了判失败）。**不会自动执行写操作** |
+| **大图纸上下文**（v1.7） | `summarizeDrawing` 预算化画像（图层 + 空间网格 + 全局计数，**输出字节硬约束**，1.5 万实体摘要约 3 KB）；所有大结果自动降级为结构化裁剪（保留原结构、数组截断成前缀并附说明），需要全量时加 `fullResult:true` |
+| **土方专项**（v1.7） | 廊道土方 `computeCorridorEarthwork`（网格 + 桩号归属，实测与 C3D 曲面体积法差 **0.1%**）；**放坡优化** `optimizeGrading`（坡率上限 + 平台标高 + 挡墙/台阶 `walls` + 土方平衡 → 自动生成设计面并落成 TIN）；场地调配 `computeSiteMassHaul`（曲面 → 逐桩挖填 → 平衡区间/就近配对/免费与超运距/弃借方） |
+
+---
+
+## 架构
+
+```
+   面板（C#，内嵌 C3D 调色板）
+      │  HTTP  POST :19876/send
+      ▼
+   relay（server/panel-relay.js）
+      │  ┌─ llm 模式：内置 LLM 代理（OpenAI 兼容） → tool 循环
+      │  └─ openclaw 模式：自建 agent 平台
+      │  HTTP  POST :19876/tcp   （JSON-RPC 2.0 桥）
+      ▼
+   C3D 插件（Civil3DMcpPlugin.dll，TCP :8080）  ←→  AutoCAD / Civil 3D 数据库
+
+   MCP 客户端 ──POST :3000/execute──▶ MCP 服务器（server/mcp，274 工具）
+                                            └──▶ 同样落到插件
+```
+
+**端口**（都在 `config.json` 或环境变量里可改）：插件 `8080`｜MCP `3000`｜relay `19876`
+
+---
+
+## 环境要求
+
+- **Windows**
+- **AutoCAD 2025 / 2026**（正版授权，自行准备）—— 装了 **Civil 3D 2025 / 2026** 则自动获得路线 / 曲面 / 廊道 / 管网等全套专业能力；只有纯 AutoCAD 时，这些 Civil 3D 专有方法会明确返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，绘图、图层、块、文件读写等普通能力照常可用
+- 一个 LLM 的 **API Key**（默认模式下唯一需要你自己准备的东西）
+- 运行环境（Node 等）由安装脚本自动处理
+
+> ⚠️ **2024 及更早版本不支持。** 插件基于 **.NET 8** 构建；2024 及更早的 AutoCAD / Civil 3D 仍跑在 .NET Framework 4.8 上，两者程序集不兼容。
+>
+> 📌 **纯 AutoCAD 说明（v1.12.0 修正版起）**：宿主是纯 AutoCAD 时插件正常工作，Civil 3D 专有方法返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，不会静默失败、也不会报"内部错误"。
+
+> 本项目 **非 Autodesk 官方产品**，与 Autodesk 无隶属或背书关系。
+
+### 非中文环境 / 国际用户
+
+- **界面与 AI 回复跟随语言**：界面按系统语言自动选中英（非中文一律英文）；AI 回复跟随你最近一条提问的语言，不会因为内部资料是中文就用中文回你。
+- **坐标文件两种小数点都认**：点/坐标导入（`pnezd` `penz` `xyzd` `xyz`）同时接受 `1234.56` 和 `1234,56`（德语、法语等习惯），并且在读不出来时**明确报错并指出行号**，不会静默算错。导出的 CSV 恒用小数点。
+- **时间按本地时区显示**：记录内部统一存 UTC，界面上按你机器的时区显示。
+- **撤销的边界**：动作账本（`journalList` / `revertEntry`）只对**普通 AutoCAD 图元**承诺可撤；Civil 3D 对象（路线 / 曲面 / 廊道 / 管网）会明确标记为"不可撤"，不会假装能撤。
+
+---
+
+## 快速开始
+
+> 不想自己编译？到 [Releases](https://github.com/Jjo37/new-acad/releases) 页面下载 `setup.exe` 安装包或绿色版 zip。
+
+```
+① 确保已安装 AutoCAD 2025 / 2026（有 Civil 3D 更好，能力更全）
+② 双击 install.bat（推荐；自动绕过 PowerShell 执行策略）
+   或：右键 install.ps1 → 使用 PowerShell 运行
+③ 安装向导第 11 步会让你选 LLM 服务商 + 填 API Key
+④ 打开 AutoCAD / Civil 3D —— 安装器已写好自动加载（Applications 注册表 + acad.lsp），插件自动启动并显示面板
+⑤ 在面板里直接说话：「把选中的多段线整体抬高 0.5 米」
+```
+
+**卸载**
+
+- 用安装包装的：Windows「应用和功能」里卸载 `new-acad`（或开始菜单「卸载 new-acad」，走 Inno 卸载器）
+- 绿色版（解压 zip）：右键 `uninstall.ps1` → 使用 PowerShell 运行（清理自启任务、`Hank.lsp` 自动加载、残留进程）
+
+---
+
+## 给 AI Agent 用的交接文档
+
+本仓库天然是「让 AI 替你操作 CAD」的项目，所以附带了一份给 AI 读的交接手册：
+
+- [`ONBOARDING.md`](ONBOARDING.md) —— 环境自检（插件 / relay / MCP 三个端口）、工具调用姿势、常见故障处理、方法调用优先级。把你的 AI agent 指向这个文件，它就知道怎么开始。
+- [`使用手册.html`](使用手册.html) —— 面向人的界面与操作说明
+- [`knowledge/image-to-cad.md`](knowledge/image-to-cad.md) —— 图片 / 图纸 → CAD 的落地指南（描摹、尺寸标注识别、常见误判）
+
+---
+
+## 编译与打包
+
+```powershell
+# 编译插件（产物：plugin/AcBridge-v24/Civil3DMcpPlugin.dll）
+# 注意：必须用这个脚本。裸 dotnet build -o 会产出 4KB 空壳 DLL（无任何类型，NETLOAD 静默不加载）
+powershell -ExecutionPolicy Bypass -File build-plugin.ps1
+
+# 编译需要 Autodesk 托管程序集（AcDbMgd / AecBaseMgd / AeccDbMgd 等）
+# 放在 C_References/ 下（已 gitignore，不随仓库分发）
+
+# 打包分发目录 / 安装器
+powershell -ExecutionPolicy Bypass -File build-dist.ps1        # → dist/
+powershell -ExecutionPolicy Bypass -File build-installer.ps1   # → 安装包（需 Inno Setup）
+```
+
+**C3D 开着时 DLL 被锁**，编译前请先关掉 Civil 3D。
+
+---
+
+## 项目结构
+
+```
+new-acad/
+├── plugin/
+│   ├── AcBridge-v24/
+│   │   ├── src/            C# 源码（55 个文件，插件+面板）
+│   │   └── Civil3DMcpPlugin.dll  ← 编译产物（未随仓库分发，需自行编译）
+│   └── Hank.lsp            C3D 自动加载脚本（NETLOAD 插件）
+├── server/
+│   ├── panel-relay.js      面板中枢（:19876）+ /tcp JSON-RPC 桥
+│   ├── relay-launcher.js   relay 守护启动器（崩溃自动重启 + 日志落盘）
+│   ├── llm-agent.js        内置 LLM 代理（OpenAI 兼容 + tool 循环 + 上下文压缩）
+│   ├── cad-tools.js        AI 可用的唯一工具入口
+│   ├── file-tools.js       文件通道（读文档 / 工作区写 / 安全边界）
+│   ├── sacred-mcp.js       MCP 服务器启动器（:3000）
+│   └── mcp/                MCP 服务器本体（TS 源码 + 编译产物 + 274 工具）
+├── tools/                  环境检测、端口检查、自测与扫描脚本
+├── knowledge/              用户向资料（图片 → CAD 指南）
+├── install.bat / install.ps1 / uninstall.ps1 / uninstall-pre.ps1
+├── config.json             本地配置（端口 / token / LLM 设置）—— 已 gitignore，不入库
+└── ONBOARDING.md           给 AI agent 的上手指南
+```
+
+---
+
+## 已知限制
+
+- **14 个方法底层走命令通道**（托管 API 缺口）：其中 **10 个投递即返回、拿不到同步结果**（`renderScene`/`undoDrawing`/`redoDrawing`/数据快捷方式/SSA 等），**3 个可回读**（`setVisualStyle`/`selectByCriteria`/`selectEntities`），`runLisp` 按设计不返回值；带 25 秒超时兜底。清单以 `docs/audit/command-channel.json` 为准（门禁与代码比对）；`trimEntity`/`extendEntity`/`overkillEntities` 已停投命令（改用 `*Geo` 同步版）
+- C3D 开着时插件 DLL 被锁，更新需关闭 C3D 后重新编译、重启
+- 面板接收回复走 **SSE 实时推送**（`/replies/stream`），不是轮询；状态与执行进度同样实时推送（10 秒 `/status` 轮询仅作断线兜底）
+- 少数 C3D 能力（如放坡组编辑、地块线编辑）托管 API 未封装，AI 暂不可调，见 `ONBOARDING.md`
+- 放坡优化定位为**初稿设计面生成器**：排水最小坡度用平台预倾斜表达，挡墙/台阶用 `walls` 声明；多级挡墙、管线避让等复杂约束仍需人工复核
+- 廊道再生类操作本身较慢（内部再生 30 s ~ 10 min），期间其它请求会短暂排队（`HOST_BUSY`，自动恢复）
+
+---
+
+## 许可与致谢
+
+- 本项目采用 **MIT License** —— 见 [`LICENSE`](LICENSE)
+- **上游致谢**：[Civil3D-mcp](https://github.com/Sacred-G/Civil3D-mcp)（MIT License）。
+  本仓库在 `server/mcp/` 引用其开源实现，其许可证原文保留于 `server/mcp/LICENSE`。
+- 第三方组件与依赖清单：见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)

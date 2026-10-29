@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>new-acad 使用手册 · User Guide</title>
+<style>
+  :root{
+    /* 取自面板配色（Catppuccin Mocha）：面板底 #1E1E2E / 工具条 #313244 / 文字 #CDD6F4 */
+    --bg:#1e1e2e; --bg2:#181825; --surface:#313244; --surface2:#292a3a;
+    --fg:#cdd6f4; --fg2:#a6adc8; --muted:#7f849c; --line:#3d3f55;
+    --accent:#89b4fa; --accent-soft:#2b3550;
+    --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --mauve:#cba6f7;
+    --code:#11111b; --sidebar:310px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;
+    line-height:1.8;font-size:16px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{background:var(--code);color:var(--yellow);padding:1px 5px;border-radius:4px;font-size:.92em;
+    font-family:Consolas,"Cascadia Mono",monospace}
+  kbd{background:var(--surface);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
+    padding:0 5px;font-size:.86em;font-family:Consolas,monospace;color:var(--fg)}
+
+  .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+    padding:10px 22px;background:rgba(24,24,37,.94);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .brand{font-weight:700;font-size:16px;color:var(--fg)}
+  .brand .ver{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+  .lang-switch{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .lang-switch button{border:0;background:var(--surface);padding:6px 14px;font-size:13px;cursor:pointer;
+    color:var(--fg2);font-family:inherit}
+  .lang-switch button.active{background:var(--accent);color:#11111b;font-weight:700}
+
+  .layout{display:flex;align-items:flex-start;max-width:1640px;margin:0 auto;padding:0 34px}
+  .toc{position:sticky;top:60px;flex:0 0 var(--sidebar);width:var(--sidebar);
+    max-height:calc(100vh - 74px);overflow:auto;padding:24px 20px 40px 0;font-size:14.5px}
+  .toc h3{margin:0 0 10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .toc ol{list-style:none;margin:0;padding:0}
+  .toc>ol>li{margin:6px 0}
+  .toc a{display:block;padding:5px 10px;border-radius:6px;color:var(--fg2);border-left:2px solid transparent}
+  .toc a:hover{background:var(--surface);color:var(--fg);text-decoration:none}
+  .toc a.active{background:var(--accent-soft);color:var(--accent);border-left-color:var(--accent);font-weight:600}
+  .toc a.chap{font-weight:600;color:var(--fg)}
+  .toc ol.sub{padding-left:10px;margin:2px 0 8px}
+  .toc li.has-sub{position:relative}
+  .toc .twisty{position:absolute;right:2px;top:5px;width:20px;height:20px;line-height:1;
+    border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;padding:0;
+    border-radius:4px;transition:transform .15s ease,color .15s ease}
+  .toc .twisty:hover{background:var(--surface);color:var(--accent)}
+  .toc .twisty[aria-expanded="false"]{transform:rotate(-90deg)}
+  .toc ol.sub[hidden]{display:none}
+  .toc ol.sub a{padding:3px 10px;font-size:12.8px;color:var(--muted)}
+  .toc ol.sub a.active{color:var(--accent)}
+  main{flex:1 1 auto;min-width:0;padding:26px 0 90px}
+
+  section{scroll-margin-top:66px;margin-bottom:52px}
+  h2{font-size:24px;margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid var(--accent);color:#f5f7ff}
+  h3{font-size:18px;margin:30px 0 10px;color:var(--accent);scroll-margin-top:66px}
+  h4{font-size:15.5px;margin:24px 0 6px;color:var(--mauve)}
+  h4 .tag{font-size:11.5px;font-weight:400;color:var(--muted);border:1px solid var(--line);
+    border-radius:999px;padding:1px 8px;margin-left:8px;vertical-align:2px}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:4px 0}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.8px}
+  th,td{border:1px solid var(--line);padding:10px 13px;text-align:left;vertical-align:top}
+  th{background:var(--surface);color:var(--fg);font-weight:600;white-space:nowrap}
+  td{background:var(--surface2)}
+  td code{white-space:nowrap}
+
+  ul.spec{list-style:none;padding-left:0;margin:6px 0 14px;border-left:2px solid var(--surface);padding-left:12px}
+  ul.spec li{margin:4px 0;font-size:15px;color:var(--fg)}
+  ul.spec b{display:inline-block;min-width:76px;color:var(--fg2)}
+
+  .lead{font-size:17px;color:var(--fg)}
+  .muted{color:var(--muted)}
+  .callout{border-radius:8px;padding:12px 14px;margin:14px 0;border:1px solid;font-size:14px}
+  .callout.tip{background:#20283c;border-color:#35507d;color:#d3e2ff}
+  .callout.warn{background:#2f2820;border-color:#6b4f27;color:#f6e0bd}
+  .callout.danger{background:#31212a;border-color:#6d3348;color:#ffd7e2}
+  .callout.ok{background:#1f2f28;border-color:#2f6349;color:#c9f3d9}
+  .callout .t{font-weight:700;display:block;margin-bottom:4px}
+
+  .steps{counter-reset:s;list-style:none;padding-left:0}
+  .steps>li{counter-increment:s;position:relative;padding-left:38px;margin:12px 0}
+  .steps>li::before{content:counter(s);position:absolute;left:0;top:1px;width:24px;height:24px;
+    border-radius:50%;background:var(--accent);color:#11111b;font-size:13px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  footer{border-top:1px solid var(--line);padding-top:14px;color:var(--muted);font-size:12.5px}
+
+  .lang-en .zh{display:none !important}
+  .lang-zh .en{display:none !important}
+
+  @media (max-width:980px){
+    .layout{display:block;padding:0 16px}
+    .toc{position:static;width:auto;max-height:none;padding:14px 0 6px;border-bottom:1px solid var(--line);margin-bottom:10px}
+    .toc>ol>li{margin:2px 0}
+    .toc ol.sub{display:none}
+  }
+  @media print{
+    :root{--bg:#fff;--bg2:#fff;--surface:#f2f2f2;--surface2:#fff;--fg:#111;--fg2:#333;--muted:#666;--line:#ccc;
+      --accent:#1a4fa0;--code:#f4f4f4}
+    .topbar,.toc{display:none}
+    .layout{display:block;max-width:none;padding:0}
+    section{page-break-inside:avoid}
+    body{background:#fff;color:#111;font-size:12pt}
+    h3{color:#1a4fa0}
+  }
+</style>
+</head>
+<body class="lang-zh">
+
+<header class="topbar">
+  <div class="brand">new-acad<span class="ver">使用手册 · User Guide</span></div>
+  <div class="lang-switch">
+    <button type="button" data-lang="zh" class="active">中文</button>
+    <button type="button" data-lang="en">English</button>
+  </div>
+</header>
+
+<div class="layout">
+
+<nav class="toc">
+  <h3><span class="zh">目录</span><span class="en">Contents</span></h3>
+  <ol>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch0" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch0" class="chap"><span class="zh">0 这是什么</span><span class="en">0 What this is</span></a>
+      <ol class="sub" id="sub-ch0">
+        <li><a href="#ch0-1" data-sub="ch0-1"><span class="zh">和"网页版 AI"的区别</span><span class="en">How it differs from a chat website</span></a></li>
+        <li><a href="#ch0-2" data-sub="ch0-2"><span class="zh">三步开始</span><span class="en">Three steps to start</span></a></li>
+        <li><a href="#ch0-3" data-sub="ch0-3"><span class="zh">先知道这三条边界</span><span class="en">Three limits worth knowing up front</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch1" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch1" class="chap"><span class="zh">1 安装与卸载</span><span class="en">1 Install & uninstall</span></a>
+      <ol class="sub" id="sub-ch1">
+        <li><a href="#ch1-1" data-sub="ch1-1"><span class="zh">1.1 系统要求</span><span class="en">1.1 Requirements</span></a></li>
+        <li><a href="#ch1-2" data-sub="ch1-2"><span class="zh">1.2 安装（4 步）</span><span class="en">1.2 Install (4 steps)</span></a></li>
+        <li><a href="#ch1-3" data-sub="ch1-3"><span class="zh">1.3 静默安装（企业 / 批量部署）</span><span class="en">1.3 Silent install (enterprise)</span></a></li>
+        <li><a href="#ch1-4" data-sub="ch1-4"><span class="zh">1.4 升级</span><span class="en">1.4 Upgrade</span></a></li>
+        <li><a href="#ch1-5" data-sub="ch1-5"><span class="zh">1.5 卸载</span><span class="en">1.5 Uninstall</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch2" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch2" class="chap"><span class="zh">2 首次配置</span><span class="en">2 First-time setup</span></a>
+      <ol class="sub" id="sub-ch2">
+        <li><a href="#ch2-1" data-sub="ch2-1"><span class="zh">2.1 先准备一个模型 API Key</span><span class="en">2.1 Get a model API key first</span></a></li>
+        <li><a href="#ch2-2" data-sub="ch2-2"><span class="zh">2.2 在面板里填六项</span><span class="en">2.2 Six fields in the palette</span></a></li>
+        <li><a href="#ch2-3" data-sub="ch2-3"><span class="zh">2.3 保存后自检（三步）</span><span class="en">2.3 Three-step self check</span></a></li>
+        <li><a href="#ch2-4" data-sub="ch2-4"><span class="zh">2.4 换服务商 / 换模型</span><span class="en">2.4 Switching provider or model</span></a></li>
+        <li><a href="#ch2-5" data-sub="ch2-5"><span class="zh">2.5 项目文件夹（多工程隔离）</span><span class="en">2.5 Project folder (one folder per job)</span></a></li>
+        <li><a href="#ch2-6" data-sub="ch2-6"><span class="zh">2.6 界面语言</span><span class="en">2.6 Interface language</span></a></li>
+        <li><a href="#ch2-7" data-sub="ch2-7"><span class="zh">2.7 清除配置 / 换 Key</span><span class="en">2.7 Clearing the settings / changing the key</span></a></li>
+        <li><a href="#ch2-8" data-sub="ch2-8"><span class="zh">2.8 AI 长期记忆</span><span class="en">2.8 AI long-term memory</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch3" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch3" class="chap"><span class="zh">3 安装后的文件结构</span><span class="en">3 Files on disk</span></a>
+      <ol class="sub" id="sub-ch3">
+        <li><a href="#ch3-1" data-sub="ch3-1"><span class="zh">3.1 安装目录（C:\Program Files\new-acad）</span><span class="en">3.1 Install folder (C:\Program Files\new-acad)</span></a></li>
+        <li><a href="#ch3-2" data-sub="ch3-2"><span class="zh">3.2 用户目录（不在安装目录里）</span><span class="en">3.2 User folders (outside the install dir)</span></a></li>
+        <li><a href="#ch3-3" data-sub="ch3-3"><span class="zh">3.3 数据目录（exchange\）</span><span class="en">3.3 Data folder (exchange\)</span></a></li>
+        <li><a href="#ch3-4" data-sub="ch3-4"><span class="zh">3.4 config.json 字段</span><span class="en">3.4 config.json fields</span></a></li>
+        <li><a href="#ch3-5" data-sub="ch3-5"><span class="zh">3.5 能删 / 别动</span><span class="en">3.5 Safe to delete / leave alone</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch4" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch4" class="chap"><span class="zh">4 面板功能逐项</span><span class="en">4 Every control</span></a>
+      <ol class="sub" id="sub-ch4">
+        <li><a href="#ch4-1" data-sub="ch4-1"><span class="zh">4.1 状态栏（面板最下面一行）</span><span class="en">4.1 Status bar (bottom row)</span></a></li>
+        <li><a href="#ch4-2" data-sub="ch4-2"><span class="zh">4.2 配置区（对话区上方）</span><span class="en">4.2 Settings (above the chat)</span></a></li>
+        <li><a href="#ch4-3" data-sub="ch4-3"><span class="zh">4.3 对话与输入区</span><span class="en">4.3 Chat and input</span></a></li>
+        <li><a href="#ch4-4" data-sub="ch4-4"><span class="zh">4.4 工具页签（点「工具」或「调用流」进来）</span><span class="en">4.4 Tools pane (via "Tools" or "Call stream")</span></a></li>
+        <li><a href="#ch4-5" data-sub="ch4-5"><span class="zh">4.5 命令与快捷键</span><span class="en">4.5 Commands and keys</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch5" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch5" class="chap"><span class="zh">5 典型场景</span><span class="en">5 Typical tasks</span></a>
+      <ol class="sub" id="sub-ch5">
+        <li><a href="#ch5-1" data-sub="ch5-1"><span class="zh">5.1 画一张图：从选中到成图</span><span class="en">5.1 Draw something</span></a></li>
+        <li><a href="#ch5-2" data-sub="ch5-2"><span class="zh">5.2 按图层批量处理</span><span class="en">5.2 Batch by layer</span></a></li>
+        <li><a href="#ch5-3" data-sub="ch5-3"><span class="zh">5.3 出量</span><span class="en">5.3 Quantities</span></a></li>
+        <li><a href="#ch5-4" data-sub="ch5-4"><span class="zh">5.4 上传文件 / 图片 → CAD（描摹）</span><span class="en">5.4 Upload files or images → CAD (tracing)</span></a></li>
+        <li><a href="#ch5-5" data-sub="ch5-5"><span class="zh">5.5 文件通道：成千上万个点</span><span class="en">5.5 File channel: tens of thousands of points</span></a></li>
+        <li><a href="#ch5-6" data-sub="ch5-6"><span class="zh">5.6 工作流：干过一次，下次带新参数重跑</span><span class="en">5.6 Workflows: run it once, re-run with new numbers</span></a></li>
+        <li><a href="#ch5-7" data-sub="ch5-7"><span class="zh">5.7 撤错了一步</span><span class="en">5.7 Revert one wrong step</span></a></li>
+        <li><a href="#ch5-8" data-sub="ch5-8"><span class="zh">5.8 把公司规范喂给它</span><span class="en">5.8 Feed it your company standards</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch6" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch6" class="chap"><span class="zh">6 能力边界与已知限制</span><span class="en">6 Limits</span></a>
+      <ol class="sub" id="sub-ch6">
+        <li><a href="#ch6-1" data-sub="ch6-1"><span class="zh">6.1 版本与运行环境</span><span class="en">6.1 Version and runtime</span></a></li>
+        <li><a href="#ch6-2" data-sub="ch6-2"><span class="zh">6.2 撤销的范围</span><span class="en">6.2 What undo covers</span></a></li>
+        <li><a href="#ch6-3" data-sub="ch6-3"><span class="zh">6.3 工作流回放的边界</span><span class="en">6.3 Workflow replay limits</span></a></li>
+        <li><a href="#ch6-4" data-sub="ch6-4"><span class="zh">6.4 描摹（图片 → 矢量）的边界</span><span class="en">6.4 Tracing limits (raster → vectors)</span></a></li>
+        <li><a href="#ch6-5" data-sub="ch6-5"><span class="zh">6.5 文件读写边界</span><span class="en">6.5 File boundaries</span></a></li>
+        <li><a href="#ch6-6" data-sub="ch6-6"><span class="zh">6.6 方法与能力</span><span class="en">6.6 Methods</span></a></li>
+        <li><a href="#ch6-7" data-sub="ch6-7"><span class="zh">6.7 性能与大图纸</span><span class="en">6.7 Performance on large drawings</span></a></li>
+        <li><a href="#ch6-8" data-sub="ch6-8"><span class="zh">6.8 交互式命令</span><span class="en">6.8 Interactive commands</span></a></li>
+      </ol>
+    </li>
+    <li class="has-sub"><button type="button" class="twisty" data-for="sub-ch7" aria-expanded="true" title="折叠/展开">▾</button><a href="#ch7" class="chap"><span class="zh">7 常见问题与日志</span><span class="en">7 FAQ & logs</span></a>
+      <ol class="sub" id="sub-ch7">
+        <li><a href="#ch7-1" data-sub="ch7-1"><span class="zh">7.1 面板弹不出来</span><span class="en">7.1 The palette will not open</span></a></li>
+        <li><a href="#ch7-2" data-sub="ch7-2"><span class="zh">7.2 状态显示「离线」</span><span class="en">7.2 Status says "Offline"</span></a></li>
+        <li><a href="#ch7-3" data-sub="ch7-3"><span class="zh">7.3 调用超时 / 一直转圈</span><span class="en">7.3 Timeouts / endless spinner</span></a></li>
+        <li><a href="#ch7-4" data-sub="ch7-4"><span class="zh">7.4 模型报错</span><span class="en">7.4 Model errors</span></a></li>
+        <li><a href="#ch7-5" data-sub="ch7-5"><span class="zh">7.5 中文显示成乱码 / 问号</span><span class="en">7.5 Garbled Chinese / question marks</span></a></li>
+        <li><a href="#ch7-6" data-sub="ch7-6"><span class="zh">7.6 强杀 CAD 后弹出「图形修复」</span><span class="en">7.6 "Drawing recovery" after killing CAD</span></a></li>
+        <li><a href="#ch7-7" data-sub="ch7-7"><span class="zh">7.7 怎么把现场发给支持</span><span class="en">7.7 What to send support</span></a></li>
+        <li><a href="#ch7-8" data-sub="ch7-8"><span class="zh">7.8 技术支持</span><span class="en">7.8 Support</span></a></li>
+      </ol>
+    </li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ==================== 0 ==================== -->
+<section id="ch0">
+  <h2><span class="zh">0 这是什么</span><span class="en">0 What this is</span></h2>
+
+  <div class="zh">
+    <p class="lead">new-acad 是长在 <b>AutoCAD / Civil 3D 面板里的 AI 助手</b>：你用大白话描述要做什么，它直接在你的图纸里画、改、量、导出。</p>
+
+    <h3 id="ch0-1-zh">和"网页版 AI"的区别</h3>
+    <ul>
+      <li><b>它在图纸里干活</b>，不是给你一段脚本让你自己粘。</li>
+      <li><b>用你自己的模型 Key</b>（任何 OpenAI 兼容的服务商都行；面板给了常见几家的预设，也能填自定义地址），不经过我们的服务器，我们看不到你的图和对话。</li>
+      <li><b>可核对</b>：每一步调用了什么方法、花了多久、成功还是失败，面板里都能看到。</li>
+      <li><b>可回放</b>：一次干成功的活能存成工作流，下次填几个参数重跑；做错的单步能撤回来。</li>
+    </ul>
+
+    <h3 id="ch0-2-zh">三步开始</h3>
+    <ol class="steps">
+      <li><b>装</b>：运行安装包，装完在 CAD 里打开面板（见 <a href="#ch1">第 1 章</a>）。</li>
+      <li><b>配</b>：填一个模型 API Key，保存（见 <a href="#ch2">第 2 章</a>）。</li>
+      <li><b>用</b>：选中对象，说"把这些圆往外偏移 50"，它就动手。</li>
+    </ol>
+
+    <h3 id="ch0-3-zh">先知道这三条边界</h3>
+    <div class="callout warn">
+      <span class="t">不写清楚会踩坑</span>
+      <ul>
+        <li><b>支持 AutoCAD 2025 / 2026；装了 Civil 3D 2025 / 2026 就多出专业能力</b>。纯 AutoCAD 下路线 / 曲面 / 廊道 / 管网等方法会明确回「需要 Civil 3D」，画图、图层、块、文件读写照常可用。2024 及更早是另一套运行时（.NET Framework 4.8），装不上也用不了。</li>
+        <li><b>撤销只对普通 AutoCAD 图元承诺</b>（线、多段线、圆、弧、文字、点、块参照）。Civil 3D 对象（路线 / 曲面 / 廊道 / 管网）会标成"不可撤"，不会假装能撤。</li>
+        <li><b>工作流回放不能跨图纸</b>：记录里的"句柄"只在录制那张图里有意义，换图后引用句柄的步骤会被拦下。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="en">
+    <p class="lead">new-acad is an <b>AI assistant that lives inside the AutoCAD / Civil 3D palette</b>: you describe the task in plain language and it draws, edits, measures and exports in your drawing.</p>
+
+    <h3 id="ch0-1-en">How it differs from a chat website</h3>
+    <ul>
+      <li><b>It works inside the drawing</b> — not a script you paste yourself.</li>
+      <li><b>Your own model key</b> (any OpenAI-compatible provider; the palette ships presets for a few common ones and accepts a custom endpoint). Nothing goes through our servers; we never see your drawings or your chat.</li>
+      <li><b>Verifiable</b>: every method call, its duration and its result are visible in the palette.</li>
+      <li><b>Replayable</b>: a task that worked can be saved as a workflow and re-run with new parameters; a single wrong step can be reverted.</li>
+    </ul>
+
+    <h3 id="ch0-2-en">Three steps to start</h3>
+    <ol class="steps">
+      <li><b>Install</b>: run the installer, then open the palette inside CAD (see <a href="#ch1">chapter 1</a>).</li>
+      <li><b>Configure</b>: paste a model API key and save (see <a href="#ch2">chapter 2</a>).</li>
+      <li><b>Use</b>: select objects and say "offset these circles outward by 50".</li>
+    </ol>
+
+    <h3 id="ch0-3-en">Three limits worth knowing up front</h3>
+    <div class="callout warn">
+      <span class="t">Read this before you file a bug</span>
+      <ul>
+        <li><b>AutoCAD 2025 / 2026; add Civil 3D 2025 / 2026 for the civil toolkit.</b> On plain AutoCAD, alignment / surface / corridor / pipe-network methods answer "Civil 3D required" explicitly, while drafting, layers, blocks and file I/O work as usual. 2024 and earlier run on a different runtime (.NET Framework 4.8); the plugin will not load.</li>
+        <li><b>Undo only promises plain AutoCAD entities</b> (line, polyline, circle, arc, text, point, block reference). Civil 3D objects (alignment / surface / corridor / pipe network) are marked "cannot be reverted" instead of pretending.</li>
+        <li><b>A recorded workflow cannot be replayed in another drawing</b>: the handles only mean something in the file they were recorded in.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 1 ==================== -->
+<section id="ch1">
+  <h2><span class="zh">1 安装与卸载</span><span class="en">1 Install &amp; uninstall</span></h2>
+
+  <div class="zh">
+    <h3 id="ch1-1-zh">1.1 系统要求</h3>
+    <table>
+      <tr><th>项目</th><th>要求</th></tr>
+      <tr><td>操作系统</td><td>Windows 10 / 11（64 位）</td></tr>
+      <tr><td>CAD</td><td><b>Autodesk AutoCAD 2025 或 2026</b>（正版，自行准备）；装了 <b>Civil 3D 2025 / 2026</b> 则额外获得路线 / 曲面 / 廊道 / 管网等专业能力</td></tr>
+      <tr><td>权限</td><td>安装需要<b>管理员</b>（默认装到 <code>C:\Program Files\new-acad</code>）</td></tr>
+      <tr><td>磁盘</td><td>约 300 MB（含内置 Node 运行时与离线手册）</td></tr>
+      <tr><td>网络</td><td>需要能访问你选的那家模型服务；不需要连我们的服务器</td></tr>
+    </table>
+    <div class="callout danger">
+      <span class="t">Civil 3D 2024 及更早：不支持</span>
+      插件用 .NET 8 构建，2024 及更早的 AutoCAD 仍是 .NET Framework 4.8，程序集不兼容。装上去也会加载失败。
+    </div>
+
+    <h3 id="ch1-2-zh">1.2 安装（4 步）</h3>
+    <ol class="steps">
+      <li><b>下载</b>安装包 <code>new-acad-setup-v1.12.0.exe</code>（或绿色版 zip）。</li>
+      <li><b>双击运行</b>，允许管理员权限。安装向导支持中文 / English。</li>
+      <li><b>走完向导</b>。装完会调用 <code>install.ps1</code>：检测 AutoCAD / Civil 3D 版本、注册插件自启、引导你填 AI 配置。</li>
+      <li><b>完成</b>。勾选"打开使用手册"会打开本文件；随后启动 AutoCAD 或 Civil 3D。</li>
+    </ol>
+    <div class="callout tip">
+      <span class="t">装完怎么确认成功</span>
+      启动 CAD，命令行输入 <code>HANK_SHOW</code>。面板能弹出、状态显示「● 就绪」，就是装好了。
+    </div>
+
+    <h3 id="ch1-3-zh">1.3 静默安装（企业 / 批量部署）</h3>
+    <p><code>new-acad-setup-v1.12.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <div class="callout warn">
+      <span class="t">静默安装会跳过配置向导</span>
+      向导被跳过（<code>skipifsilent</code>），所以<b>不会</b>自动检测 CAD、不会写配置。装完需要人工打开面板填 Key，或直接预置 <code>config.json</code>（字段见 <a href="#ch3">第 3 章</a>）。
+    </div>
+
+    <h3 id="ch1-4-zh">1.4 升级</h3>
+    <ul>
+      <li>直接运行新版安装包覆盖安装，<b>不需要先卸载</b>。</li>
+      <li>升级前建议备份 <code>config.json</code>（里面是你的 Key、模型、项目设置）。</li>
+      <li>升级后重启 CAD（插件 DLL 被占用时无法替换，安装器会提示）。</li>
+    </ul>
+
+    <h3 id="ch1-5-zh">1.5 卸载</h3>
+    <ol class="steps">
+      <li><b>先关掉 CAD</b>（插件 DLL 运行中被锁定，不关会卸不干净）。</li>
+      <li>Windows「设置 → 应用 → 已安装的应用」找到 <b>new-acad</b>，卸载。</li>
+      <li>或运行安装目录下的 <code>uninstall.bat</code>。</li>
+    </ol>
+    <p><b>卸载会删</b>：程序目录、插件注册、自启项、运行日志、消息队列文件。</p>
+    <div class="callout warn">
+      <span class="t">卸载不会删（这是故意的）</span>
+      <ul>
+        <li><code>exchange\</code> 下的项目、工作流记录、导出文件 —— <b>那是你的成果</b>。</li>
+        <li><code>%LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log</code>（排查问题用）。</li>
+        <li><code>%APPDATA%\Autodesk\ApplicationPlugins\new-acad.bundle</code>（彻底清理时手动删）。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="en">
+    <h3 id="ch1-1-en">1.1 Requirements</h3>
+    <table>
+      <tr><th>Item</th><th>Requirement</th></tr>
+      <tr><td>OS</td><td>Windows 10 / 11 (64-bit)</td></tr>
+      <tr><td>CAD</td><td><b>Autodesk AutoCAD 2025 or 2026</b> (licensed copy). With <b>Civil 3D 2025 / 2026</b> installed you also get alignments / surfaces / corridors / pipe networks</td></tr>
+      <tr><td>Privileges</td><td><b>Administrator</b> to install (defaults to <code>C:\Program Files\new-acad</code>)</td></tr>
+      <tr><td>Disk</td><td>~300 MB (bundled Node runtime and offline manual)</td></tr>
+      <tr><td>Network</td><td>Must reach the model provider you choose; no connection to our servers needed</td></tr>
+    </table>
+    <div class="callout danger">
+      <span class="t">Civil 3D 2024 and earlier: not supported</span>
+      The plugin targets .NET 8; AutoCAD 2024 and older still run on .NET Framework 4.8. The assemblies are incompatible.
+    </div>
+
+    <h3 id="ch1-2-en">1.2 Install (4 steps)</h3>
+    <ol class="steps">
+      <li><b>Download</b> <code>new-acad-setup-v1.12.0.exe</code> (or the portable zip).</li>
+      <li><b>Run it</b> and allow administrator rights. The wizard speaks Chinese and English.</li>
+      <li><b>Finish the wizard.</b> It runs <code>install.ps1</code>: detect AutoCAD / Civil 3D, register autoload, guide you through the AI settings.</li>
+      <li><b>Done.</b> Tick "open the manual" and start AutoCAD or Civil 3D.</li>
+    </ol>
+    <div class="callout tip">
+      <span class="t">How to confirm it worked</span>
+      Start CAD and type <code>HANK_SHOW</code>. If the palette opens and the status reads "● Ready", you are set.
+    </div>
+
+    <h3 id="ch1-3-en">1.3 Silent install (enterprise)</h3>
+    <p><code>new-acad-setup-v1.12.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <div class="callout warn">
+      <span class="t">Silent install skips the setup wizard</span>
+      Because of <code>skipifsilent</code> it does <b>not</b> detect Civil 3D and does <b>not</b> write configuration. Fill in the key from the palette afterwards, or pre-seed <code>config.json</code> (fields in <a href="#ch3">chapter 3</a>).
+    </div>
+
+    <h3 id="ch1-4-en">1.4 Upgrade</h3>
+    <ul>
+      <li>Run the newer installer over the old one — no need to uninstall first.</li>
+      <li>Back up <code>config.json</code> first (key, model, project settings).</li>
+      <li>Restart CAD afterwards; the installer warns if the plugin DLL is locked.</li>
+    </ul>
+
+    <h3 id="ch1-5-en">1.5 Uninstall</h3>
+    <ol class="steps">
+      <li><b>Close CAD first</b> (the plugin DLL is locked while it runs).</li>
+      <li>Windows "Settings → Apps" → <b>new-acad</b> → Uninstall.</li>
+      <li>Or run <code>uninstall.bat</code> in the install folder.</li>
+    </ol>
+    <p><b>Removed</b>: program files, plugin registration, autostart entry, runtime logs, message queue files.</p>
+    <div class="callout warn">
+      <span class="t">Not removed (on purpose)</span>
+      <ul>
+        <li><code>exchange\</code> — your projects, workflow records and exported files: <b>your work</b>.</li>
+        <li><code>%LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log</code>.</li>
+        <li><code>%APPDATA%\Autodesk\ApplicationPlugins\new-acad.bundle</code> (delete by hand for a clean sweep).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 2 ==================== -->
+<section id="ch2">
+  <h2><span class="zh">2 首次配置</span><span class="en">2 First-time setup</span></h2>
+
+  <div class="zh">
+    <h3 id="ch2-1-zh">2.1 先准备一个模型 API Key</h3>
+    <table>
+      <tr><th>你的情况</th><th>填什么</th><th>备注</th></tr>
+      <tr><td>已经有某家的账号</td><td>那家的 OpenAI 兼容地址</td><td>面板下拉里给了常见几家的预设；地址以各家官方文档为准</td></tr>
+      <tr><td>用公司统一采购的服务</td><td>网关 / 代理暴露的 OpenAI 兼容地址</td><td>同上，Key 用你账号的</td></tr>
+      <tr><td>自建或上面都没有</td><td>任何 OpenAI 兼容端点</td><td>填地址 + Key + 模型名</td></tr>
+    </table>
+        <p class="muted">用哪家只看三件你自己的事：已有账号、你所在网络能否直接访问、团队对成本的要求。本手册不对服务商做推荐，也不对第三方服务的价格与可用性做任何承诺——面板里预设的顺序只是界面顺序，不代表优先级。</p>
+
+    <h3 id="ch2-2-zh">2.2 在面板里填六项</h3>
+    <table>
+      <tr><th>控件</th><th>填什么</th><th>建议</th></tr>
+      <tr><td>项目名</td><td>可选。填了就把对话、工作流记录、导出文件按项目隔离</td><td>按工程名建，找东西方便</td></tr>
+      <tr><td>界面语言</td><td>自动 / 中文 / English</td><td>自动 = 跟随系统</td></tr>
+      <tr><td>选择模型（服务商）</td><td>下拉选一家</td><td>—</td></tr>
+      <tr><td>模型</td><td>该家下面可用的模型名</td><td>不确定就用默认</td></tr>
+      <tr><td>Key</td><td>粘贴你的 API Key</td><td>点「显示」核对；点「清除」抹掉</td></tr>
+      <tr><td>操作上限</td><td>一次任务最多跑几步（<b>0 = 不限</b>）</td><td>默认够用；怕跑飞就设 40</td></tr>
+    </table>
+    <p>填完点 <b>保存</b>，状态行会显示「● 已保存」。</p>
+
+    <h3 id="ch2-3-zh">2.3 保存后自检（三步）</h3>
+    <ol class="steps">
+      <li><b>看状态灯</b>：状态栏显示「● 就绪」＝ 内置服务在跑。</li>
+      <li><b>点「端口」</b>：确认三个端口都在（插件 8080 / MCP 3000 / 服务 19876）。</li>
+      <li><b>发一句话</b>：随便问"现在这张图有几个对象"。能回话就说明 Key 和网络都通了。</li>
+    </ol>
+
+    <h3 id="ch2-4-zh">2.4 换服务商 / 换模型</h3>
+    <ul>
+      <li>换完记得<b>再点一次保存</b>，然后点「重启服务」让它生效。</li>
+      <li>换了模型如果答非所问、频繁调错方法，多半是模型能力不够——换回上一家即可。</li>
+    </ul>
+
+    <h3 id="ch2-5-zh">2.5 项目文件夹（多工程隔离）</h3>
+    <p>配置区的「项目名」不是摆设：填了项目名，这个工程的<b>对话记录、工作流记录、AI 写出的文件</b>都会单独放在
+      <code>exchange\projects\&lt;项目名&gt;\</code> 下，和别的工程互不干扰。</p>
+    <ul>
+      <li><b>建立</b>：输入名字 → 点「建立」，自动建目录并切过去。</li>
+      <li><b>打开</b>：在资源管理器里定位到该项目文件夹。</li>
+      <li><b>清理</b>：删掉整个项目目录（<b>不可恢复</b>，会二次确认）。</li>
+      <li><b>不填</b> = 全局模式，所有记录混在一处；只做一个工程的话这样也行。</li>
+    </ul>
+
+    <h3 id="ch2-6-zh">2.6 界面语言</h3>
+    <p>配置区「界面语言」三档：<b>自动（跟随系统）</b> / 中文 / English。切换后面板重建一次（对话内容保留）。</p>
+    <p class="muted">它只管<b>界面文案</b>；AI 用什么语言回答跟着你<b>最近一句话</b>走（你说中文它就说中文）。</p>
+
+    <h3 id="ch2-7-zh">2.7 清除配置 / 换 Key</h3>
+    <ul>
+      <li><b>显示</b>：把 Key 显示成明文，核对用；核对完别截图外传。</li>
+      <li><b>清除配置</b>：抹掉面板里保存的服务商 / 模型 / Key（会二次确认）。换机器、换账号时用。</li>
+      <li>Key 是<b>明文存在本机</b> <code>config.json</code> 里的，卸载不会自动删（见 3.5）。</li>
+    </ul>
+
+    <h3 id="ch2-8-zh">2.8 AI 长期记忆</h3>
+    <p>AI 会把「这张图定过什么口径、你常用的做法」记在长期记忆文件里，下次开工不用重讲。</p>
+    <ul>
+      <li>位置：<code>server\memory\agent-memory.md</code>（项目模式下按项目分开）。</li>
+      <li>查看 / 编辑：面板「更多 → 查看 AI 记忆」。</li>
+      <li>想让它忘掉：清空那个文件，或用「更多 → 全部清理」。</li>
+      <li class="muted">长期记忆是<b>本地文件</b>，不会上传到任何地方。</li>
+    </ul>
+  </div>
+
+  <div class="en">
+    <h3 id="ch2-1-en">2.1 Get a model API key first</h3>
+    <table>
+      <tr><th>Your situation</th><th>What to fill in</th><th>Notes</th></tr>
+      <tr><td>You already have an account somewhere</td><td>That vendor's OpenAI-compatible URL</td><td>The palette ships presets for a few common ones; follow each vendor's own docs for the exact URL</td></tr>
+      <tr><td>You use a company-purchased service</td><td>The OpenAI-compatible URL your gateway / proxy exposes</td><td>Same idea; the key is your own</td></tr>
+      <tr><td>Self-hosted, or none of the above</td><td>Any OpenAI-compatible endpoint</td><td>URL + key + model name</td></tr>
+    </table>
+        <p class="muted">Which provider to use depends on your own situation: the account you already have, whether your network can reach it, and what your team wants to spend. This manual does not recommend a vendor and makes no promise about a third party's pricing or availability — the order of presets in the palette is UI order, not priority.</p>
+
+    <h3 id="ch2-2-en">2.2 Six fields in the palette</h3>
+    <table>
+      <tr><th>Control</th><th>What to put</th><th>Suggestion</th></tr>
+      <tr><td>Project</td><td>Optional. Isolates chat, workflow records and exports per project</td><td>Name it after the job</td></tr>
+      <tr><td>Language</td><td>Automatic / Chinese / English</td><td>Automatic follows Windows</td></tr>
+      <tr><td>Provider</td><td>Pick one</td><td>—</td></tr>
+      <tr><td>Model</td><td>A model available under that provider</td><td>Keep the default if unsure</td></tr>
+      <tr><td>Key</td><td>Paste your API key</td><td>"Show" to verify, "Clear" to wipe</td></tr>
+      <tr><td>Step limit</td><td>Max steps per task (<b>0 = unlimited</b>)</td><td>Default is fine; 40 if you want a leash</td></tr>
+    </table>
+    <p>Press <b>Save</b>; the status line shows "● Saved".</p>
+
+    <h3 id="ch2-3-en">2.3 Three-step self check</h3>
+    <ol class="steps">
+      <li><b>Status light</b>: "● Ready" means the built-in service is running.</li>
+      <li><b>Press "Ports"</b>: all three should listen (plugin 8080 / MCP 3000 / service 19876).</li>
+      <li><b>Send a question</b>: try "how many objects are in this drawing". An answer means key and network are fine.</li>
+    </ol>
+
+    <h3 id="ch2-4-en">2.4 Switching provider or model</h3>
+    <ul>
+      <li><b>Save again</b>, then press "Restart" so it takes effect.</li>
+      <li>If a model misses the point or calls the wrong methods, it is usually model capability — switch back.</li>
+    </ul>
+
+    <h3 id="ch2-5-en">2.5 Project folder (one folder per job)</h3>
+    <p>The "Project" field is not decoration: with a project name, the <b>chat history, workflow records and any file the AI writes</b> stay under
+      <code>exchange\projects\&lt;name&gt;\</code>, isolated from other jobs.</p>
+    <ul>
+      <li><b>Create</b>: type a name, press "Create" — the folder is made and selected.</li>
+      <li><b>Open</b>: opens that folder in Explorer.</li>
+      <li><b>Clear</b>: deletes the whole project folder (<b>irreversible</b>, asks twice).</li>
+      <li><b>Empty</b> = global mode; everything lands in one place. Fine for a single job.</li>
+    </ul>
+
+    <h3 id="ch2-6-en">2.6 Interface language</h3>
+    <p>Three choices: <b>Automatic (follow Windows)</b> / Chinese / English. Switching rebuilds the palette once; the conversation is kept.</p>
+    <p class="muted">This only affects <b>UI wording</b>. The AI answers in the language of your <b>latest message</b>.</p>
+
+    <h3 id="ch2-7-en">2.7 Clearing the settings / changing the key</h3>
+    <ul>
+      <li><b>Show</b>: reveals the key in plain text for verification — do not screenshot it.</li>
+      <li><b>Clear settings</b>: wipes provider / model / key from the palette (asks twice).</li>
+      <li>The key sits in <b>plain text</b> in <code>config.json</code> on this machine; uninstalling does not delete it (see 3.5).</li>
+    </ul>
+
+    <h3 id="ch2-8-en">2.8 AI long-term memory</h3>
+    <p>The AI keeps a long-term memory file — conventions agreed for this drawing, the way you usually work — so you do not repeat yourself every session.</p>
+    <ul>
+      <li>Location: <code>server\memory\agent-memory.md</code> (per project in project mode).</li>
+      <li>View / edit: "More → View AI memory".</li>
+      <li>To make it forget: empty the file, or "More → Clean everything".</li>
+      <li class="muted">It is a <b>local file</b>; nothing is uploaded.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ==================== 3 ==================== -->
+<section id="ch3">
+  <h2><span class="zh">3 安装后的文件结构</span><span class="en">3 Files on disk</span></h2>
+
+  <div class="zh">
+    <h3 id="ch3-1-zh">3.1 安装目录（<code>C:\Program Files\new-acad</code>）</h3>
+    <table>
+      <tr><th>路径</th><th>是什么</th></tr>
+      <tr><td><code>node.exe</code></td><td>内置 Node 运行时（不依赖你机器上装没装 Node）</td></tr>
+      <tr><td><code>plugin\AcBridge-v24\</code></td><td>CAD 插件本体（<code>Civil3DMcpPlugin.dll</code>）+ 编译脚本</td></tr>
+      <tr><td><code>server\</code></td><td>内置 AI 代理与服务（<code>panel-relay.js</code>、<code>llm-agent.js</code>、工作流模块等）</td></tr>
+      <tr><td><code>knowledge\</code>、<code>i18n\</code></td><td>内置知识库与界面文案</td></tr>
+      <tr><td><code>tools\</code></td><td>辅助脚本（诊断、回归用；普通用户不用碰）</td></tr>
+      <tr><td><code>config.json</code></td><td><b>你的配置</b>（Key / 模型 / 项目 / 端口 / 语言）</td></tr>
+      <tr><td><code>使用手册.html</code></td><td>本文件（离线可用）</td></tr>
+      <tr><td><code>install.ps1</code> / <code>uninstall.ps1</code></td><td>安装 / 卸载脚本（安装器调用）</td></tr>
+      <tr><td><code>server\relay.log</code>、<code>relay-launcher.log</code></td><td>运行日志（出问题先看这里）</td></tr>
+    </table>
+
+    <h3 id="ch3-2-zh">3.2 用户目录（不在安装目录里）</h3>
+    <table>
+      <tr><th>路径</th><th>是什么</th></tr>
+      <tr><td><code>%APPDATA%\Autodesk\ApplicationPlugins\new-acad.bundle\</code></td><td>插件 autoloader 注册目录；CAD 启动时从这里加载插件</td></tr>
+      <tr><td><code>%LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log</code></td><td><b>插件自己的日志</b>（CAD 侧报错、超时、看门狗）</td></tr>
+    </table>
+
+    <h3 id="ch3-3-zh">3.3 数据目录（<code>exchange\</code>）</h3>
+    <p>默认在安装目录下；项目模式下按项目分开。这里是<b>你的数据</b>，卸载不会删。</p>
+    <table>
+      <tr><th>子目录</th><th>内容</th></tr>
+      <tr><td><code>projects\&lt;项目名&gt;\</code></td><td>该项目的对话、工作流记录、工作区</td></tr>
+      <tr><td><code>workflows\</code></td><td>工作流记录 <code>wf-*.json</code>，按月份分文件夹；删掉的进 <code>_trash</code> 可恢复</td></tr>
+      <tr><td><code>agent-work\</code></td><td>AI 的工作区（它写文件默认落这里）</td></tr>
+      <tr><td><code>export\</code> / <code>import\</code></td><td>导出的成果 / 允许导入的入口目录</td></tr>
+      <tr><td><code>trace\</code></td><td>调用轨迹 <code>trace-YYYYMMDD.jsonl</code>（每次调用一行）</td></tr>
+    </table>
+
+    <h3 id="ch3-4-zh">3.4 <code>config.json</code> 字段</h3>
+    <table>
+      <tr><th>字段</th><th>含义</th></tr>
+      <tr><td><code>bridgePort</code> / <code>mcpPort</code> / <code>relayPort</code></td><td>插件 8080 / MCP 3000 / 服务 19876；端口冲突时才改</td></tr>
+      <tr><td><code>locale</code></td><td><code>auto</code> / <code>zh</code> / <code>en</code></td></tr>
+      <tr><td><code>relayMode</code></td><td><code>llm</code> = 用内置 AI 代理（发布版默认）</td></tr>
+      <tr><td><code>llm.provider</code> / <code>baseUrl</code> / <code>model</code></td><td>服务商、地址、模型名</td></tr>
+      <tr><td><code>llm.apiKey</code></td><td><b>你的 Key，明文存在本机</b>——别截图外传，也别提交到任何仓库</td></tr>
+      <tr><td><code>project</code></td><td>当前项目名，空 = 全局模式</td></tr>
+      <tr><td><code>limits</code></td><td>读写体积/字符上限、图片体积上限等安全阈值</td></tr>
+      <tr><td><code>knowledgeSources</code></td><td>只读知识源目录列表</td></tr>
+    </table>
+
+    <h3 id="ch3-5-zh">3.5 能删 / 别动</h3>
+    <table>
+      <tr><th>可以删</th><th>别动</th></tr>
+      <tr>
+        <td><code>server\*.log</code>、<code>exchange\trace\</code> 里很久以前的轨迹、<code>_trash</code> 里确认不要的记录</td>
+        <td><code>config.json</code>（删了要重配）、<code>plugin\</code> 与 <code>server\</code> 下的文件、<code>node.exe</code></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="en">
+    <h3 id="ch3-1-en">3.1 Install folder (<code>C:\Program Files\new-acad</code>)</h3>
+    <table>
+      <tr><th>Path</th><th>What it is</th></tr>
+      <tr><td><code>node.exe</code></td><td>Bundled Node runtime (no system Node needed)</td></tr>
+      <tr><td><code>plugin\AcBridge-v24\</code></td><td>The CAD plugin (<code>Civil3DMcpPlugin.dll</code>) plus build scripts</td></tr>
+      <tr><td><code>server\</code></td><td>Built-in AI proxy and services (<code>panel-relay.js</code>, <code>llm-agent.js</code>, workflow modules)</td></tr>
+      <tr><td><code>knowledge\</code>, <code>i18n\</code></td><td>Bundled knowledge base and UI strings</td></tr>
+      <tr><td><code>tools\</code></td><td>Helper scripts (diagnostics, regression) — end users can ignore</td></tr>
+      <tr><td><code>config.json</code></td><td><b>Your settings</b> (key / model / project / ports / language)</td></tr>
+      <tr><td><code>使用手册.html</code></td><td>This manual (works offline)</td></tr>
+      <tr><td><code>install.ps1</code> / <code>uninstall.ps1</code></td><td>Install / uninstall scripts used by the installer</td></tr>
+      <tr><td><code>server\relay.log</code>, <code>relay-launcher.log</code></td><td>Runtime logs — look here first</td></tr>
+    </table>
+
+    <h3 id="ch3-2-en">3.2 User folders (outside the install dir)</h3>
+    <table>
+      <tr><th>Path</th><th>What it is</th></tr>
+      <tr><td><code>%APPDATA%\Autodesk\ApplicationPlugins\new-acad.bundle\</code></td><td>Autoloader registration; Civil 3D loads the plugin from here</td></tr>
+      <tr><td><code>%LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log</code></td><td><b>The plugin's own log</b> (CAD-side errors, timeouts, watchdog)</td></tr>
+    </table>
+
+    <h3 id="ch3-3-en">3.3 Data folder (<code>exchange\</code>)</h3>
+    <p>Under the install folder by default, or per project in project mode. This is <b>your data</b>; uninstalling keeps it.</p>
+    <table>
+      <tr><th>Subfolder</th><th>Contents</th></tr>
+      <tr><td><code>projects\&lt;name&gt;\</code></td><td>That project's chat, workflow records and work area</td></tr>
+      <tr><td><code>workflows\</code></td><td>Workflow records <code>wf-*.json</code> in month folders; deleted ones move to <code>_trash</code></td></tr>
+      <tr><td><code>agent-work\</code></td><td>The AI's workspace (files it writes land here)</td></tr>
+      <tr><td><code>export\</code> / <code>import\</code></td><td>Exported results / the only folder imports may read from</td></tr>
+      <tr><td><code>trace\</code></td><td>Call traces <code>trace-YYYYMMDD.jsonl</code>, one line per call</td></tr>
+    </table>
+
+    <h3 id="ch3-4-en">3.4 <code>config.json</code> fields</h3>
+    <table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>bridgePort</code> / <code>mcpPort</code> / <code>relayPort</code></td><td>Plugin 8080 / MCP 3000 / service 19876 — change only on a clash</td></tr>
+      <tr><td><code>locale</code></td><td><code>auto</code> / <code>zh</code> / <code>en</code></td></tr>
+      <tr><td><code>relayMode</code></td><td><code>llm</code> = built-in AI proxy (release default)</td></tr>
+      <tr><td><code>llm.provider</code> / <code>baseUrl</code> / <code>model</code></td><td>Provider, endpoint, model name</td></tr>
+      <tr><td><code>llm.apiKey</code></td><td><b>Your key, stored in plain text locally</b> — do not screenshot or commit it</td></tr>
+      <tr><td><code>project</code></td><td>Current project; empty = global mode</td></tr>
+      <tr><td><code>limits</code></td><td>Size/character caps for reads and writes, image cap</td></tr>
+      <tr><td><code>knowledgeSources</code></td><td>Read-only knowledge folders</td></tr>
+    </table>
+
+    <h3 id="ch3-5-en">3.5 Safe to delete / leave alone</h3>
+    <table>
+      <tr><th>Safe to delete</th><th>Leave alone</th></tr>
+      <tr>
+        <td><code>server\*.log</code>, old traces in <code>exchange\trace\</code>, confirmed junk in <code>_trash</code></td>
+        <td><code>config.json</code> (you would re-enter everything), anything under <code>plugin\</code> or <code>server\</code>, <code>node.exe</code></td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<!-- ==================== 4 ==================== -->
+<section id="ch4">
+  <h2><span class="zh">4 面板功能逐项</span><span class="en">4 Every control, one by one</span></h2>
+
+  <div class="zh">
+    <p class="muted">每条都按同一体例：<b>作用 / 会发生什么 / 别这么用</b>。按界面从上到下、从外到内排列。</p>
+
+    <h3 id="ch4-1-zh">4.1 状态栏（面板最下面一行）</h3>
+
+    <h4>状态灯<span class="tag">左下角</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：一眼看内置服务是否活着。</li>
+      <li><b>会看到</b>：「● 就绪」= 正常；「● 离线」= 服务没起来；「● 异常」= 起过但崩了；「思考中」「排队中」「在线」「已回复」是任务状态。</li>
+      <li><b>别这么用</b>：看到「离线」别反复重启 CAD，先点「端口」看是不是服务没起。</li>
+    </ul>
+
+    <h4>折叠 ▲<span class="tag">状态栏最右</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把配置区收起来，只留对话区和输入框。</li>
+      <li><b>会发生什么</b>：只是视觉折叠，配置不改。</li>
+    </ul>
+
+    <h4>重启服务<span class="tag">状态栏右侧</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：重启内置 AI 服务（relay）。改完配置不生效、服务卡住时用。</li>
+      <li><b>会发生什么</b>：面板短暂断开 3~10 秒；<b>对话和任务计划都保留</b>。</li>
+      <li><b>别这么用</b>：正在跑长任务时按，当前任务会中断。</li>
+    </ul>
+
+    <h4>端口<span class="tag">状态栏右侧</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：打开「端口状态诊断」，列出三个端口的真实占用情况。</li>
+      <li><b>会看到</b>：每行是 <code>[✓/✗] 端口 服务名 PID（程序名）</code>；若端口被别的程序占了，会标「← 被其他程序占用！」。</li>
+      <li><b>三个按钮</b>：<b>刷新</b> 重新探测 · <b>复制诊断</b> 把整段结果拷到剪贴板（发给支持时用）· <b>打开配置向导</b> 改端口后重新走一遍配置。</li>
+      <li><b>别这么用</b>：端口冲突时不要硬改 <code>config.json</code> 后不重启，改完必须重启服务。</li>
+    </ul>
+
+    <h4>工具<span class="tag">状态栏右侧</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把消息区切成「工具页签」（看 AI 到底调了什么）。再点一次切回对话。</li>
+      <li><b>会发生什么</b>：只替换消息区，输入框和配置区留着——可以边看调用边说话。</li>
+      <li><b>注意</b>：第一次打开会落在「工作流记录」视图，用页签左上角的按钮可切到「调用流 / 方法目录」。</li>
+    </ul>
+
+    <h4>调用流<span class="tag">状态栏右侧</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：一步到位打开「调用流」视图——就是带<b>通道</b>列那张表（能看到走的是 tcp 还是 mcp）。</li>
+      <li><b>会看到</b>：`时间 / 方法 / 通道 / 耗时 / 字符 / 状态`。状态列里 `✓` 成功、`▶` 进行中、`✗ -32602` 这类是失败码；无逆操作的动作会追加「· 不可撤」。</li>
+      <li><b>注意</b>：表里是<b>本次 CAD 会话</b>的完整流水，关掉面板不会清；想清点「清空」（见 4.4）。</li>
+    </ul>
+
+    <h3 id="ch4-2-zh">4.2 配置区（对话区上方）</h3>
+
+    <h4>项目名 + 打开 / 建立 / 清理<span class="tag">配置区第一行</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把这次工程的对话、工作流记录、AI 写出的文件装进一个独立文件夹。</li>
+      <li><b>会发生什么</b>：「建立」→ 建 <code>exchange\projects\&lt;名字&gt;\</code> 并切过去；「打开」→ 资源管理器定位；「清理」→ 删整个项目目录（<b>不可恢复</b>，二次确认）。</li>
+      <li><b>别这么用</b>：清理前先确认里面没有你要留的工作流记录和导出文件。</li>
+    </ul>
+
+    <h4>界面语言<span class="tag">配置区</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：切面板文案：自动（跟随系统）/ 中文 / English。</li>
+      <li><b>会发生什么</b>：面板立即重建（约 1 秒），对话内容保留。</li>
+      <li><b>注意</b>：它不改 AI 的回复语言——那个跟着你最近一句话走。</li>
+    </ul>
+
+    <h4>选择模型（服务商）/ 模型<span class="tag">配置区</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：选哪家的哪个模型来干活。</li>
+      <li><b>会发生什么</b>：选了服务商会自动拉该家可用模型列表；切模型后需要<b>保存 + 重启服务</b>才生效。</li>
+      <li><b>别这么用</b>：模型太小（参数少）时会频繁调错方法，看着像"插件坏了"，其实是模型不够用。</li>
+    </ul>
+
+    <h4>Key + 显示 / 清除配置<span class="tag">配置区</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：「显示」把 Key 变明文核对；「清除配置」抹掉服务商/模型/Key。</li>
+      <li><b>会发生什么</b>：清除会<b>二次确认</b>；清完必须重新填才能用。</li>
+      <li><b>别这么用</b>：显示状态下截图——那是明文 Key，等于把账号给出去了。</li>
+    </ul>
+
+    <h4>操作上限（步数）<span class="tag">配置区</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：一次任务里 AI 最多能连续执行多少步。</li>
+      <li><b>取值</b>：<b>0 = 不限</b>（一直干到完成）；填正数就是硬上限。</li>
+      <li><b>别这么用</b>：设得太小（比如 5）会导致复杂任务"干到一半说没步骤了"。默认值够用。</li>
+    </ul>
+
+    <h4>保存<span class="tag">配置区</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把这一屏设置写进 <code>config.json</code> 并通知服务。</li>
+      <li><b>会发生什么</b>：状态行显示「● 已保存」；不点保存，改了也不生效。</li>
+    </ul>
+
+    <h3 id="ch4-3-zh">4.3 对话与输入区</h3>
+
+    <h4>输入框 + 发送<span class="tag">底部</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：用大白话下指令。<kbd>Enter</kbd> 发送，<kbd>Esc</kbd> 不会把面板收起来（这是故意的，防止误触）。</li>
+      <li><b>会发生什么</b>：发送后状态变「思考中」，工具页签里能看到它一步步在调方法。</li>
+      <li><b>别这么用</b>：一句话塞三件事。拆开说，出问题好定位。</li>
+    </ul>
+
+    <h4>上传文件<span class="tag">底部按钮行</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把一个本地文件的路径交给 AI，让它自己读（Excel / Word / PDF / 图片 / 文本都可）。</li>
+      <li><b>会发生什么</b>：路径插进输入框；你可以补一句说明再发送。</li>
+      <li><b>注意</b>：不是"粘贴图片"，是给路径；AI 读文件受安全边界限制（见第 6 章）。</li>
+    </ul>
+
+    <h4>取消任务<span class="tag">底部按钮行</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：停掉当前正在执行的任务，<b>保留任务计划</b>（下次能接着干）。</li>
+      <li><b>会发生什么</b>：AI 当前那一步结束后停下，不再继续下一步。</li>
+    </ul>
+
+    <h4>清空会话<span class="tag">底部按钮行</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：清掉当前作用域的聊天记录，<b>保留任务计划</b>。</li>
+      <li><b>会发生什么</b>：弹一次确认（显示要删多少条）；不可恢复。</li>
+      <li><b>别这么用</b>：想"忘掉刚才那段对话"用它；想"放弃这个任务"用「清空任务」。</li>
+    </ul>
+
+    <h4>清空任务<span class="tag">底部按钮行</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：放弃任务计划（<code>activePlan</code>），<b>不动聊天记录</b>。</li>
+      <li><b>三者区别</b>：取消任务=停执行留计划 · 清空会话=清聊天留计划 · 清空任务=丢计划。</li>
+    </ul>
+
+    <h4>更多<span class="tag">底部按钮行</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：一个菜单，装的是不常用但要有入口的东西。</li>
+      <li><b>菜单项</b>：
+        <b>打开知识库文件夹</b>（看内置/用户知识库在哪）·
+        <b>知识源设置（只读引用）</b>（把你的规范/资料文件夹挂进来，<b>只读</b>不改你的文件）·
+        <b>打开配置文件（高级）</b>·
+        <b>查看 AI 记忆</b>（长期记忆文件）· <b>使用手册</b>（打开安装目录里的这份文档）·
+        <b>清理日志</b> / <b>清理缓存</b>（选择集、跨图缓存）/ <b>清理 MISSING 报告</b> / <b>全部清理</b>。</li>
+      <li><b>别这么用</b>：「全部清理」会连任务计划一起清（长期记忆和知识库保留），先确认。</li>
+    </ul>
+
+    <h3 id="ch4-4-zh">4.4 工具页签（点「工具」或「调用流」进来）</h3>
+    <p>这里看 AI 干了什么、把干成功的活存下来重跑、把做错的一步撤回来。</p>
+
+    <h4>模式按钮（左上角）<span class="tag">工具页签</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：在三个视图间循环：<b>调用流 → 方法目录 → 工作流</b>。按钮上写的是"点一下会切到哪个"。</li>
+      <li><b>注意</b>：日志视图是单独入口（下面「撤回上次」），不在这条循环里。</li>
+    </ul>
+
+    <h4>搜索 / 只看失败<span class="tag">工具页签工具栏</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：调用流里按方法名过滤；「只看失败」只留出错的调用。</li>
+      <li><b>用途</b>：任务跑歪了，先点「只看失败」，一眼看到哪一步挂的。</li>
+    </ul>
+
+    <h4>清空<span class="tag">工具页签工具栏</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：<b>按当前视图变化</b>：调用流=清空调用流水（同时清服务端缓存的事件，重连不会回来）；工作流=把记录移到 <code>_trash</code>（可恢复）；日志=「清理失效」只清撤不回的条目；回放中=「停止」。</li>
+      <li><b>别这么用</b>：调用流的「清空」是清显示记录，<b>不动图纸</b>。</li>
+    </ul>
+
+    <h4>导出<span class="tag">工作流视图</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把选中的工作流记录导出成 JSON + Markdown（便于存档、同事之间传）。</li>
+      <li><b>会发生什么</b>：写到 <code>exchange\export\</code>，状态行显示路径。</li>
+    </ul>
+
+    <h4>回放 / 批准 / 开始回放<span class="tag">工作流视图，一个按钮三种含义</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把一条记录重新跑一遍。</li>
+      <li><b>三种状态</b>：空闲时叫「回放」→ 进入计划视图；有绑定表没填时叫「开始回放」；回放过程中叫「批准」，每点一次执行下一步。</li>
+      <li><b>为什么逐步批准</b>：删除类动作（C 档）永远一步一确认，不给"批量放行"。</li>
+      <li><b>别这么用</b>：<b>不能跨图纸回放</b>。换图后引用旧句柄的步骤会被拦下并提示两张图的文件名。</li>
+    </ul>
+
+    <h4>绑定表（改参数重放）<span class="tag">工作流视图</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：把记录里的数值/名称抽成"槽位"，改完再跑一遍。</li>
+      <li><b>会看到</b>：`槽位 / 类型 / 值 / 说明`，值那一列可以直接编辑。</li>
+      <li><b>规则</b>：同值同键会自动合并（改一处，六步全变）；<b>空着不填会被阻断</b>，不会偷偷用旧值；<b>句柄不会成为槽位</b>（那是对象绑定，不是参数）。</li>
+    </ul>
+
+    <h4>计划视图<span class="tag">回放中</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：看这一步一步要怎么走。</li>
+      <li><b>会看到</b>：`步 / 方法 / 档 / 参数 / 状态`。A 档只读、B 档可逆写、C 档破坏性（<b>红色</b>）；下一行标「待确认」。</li>
+      <li><b>会发生什么</b>：点「批准」才执行一步；失败立即停，不再往下跑。</li>
+    </ul>
+
+    <h4>撤回上次<span class="tag">工具页签工具栏</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：打开「动作账本」（日志视图），可以看到本次会话每个动作、并<b>单独撤回某一条</b>。</li>
+      <li><b>会看到</b>：`序号 / 时间 / 干了什么 / 可撤 / 状态`。「可撤/不可撤/已失效」鼠标悬停会给原因。</li>
+      <li><b>右键菜单</b>：<b>撤回这一条</b> · <b>清理撤不回的记录</b> · <b>清空回退清单</b>（后者要<b>点两次</b>确认，8 秒内有效）。</li>
+      <li><b>边界</b>：只对普通 AutoCAD 图元承诺；换图纸清空账本；一条动作撤了不影响旁边的动作。</li>
+    </ul>
+
+    <h3 id="ch4-5-zh">4.5 命令与快捷键</h3>
+    <table>
+      <tr><th>命令 / 键</th><th>作用</th></tr>
+      <tr><td><code>HANK_SHOW</code></td><td>打开面板（等同点插件入口）</td></tr>
+      <tr><td><code>HANK_TOOLS</code></td><td>直接打开工具页签</td></tr>
+      <tr><td><code>C3DMCPSTART</code> / <code>STATUS</code> / <code>STOP</code></td><td>手动启动 / 查状态 / 停止插件的 TCP 服务（排障用）</td></tr>
+      <tr><td><kbd>Enter</kbd>（输入框）</td><td>发送</td></tr>
+      <tr><td><kbd>Esc</kbd>（输入框）</td><td>被刻意拦截：不会让面板收起</td></tr>
+      <tr><td>双击工作流行</td><td>回放这条记录</td></tr>
+      <tr><td>右键工作流行 / 日志行</td><td>导出（工作流）/ 撤回与清理（日志）</td></tr>
+    </table>
+  </div>
+
+  <div class="en">
+    <p class="muted">Every entry uses the same shape: <b>what it does / what happens / when not to use it</b>, ordered outside-in, top to bottom.</p>
+
+    <h3 id="ch4-1-en">4.1 Status bar (bottom row)</h3>
+
+    <h4>Status light<span class="tag">bottom-left</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: at a glance, is the built-in service alive.</li>
+      <li><b>You see</b>: "● Ready" = fine; "● Offline" = service not running; "● Error" = it started and died; "Thinking", "Queued", "Online", "Replied" are task states.</li>
+      <li><b>Do not</b>: restart Civil 3D repeatedly on "Offline" — press "Ports" first.</li>
+    </ul>
+
+    <h4>Collapse ▲<span class="tag">far right</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: folds the settings area away, leaving chat and input.</li>
+      <li><b>Happens</b>: visual only; nothing is changed.</li>
+    </ul>
+
+    <h4>Restart<span class="tag">right side</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: restarts the built-in AI service (relay). Use it when a config change did not take effect or the service is stuck.</li>
+      <li><b>Happens</b>: the palette drops for 3–10 seconds; <b>chat and the task plan are kept</b>.</li>
+      <li><b>Do not</b>: press it while a long task is running — that task is interrupted.</li>
+    </ul>
+
+    <h4>Ports<span class="tag">right side</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: opens "Port status" listing the three ports and who really holds them.</li>
+      <li><b>You see</b>: <code>[✓/✗] port service PID (process)</code>; a port taken by another program is flagged "taken by another program!".</li>
+      <li><b>Three buttons</b>: <b>Refresh</b> · <b>Copy diagnosis</b> (paste into a support message) · <b>Open Setup Wizard</b>.</li>
+      <li><b>Do not</b>: edit <code>config.json</code> ports and forget to restart the service.</li>
+    </ul>
+
+    <h4>Tools<span class="tag">right side</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: swaps the message area for the tools pane (what the AI actually called). Press again to go back.</li>
+      <li><b>Happens</b>: only the message area is replaced — input and settings stay, so you can chat while watching calls.</li>
+      <li><b>Note</b>: the first open lands on workflow records; the mode button at the top-left cycles to call stream / catalog.</li>
+    </ul>
+
+    <h4>Call stream<span class="tag">right side</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: opens the call-stream view directly — the table with the <b>Via</b> column (tcp vs mcp).</li>
+      <li><b>You see</b>: `Time / Method / Via / Took / Chars / Status`. Status shows `✓` ok, `▶` running, `✗ -32602` style failures; steps with no inverse are tagged "no undo".</li>
+      <li><b>Note</b>: it lists <b>this CAD session's</b> calls; closing the pane does not clear it. Use "Clear" (see 4.4).</li>
+    </ul>
+
+    <h3 id="ch4-2-en">4.2 Settings (above the chat)</h3>
+
+    <h4>Project + Open / Create / Clear<span class="tag">first row</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: keep this job's chat, workflow records and AI-written files in one folder.</li>
+      <li><b>Happens</b>: Create makes <code>exchange\projects\&lt;name&gt;\</code> and switches to it; Open shows it in Explorer; Clear deletes it (<b>irreversible</b>, asks twice).</li>
+      <li><b>Do not</b>: clear before checking for workflow records and exports you want to keep.</li>
+    </ul>
+
+    <h4>Language<span class="tag">settings</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: Automatic (follow Windows) / Chinese / English.</li>
+      <li><b>Happens</b>: the palette rebuilds (~1 s); the conversation is kept.</li>
+      <li><b>Note</b>: it does not change the AI's answer language — that follows your latest message.</li>
+    </ul>
+
+    <h4>Provider / Model<span class="tag">settings</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: which vendor and which model does the work.</li>
+      <li><b>Happens</b>: picking a provider loads its model list; after switching, <b>Save then Restart</b>.</li>
+      <li><b>Do not</b>: blame the plugin when a small model keeps calling the wrong methods — that is model capability.</li>
+    </ul>
+
+    <h4>Key + Show / Clear settings<span class="tag">settings</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: Show reveals the key; Clear wipes provider/model/key.</li>
+      <li><b>Happens</b>: clearing asks twice; you must re-enter everything afterwards.</li>
+      <li><b>Do not</b>: screenshot the key while it is revealed.</li>
+    </ul>
+
+    <h4>Step limit<span class="tag">settings</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: the maximum number of steps the AI may run in one task.</li>
+      <li><b>Values</b>: <b>0 = unlimited</b>; any positive number is a hard cap.</li>
+      <li><b>Do not</b>: set it very low (say 5) — complex tasks then stop half way with "out of steps".</li>
+    </ul>
+
+    <h4>Save<span class="tag">settings</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: writes this screen into <code>config.json</code> and tells the service.</li>
+      <li><b>Happens</b>: the status line shows "● Saved". Nothing you changed applies until you save.</li>
+    </ul>
+
+    <h3 id="ch4-3-en">4.3 Chat and input</h3>
+
+    <h4>Input + Send<span class="tag">bottom</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: plain-language instructions. <kbd>Enter</kbd> sends; <kbd>Esc</kbd> is swallowed on purpose so the palette cannot collapse by accident.</li>
+      <li><b>Happens</b>: the status turns "Thinking" and the tools pane shows each call as it happens.</li>
+      <li><b>Do not</b>: pack three requests into one sentence. One at a time is easier to debug.</li>
+    </ul>
+
+    <h4>Upload<span class="tag">button row</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: hands a local file path to the AI so it reads it (Excel / Word / PDF / image / text).</li>
+      <li><b>Happens</b>: the path is inserted into the input box; add a note, then send.</li>
+      <li><b>Note</b>: it passes a path, not a pasted image; reading is subject to the file boundary (chapter 6).</li>
+    </ul>
+
+    <h4>Cancel task<span class="tag">button row</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: stops the running task but <b>keeps the plan</b>, so you can resume.</li>
+      <li><b>Happens</b>: the current step finishes, nothing further is dispatched.</li>
+    </ul>
+
+    <h4>Clear chat<span class="tag">button row</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: deletes the chat history in the current scope, <b>keeps the task plan</b>.</li>
+      <li><b>Happens</b>: one confirmation showing how many messages will go; irreversible.</li>
+      <li><b>Do not</b>: mix it up with "Clear plan" — that drops the plan instead.</li>
+    </ul>
+
+    <h4>Clear plan<span class="tag">button row</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: drops <code>activePlan</code> without touching the chat.</li>
+      <li><b>Three of them</b>: Cancel = stop, keep plan · Clear chat = wipe chat, keep plan · Clear plan = drop plan.</li>
+    </ul>
+
+    <h4>More<span class="tag">button row</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: the menu for everything that needs a door but not a button.</li>
+      <li><b>Items</b>: <b>Open knowledge folder</b> · <b>Knowledge sources (read-only)</b> — mount your standards folder, nothing is modified ·
+        <b>Open config file</b> · <b>View AI memory</b> · <b>User Guide</b> (opens this document from the install folder) · <b>Clean logs</b> / <b>Clean cache</b> (selection, cross-drawing) / <b>Clean MISSING reports</b> / <b>Clean everything</b>.</li>
+      <li><b>Do not</b>: "Clean everything" also drops the task plan (long-term memory and knowledge are kept).</li>
+    </ul>
+
+    <h3 id="ch4-4-en">4.4 Tools pane (via "Tools" or "Call stream")</h3>
+    <p>Where you see what the AI did, save a task that worked, and revert a single wrong step.</p>
+
+    <h4>Mode button (top-left)<span class="tag">tools pane</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: cycles three views: <b>call stream → method catalog → workflows</b>. The label says where the next click goes.</li>
+      <li><b>Note</b>: the journal has its own entry ("Undo last"), it is not in this cycle.</li>
+    </ul>
+
+    <h4>Search / Failed only<span class="tag">tools toolbar</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: filter the call stream by method name; "Failed only" keeps errors.</li>
+      <li><b>Use it</b>: when a task goes wrong, hit "Failed only" and look at the one step that broke.</li>
+    </ul>
+
+    <h4>Clear<span class="tag">tools toolbar</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: behaves per view — call stream: clears the session call log (and the service-side event buffer, so a reconnect does not bring it back); workflows: moves records to <code>_trash</code>; journal: "Clear stale" prunes entries that can never be reverted; during replay: "Stop".</li>
+      <li><b>Do not</b>: expect it to touch the drawing — it only clears records.</li>
+    </ul>
+
+    <h4>Export<span class="tag">workflow view</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: exports the selected workflow as JSON + Markdown (archive it, hand it to a colleague).</li>
+      <li><b>Happens</b>: written to <code>exchange\export\</code>; the status line shows the path.</li>
+    </ul>
+
+    <h4>Replay / Approve / Start replay<span class="tag">one button, three meanings</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: runs a record again.</li>
+      <li><b>States</b>: idle = "Replay" (opens the plan); binding table open = "Start replay"; during replay = "Approve", one click per step.</li>
+      <li><b>Why step by step</b>: destructive steps (tier C) always need a per-step confirmation — there is no batch approval for them.</li>
+      <li><b>Do not</b>: replay across drawings. Steps using handles from the recorded file are blocked, and the message names both files.</li>
+    </ul>
+
+    <h4>Binding table (re-run with new parameters)<span class="tag">workflow view</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: turns numbers/names in the record into slots you can edit before re-running.</li>
+      <li><b>You see</b>: `slot / type / value / note`; the value column is editable.</li>
+      <li><b>Rules</b>: identical values collapse into one slot (change once, all six steps follow); <b>an empty slot blocks the run</b> instead of silently reusing the old value; <b>handles never become slots</b>.</li>
+    </ul>
+
+    <h4>Plan view<span class="tag">during replay</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: shows how the replay will proceed.</li>
+      <li><b>You see</b>: `step / method / tier / params / state`; A = read-only, B = reversible write, C = destructive (<b>red</b>); the next row is marked "needs confirmation".</li>
+      <li><b>Happens</b>: each "Approve" runs exactly one step; a failure stops the run immediately.</li>
+    </ul>
+
+    <h4>Undo last<span class="tag">tools toolbar</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: opens the action journal, where each action can be reverted <b>on its own</b>.</li>
+      <li><b>You see</b>: `# / time / what it did / undoable / state`; hovering a blocked row explains why.</li>
+      <li><b>Right-click</b>: <b>Revert this step</b> · <b>Clear entries that cannot be reverted</b> · <b>Clear the whole journal</b> (the last one needs <b>two clicks</b> within 8 seconds).</li>
+      <li><b>Limits</b>: plain AutoCAD entities only; switching drawings clears the journal; reverting one step never touches its neighbours.</li>
+    </ul>
+
+    <h3 id="ch4-5-en">4.5 Commands and keys</h3>
+    <table>
+      <tr><th>Command / key</th><th>What it does</th></tr>
+      <tr><td><code>HANK_SHOW</code></td><td>Opens the palette</td></tr>
+      <tr><td><code>HANK_TOOLS</code></td><td>Opens the tools pane directly</td></tr>
+      <tr><td><code>C3DMCPSTART</code> / <code>STATUS</code> / <code>STOP</code></td><td>Start / inspect / stop the plugin's TCP service (troubleshooting)</td></tr>
+      <tr><td><kbd>Enter</kbd> in the input</td><td>Send</td></tr>
+      <tr><td><kbd>Esc</kbd> in the input</td><td>Swallowed on purpose so the palette cannot collapse</td></tr>
+      <tr><td>Double-click a workflow row</td><td>Replay that record</td></tr>
+      <tr><td>Right-click a workflow / journal row</td><td>Export (workflow) / revert and clean (journal)</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ==================== 5 ==================== -->
+<section id="ch5">
+  <h2><span class="zh">5 典型场景</span><span class="en">5 Typical tasks</span></h2>
+
+  <div class="zh">
+    <h3 id="ch5-1-zh">5.1 画一张图：从选中到成图</h3>
+    <ol class="steps">
+      <li>在 CAD 里选中对象（或者不选，让它自己按条件找）。</li>
+      <li>说：「把这些多段线的每个节点画一个直径 100 的圆」。</li>
+      <li>看工具页签：它会先 `getSelection` → 读顶点 → 逐个 `createCircle`。</li>
+      <li>不满意就让它改：「直径改成 60」——它会重画或改属性。</li>
+    </ol>
+
+    <h3 id="ch5-2-zh">5.2 按图层批量处理</h3>
+    <p>「把 GC-DGX 图层上的高程点全部改成颜色 3，并把 z=0 的挑出来告诉我」。<br>
+      它会用 <code>analyzeLayer</code> 先看这一层长什么样，再决定过滤条件——比你自己一个个点快。</p>
+
+    <h3 id="ch5-3-zh">5.3 出量</h3>
+    <p>「统计这个曲面的面积、最大最小高程」·「把这些线的总长度算出来，按图层分组」。<br>
+      <span class="muted">涉及计算的都会回给你算式和结果，不是拍一个数。</span></p>
+
+    <h3 id="ch5-4-zh">5.4 上传文件 / 图片 → CAD（描摹）</h3>
+    <ol class="steps">
+      <li>点「上传文件」，选一张平面图图片或 PDF。</li>
+      <li>说：「把这张图里的墙体线条描成多段线」。</li>
+      <li>它会走<b>描摹</b>通道：色块分区 → 取边界 → 拟合成线。</li>
+      <li>档位建议 2–12 档；<b>高色阶（≥16）块数会衰减</b>，这是已知限制。</li>
+    </ol>
+
+    <h3 id="ch5-5-zh">5.5 文件通道：成千上万个点</h3>
+    <p>把 CSV 交给它：「读这个文件的高程点，全部建到 PW 图层」。<br>
+      这种量级的活走<b>文件通道</b>，不会把几万个点塞进对话，速度和稳定性都好得多。</p>
+
+    <h3 id="ch5-6-zh">5.6 工作流：干过一次，下次带新参数重跑</h3>
+    <ol class="steps">
+      <li>第一次：说「选中这排圆，往外偏移 50」。它跑完，记录自动存进「工作流」。</li>
+      <li>打开工具页签 → 工作流 → 选中那条记录。</li>
+      <li>点「回放」→ 出现<b>绑定表</b>：`distance = 50` 这类槽位，改你要的值。</li>
+      <li>点「开始回放」→ 逐条确认 → 跑完。</li>
+
+    </ol>
+    <div class="callout warn">
+      <span class="t">两条硬规矩</span>
+      <ul>
+        <li><b>必须在同一张图里回放</b>：记录里的句柄只在那张图有效，换图会被拦下（提示会告诉你哪张图 vs 哪张图）。</li>
+        <li><b>槽位不能空着</b>：空着就阻断，不会偷偷用旧值。</li>
+      </ul>
+    </div>
+
+    <h3 id="ch5-7-zh">5.7 撤错了一步</h3>
+    <ol class="steps">
+      <li>工具页签 →「撤回上次」进入动作账本。</li>
+      <li>找到那一步（默认按时间倒序，最新的在上面）。</li>
+      <li>右键 →「撤回这一条」，或选中后点按钮。</li>
+      <li>它只撤这一条，<b>旁边的动作不受影响</b>；状态行会报「恢复 N · 删除 M」。</li>
+    </ol>
+    <p class="muted">撤不回的（purge / 脚本 / Civil 3D 对象）会标「不可撤」并给原因，不会假装成功。</p>
+
+    <h3 id="ch5-8-zh">5.8 把公司规范喂给它</h3>
+    <ol class="steps">
+      <li>「更多 → 知识源设置（只读引用）」→ 添加你的规范文件夹。</li>
+      <li>之后提问会自动引用：「按我们公司的图层命名规则，这层应该叫什么？」</li>
+      <li><b>只读</b>：它不会修改、移动、复制你的源文件。</li>
+    </ol>
+  </div>
+
+  <div class="en">
+    <h3 id="ch5-1-en">5.1 Draw something</h3>
+    <ol class="steps">
+      <li>Select objects in CAD (or select nothing and let it search).</li>
+      <li>Say: "put a 100-diameter circle at every vertex of these polylines".</li>
+      <li>Watch the tools pane: `getSelection` → read vertices → `createCircle` one by one.</li>
+      <li>Not happy? "make the diameter 60" — it redraws or edits.</li>
+    </ol>
+
+    <h3 id="ch5-2-en">5.2 Batch by layer</h3>
+    <p>"Colour everything on layer GC-DGX as colour 3, and tell me which points have z=0."<br>
+      It inspects the layer with <code>analyzeLayer</code> first and then picks the filter — faster than clicking one by one.</p>
+
+    <h3 id="ch5-3-en">5.3 Quantities</h3>
+    <p>"Area and elevation range of this surface" · "total length of these lines, grouped by layer".<br>
+      <span class="muted">Actual computations come back with the formula and the number, not a guess.</span></p>
+
+    <h3 id="ch5-4-en">5.4 Upload files or images → CAD (tracing)</h3>
+    <ol class="steps">
+      <li>Press "Upload" and pick a plan image or PDF.</li>
+      <li>Say: "trace the wall lines in this image into polylines".</li>
+      <li>It uses the <b>trace</b> pipeline: colour regions → boundaries → fitted lines.</li>
+      <li>2–12 levels is the sweet spot; <b>at 16+ levels the block count falls off</b> — a known limit.</li>
+    </ol>
+
+    <h3 id="ch5-5-en">5.5 File channel: tens of thousands of points</h3>
+    <p>Hand it a CSV: "read the point file and create them all on layer PW".<br>
+      That volume goes through the <b>file channel</b> — it never floods the chat, and it is far faster and steadier.</p>
+
+    <h3 id="ch5-6-en">5.6 Workflows: run it once, re-run with new numbers</h3>
+    <ol class="steps">
+      <li>First run: "select this row of circles, offset them outward by 50". The record is saved automatically.</li>
+      <li>Tools pane → workflows → pick that record.</li>
+      <li>Press "Replay" → the <b>binding table</b> appears (`distance = 50` and friends). Edit the values.</li>
+      <li>Press "Start replay" → approve step by step → done.</li>
+    </ol>
+    <div class="callout warn">
+      <span class="t">Two hard rules</span>
+      <ul>
+        <li><b>Replay in the same drawing</b>: handles only mean something there. Another drawing is refused, and the message names both files.</li>
+        <li><b>A slot cannot be left empty</b>: an empty slot blocks the run instead of quietly reusing the old value.</li>
+      </ul>
+    </div>
+
+    <h3 id="ch5-7-en">5.7 Revert one wrong step</h3>
+    <ol class="steps">
+      <li>Tools pane → "Undo last" opens the action journal.</li>
+      <li>Find that step (newest first).</li>
+      <li>Right-click → "Revert this step", or select and press the button.</li>
+      <li>Only that action is undone — <b>its neighbours are untouched</b>; the status line reports "restored N · erased M".</li>
+    </ol>
+    <p class="muted">What cannot be reverted (purge / scripts / Civil 3D objects) is marked "cannot be reverted" with the reason, never a fake success.</p>
+
+    <h3 id="ch5-8-en">5.8 Feed it your company standards</h3>
+    <ol class="steps">
+      <li>"More → Knowledge sources (read-only)" → add your standards folder.</li>
+      <li>Then ask: "under our layer naming rule, what should this layer be called?"</li>
+      <li><b>Read-only</b>: your source files are never modified, moved or copied.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ==================== 6 ==================== -->
+<section id="ch6">
+  <h2><span class="zh">6 能力边界与已知限制</span><span class="en">6 Limits</span></h2>
+
+  <div class="zh">
+    <p class="lead">这一章是用来<b>减少误会</b>的：下面每一条都是设计如此，不是 bug。</p>
+
+    <h3 id="ch6-1-zh">6.1 版本与运行环境</h3>
+    <ul>
+          <li><b>AutoCAD 2025 / 2026</b>（装了 Civil 3D 则含全套专业能力）；2024 及更早不支持（运行时不同）。</li>
+          <li>只支持 64 位 Windows 10 / 11。</li>
+        </ul>
+
+    <h3 id="ch6-2-zh">6.2 撤销的范围</h3>
+    <ul>
+      <li>只对<b>普通 AutoCAD 图元</b>承诺：线 / 多段线 / 圆 / 弧 / 文字 / 点 / 块参照。</li>
+      <li>Civil 3D 对象（路线 / 曲面 / 廊道 / 管网）标 <b>unsupported-object</b>，不做快照。</li>
+      <li><code>purge</code> / 执行脚本 / 写文件这类<b>无逆操作</b>，标 <b>no-inverse</b>，不假装能撤。</li>
+      <li>账本随图纸走：<b>换图清空</b>；条目上限 200，快照对象上限 500，超了标 <b>expired</b>。</li>
+      <li>恢复出来的对象是<b>新句柄</b>；引用了旧句柄的后续动作会被标 <b>handle-stale</b>。</li>
+    </ul>
+
+    <h3 id="ch6-3-zh">6.3 工作流回放的边界</h3>
+    <ul>
+      <li><b>不能跨图纸</b>：句柄属于单张图。换图后引用外源句柄的步骤被拦下。</li>
+      <li>记录里<b>本来就失败</b>的步骤不会回放（那是缺陷痕迹，不是指令）。</li>
+      <li><b>本地工具</b>（读知识库之类，不走 CAD）不算可回放步骤。</li>
+      <li>回放分档：A 只读（自动跑）/ B 可逆写（要确认，信任足可批量）/ <b>C 破坏性（永远逐步确认）</b>。</li>
+      <li>槽位（换参数）只认数值 / 名称 / 路径；<b>句柄永远是对象绑定，不是槽位</b>。</li>
+    </ul>
+
+    <h3 id="ch6-4-zh">6.4 描摹（图片 → 矢量）的边界</h3>
+    <ul>
+      <li>适合：色块清晰、比例约定明确的平面图 / 立面图。</li>
+      <li><b>高色阶（≥16 档）块数会衰减</b>：档位越高每档区域越小，容易被吸收或丢弃。建议 2–12 档。</li>
+      <li>结果会如实回报 `requestedLevels` / `effectiveLevels` 与告警，不会假装满档。</li>
+      <li>手绘图、低对比度扫描件效果有限。</li>
+    </ul>
+
+    <h3 id="ch6-5-zh">6.5 文件读写边界</h3>
+    <ul>
+      <li><b>导出全盘放行</b>：你明说路径就写到哪（那是你的成果）。</li>
+      <li><b>导入限定目录</b>：只允许用户目录、程序目录和 <code>exchange\import</code>；网络路径要先映射盘符。</li>
+      <li>敏感路径（<code>config.json</code>、<code>.env</code>、密钥文件、<code>.git</code>）禁止写。</li>
+      <li>读被 CAD / Word 占用的文件走共享读，不会因为锁住就失败。</li>
+    </ul>
+
+    <h3 id="ch6-6-zh">6.6 方法与能力</h3>
+    <ul>
+      <li><b>14 个方法底层走命令通道</b>（托管 API 缺口）：10 个投递即返回、拿不到同步结果（render / undo / redo / 数据快捷方式 / SSA 等），3 个可回读（setVisualStyle / selectByCriteria / selectEntities），runLisp 按设计不返回值；带 25 秒超时兜底。fillet / chamfer / stretch / dimAngular / sectionPlane / convertTo* 已改为几何自研或真 API，同步返回；trim / extend / overkill 的命令版**已停投命令**，请用 trimEntityGeo / extendEntityGeo / overkillGeo。</li>
+      <li>全量方法清单以面板「方法目录」或 <code>listMethods</code> 为准（当前 426 个）。</li>
+    </ul>
+
+    <h3 id="ch6-7-zh">6.7 性能与大图纸</h3>
+    <ul>
+      <li>大图纸有分页 / 本地聚合 / 上下文压缩，不会把整张图塞给模型。</li>
+      <li>一次返回结果过大会自动降级为"结构化画像 + 让你取全量"，避免撑爆上下文。</li>
+      <li>Civil 3D 的"内部再生"（比如廊道曲面首次构建）可能几十秒到几分钟，属正常，不要强杀。</li>
+    </ul>
+
+    <h3 id="ch6-8-zh">6.8 交互式命令</h3>
+    <ul>
+      <li>少数命令型方法在命令行等输入时会卡住；插件有看门狗自动关对话框并解锁，但个别交互路径无法保证。</li>
+      <li>真卡住了：面板「重启服务」，或命令行 <code>C3DMCPSTOP</code> 后重启 CAD。</li>
+    </ul>
+  </div>
+
+  <div class="en">
+    <p class="lead">This chapter exists to <b>prevent misunderstandings</b>: everything below is by design, not a bug.</p>
+
+    <h3 id="ch6-1-en">6.1 Version and runtime</h3>
+    <ul>
+          <li><b>AutoCAD 2025 / 2026</b> (with Civil 3D installed, the full civil toolkit is available); 2024 and earlier are not supported (different runtime).</li>
+          <li>64-bit Windows 10 / 11 only.</li>
+        </ul>
+
+    <h3 id="ch6-2-en">6.2 What undo covers</h3>
+    <ul>
+      <li>Only <b>plain AutoCAD entities</b>: line / polyline / circle / arc / text / point / block reference.</li>
+      <li>Civil 3D objects (alignment / surface / corridor / pipe network) are marked <b>unsupported-object</b>; no snapshot is taken.</li>
+      <li><code>purge</code>, scripting and file writes have <b>no inverse</b> — marked <b>no-inverse</b> instead of pretending.</li>
+      <li>The journal follows the drawing: <b>switching drawings clears it</b>. Caps: 200 entries / 500 snapshot objects; beyond that entries are marked <b>expired</b>.</li>
+      <li>A restored object comes back with a <b>new handle</b>; later actions referencing the old one are marked <b>handle-stale</b>.</li>
+    </ul>
+
+    <h3 id="ch6-3-en">6.3 Workflow replay limits</h3>
+    <ul>
+      <li><b>Not across drawings</b>: handles belong to one file; steps reading foreign handles are blocked.</li>
+      <li>Steps that <b>already failed</b> in the record are not replayed.</li>
+      <li><b>Local tools</b> (reading the knowledge base and the like) are not replayable CAD steps.</li>
+      <li>Tiers: A read-only (runs itself) / B reversible write (confirm; trust may allow batches) / <b>C destructive (always step by step)</b>.</li>
+      <li>Slots cover numbers / names / paths only; <b>a handle is an object binding, never a slot</b>.</li>
+    </ul>
+
+    <h3 id="ch6-4-en">6.4 Tracing limits (raster → vectors)</h3>
+    <ul>
+      <li>Good for clean colour blocks with a known scale: plans, elevations.</li>
+      <li><b>At 16+ levels the block count falls off</b>; 2–12 levels is the sweet spot.</li>
+      <li>Results report `requestedLevels` / `effectiveLevels` and warnings honestly.</li>
+      <li>Hand drawings and low-contrast scans are hit and miss.</li>
+    </ul>
+
+    <h3 id="ch6-5-en">6.5 File boundaries</h3>
+    <ul>
+      <li><b>Export is open</b>: say a path, it writes there (your output).</li>
+      <li><b>Import is restricted</b> to the user folder, the program folder and <code>exchange\import</code>; network paths need a mapped drive.</li>
+      <li>Writes to sensitive paths (<code>config.json</code>, <code>.env</code>, key files, <code>.git</code>) are refused.</li>
+      <li>Files locked by CAD or Word are read with sharing — a lock does not fail the read.</li>
+    </ul>
+
+    <h3 id="ch6-6-en">6.6 Methods</h3>
+    <ul>
+      <li><b>14 methods fall back to the command channel</b> (managed-API gaps): 10 dispatch a command and return &quot;queued&quot; with no synchronous result (render / undo / redo / data shortcuts / SSA), 3 can be verified (setVisualStyle / selectByCriteria / selectEntities), and runLisp returns nothing by design; a 25 s timeout guard applies. fillet / chamfer / stretch / dimAngular / sectionPlane / convertTo* are now custom geometry or real API calls and return synchronously; the command versions of trim / extend / overkill no longer dispatch anything &mdash; use trimEntityGeo / extendEntityGeo / overkillGeo.</li>
+      <li>The authoritative list is the "method catalog" or <code>listMethods</code> (426 at the moment).</li>
+    </ul>
+
+    <h3 id="ch6-7-en">6.7 Performance on large drawings</h3>
+    <ul>
+      <li>Pagination, local aggregation and context compression keep a whole drawing out of the model prompt.</li>
+      <li>An oversized result degrades to a structured profile plus "ask for the full set" instead of blowing the context.</li>
+      <li>Civil 3D internal regeneration (first corridor surface build, say) can take from tens of seconds to minutes. That is normal — do not kill it.</li>
+    </ul>
+
+    <h3 id="ch6-8-en">6.8 Interactive commands</h3>
+    <ul>
+      <li>A few command-style methods can stall while the command line waits for input. The watchdog closes the dialog and unlocks, but not every interactive path can be guaranteed.</li>
+      <li>If it truly hangs: "Restart" in the palette, or <code>C3DMCPSTOP</code> then restart Civil 3D.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ==================== 7 ==================== -->
+<section id="ch7">
+  <h2><span class="zh">7 常见问题与日志</span><span class="en">7 FAQ &amp; logs</span></h2>
+
+  <div class="zh">
+    <h3 id="ch7-1-zh">7.1 面板弹不出来</h3>
+    <ul>
+      <li>命令行输 <code>HANK_SHOW</code> 看有没有反应。</li>
+      <li>没反应 → 插件没加载：检查 CAD 版本是否 2025/2026；重装一次；看 <code>plugin.log</code> 有没有加载错误。</li>
+      <li>有反应但面板在屏幕外 → 用命令行 <code>HANK_TOOLS</code> 再试，或重启 CAD。</li>
+    </ul>
+
+    <h3 id="ch7-2-zh">7.2 状态显示「离线」</h3>
+    <ul>
+      <li>点「端口」看 19876 有没有监听；没有就点「重启服务」。</li>
+      <li>还不行 → 看 <code>server\relay-launcher.log</code>（服务反复重启的原因通常在这里）。</li>
+      <li>端口被别的程序占了 → 诊断窗口会标出来，改用别的端口后重启服务。</li>
+    </ul>
+
+    <h3 id="ch7-3-zh">7.3 调用超时 / 一直转圈</h3>
+    <ul>
+      <li>先看是不是 Civil 3D 自己在忙（大曲面、廊道再生）。</li>
+      <li>任务卡住 → 点「取消任务」；再不行「重启服务」。</li>
+      <li>反复超时 → 把 <code>exchange\trace\trace-YYYYMMDD.jsonl</code> 最近几十行发出来，能直接定位是哪一步。</li>
+    </ul>
+
+    <h3 id="ch7-4-zh">7.4 模型报错</h3>
+    <table>
+      <tr><th>现象</th><th>多半是</th><th>怎么办</th></tr>
+      <tr><td><code>401</code></td><td>Key 错 / 过期 / 余额为 0</td><td>换 Key，保存后重启服务</td></tr>
+      <tr><td><code>429</code></td><td>请求太频</td><td>等一会儿；或换一家</td></tr>
+      <tr><td><code>404</code> / 模型不存在</td><td>模型名写错，或该账号没开通</td><td>重新选模型</td></tr>
+      <tr><td>答非所问、乱调方法</td><td>模型能力不够</td><td>换更强的模型</td></tr>
+    </table>
+
+    <h3 id="ch7-5-zh">7.5 中文显示成乱码 / 问号</h3>
+    <ul>
+      <li>先确认是不是<b>控制台渲染</b>问题（Windows 控制台对 UTF-8 支持差）。</li>
+      <li>面板里乱码：把界面语言切一次再切回来；仍乱 → 把那份文件发给支持。</li>
+    </ul>
+
+    <h3 id="ch7-6-zh">7.6 强杀 CAD 后弹出「图形修复」</h3>
+    <p>强杀后再次启动 CAD 会弹图形修复窗口，它会挡住命令执行。关掉那个窗口即可（选"否"或直接关闭）。</p>
+
+    <h3 id="ch7-7-zh">7.7 怎么把现场发给支持</h3>
+    <ol class="steps">
+      <li>点「端口 → 复制诊断」，粘贴进消息。</li>
+      <li>附上四个日志（见下表），尤其是出错时间前后 100 行。</li>
+      <li>说清楚：你说了什么话、期望什么、实际发生了什么。</li>
+    </ol>
+    <table>
+      <tr><th>日志</th><th>路径</th><th>看什么</th></tr>
+      <tr><td>服务日志</td><td><code>C:\Program Files\new-acad\server\relay.log</code></td><td>模型调用、任务进度、错误码</td></tr>
+      <tr><td>服务守护日志</td><td><code>...\server\relay-launcher.log</code></td><td>服务反复重启的原因</td></tr>
+      <tr><td>插件日志</td><td><code>%LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log</code></td><td>CAD 侧报错、超时、看门狗</td></tr>
+      <tr><td>调用轨迹</td><td><code>...\exchange\trace\trace-YYYYMMDD.jsonl</code></td><td>每次调用的参数 / 耗时 / 结果</td></tr>
+    </table>
+    <div class="callout danger">
+      <span class="t">发日志前先扫一眼</span>
+      日志和轨迹里可能出现你的文件路径、图层名、<b>Key 的部分字符</b>。介意的话先把 Key 那几段打码。
+    </div>
+
+    <h3 id="ch7-8-zh">7.8 技术支持</h3>
+    <p>项目主页：<a href="https://github.com/Jjo37/new-acad">github.com/Jjo37/new-acad</a>（问题请走 Issues，附上 7.7 的材料）。</p>
+  </div>
+
+  <div class="en">
+    <h3 id="ch7-1-en">7.1 The palette will not open</h3>
+    <ul>
+      <li>Type <code>HANK_SHOW</code> in the command line.</li>
+      <li>No reaction → the plugin is not loaded: check Civil 3D is 2025/2026, reinstall, and read <code>plugin.log</code>.</li>
+      <li>Reacting but off-screen → try <code>HANK_TOOLS</code>, or restart CAD.</li>
+    </ul>
+
+    <h3 id="ch7-2-en">7.2 Status says "Offline"</h3>
+    <ul>
+      <li>Press "Ports" and check 19876; if nothing listens, press "Restart".</li>
+      <li>Still down → read <code>server\relay-launcher.log</code> (that is where repeated restarts explain themselves).</li>
+      <li>Port taken by another program → the dialog flags it; change the port and restart.</li>
+    </ul>
+
+    <h3 id="ch7-3-en">7.3 Timeouts / endless spinner</h3>
+    <ul>
+      <li>First check whether Civil 3D is busy itself (big surface, corridor rebuild).</li>
+      <li>Task stuck → "Cancel task"; if that fails, "Restart".</li>
+      <li>Repeated timeouts → send the last lines of <code>exchange\trace\trace-YYYYMMDD.jsonl</code>; that pinpoints the step.</li>
+    </ul>
+
+    <h3 id="ch7-4-en">7.4 Model errors</h3>
+    <table>
+      <tr><th>Symptom</th><th>Usually</th><th>Fix</th></tr>
+      <tr><td><code>401</code></td><td>Bad / expired key, or no balance</td><td>New key, save, restart</td></tr>
+      <tr><td><code>429</code></td><td>Rate limit</td><td>Wait, or switch provider</td></tr>
+      <tr><td><code>404</code> / unknown model</td><td>Typo'd model, or not enabled on the account</td><td>Pick the model again</td></tr>
+      <tr><td>Nonsense answers, wrong methods</td><td>Model too weak</td><td>Use a stronger model</td></tr>
+    </table>
+
+    <h3 id="ch7-5-en">7.5 Garbled Chinese / question marks</h3>
+    <ul>
+      <li>Rule out the <b>console</b> first: Windows consoles render UTF-8 badly.</li>
+      <li>Garbled inside the palette: switch the UI language away and back; if it persists, send the file to support.</li>
+    </ul>
+
+    <h3 id="ch7-6-en">7.6 "Drawing recovery" after killing CAD</h3>
+    <p>If Civil 3D was killed, the next start shows a drawing-recovery window that blocks command execution. Close it (choose No, or just close the window).</p>
+
+    <h3 id="ch7-7-en">7.7 What to send support</h3>
+    <ol class="steps">
+      <li>Press "Ports → Copy diagnosis" and paste it.</li>
+      <li>Attach the four logs below, roughly 100 lines around the failure.</li>
+      <li>Say what you asked for, what you expected, what happened.</li>
+    </ol>
+    <table>
+      <tr><th>Log</th><th>Path</th><th>What it tells you</th></tr>
+      <tr><td>Service</td><td><code>C:\Program Files\new-acad\server\relay.log</code></td><td>Model calls, task progress, error codes</td></tr>
+      <tr><td>Launcher</td><td><code>...\server\relay-launcher.log</code></td><td>Why the service keeps restarting</td></tr>
+      <tr><td>Plugin</td><td><code>%LOCALAPPDATA%\Civil3DMcpPlugin\plugin.log</code></td><td>CAD-side errors, timeouts, watchdog</td></tr>
+      <tr><td>Trace</td><td><code>...\exchange\trace\trace-YYYYMMDD.jsonl</code></td><td>Per-call parameters, duration, result</td></tr>
+    </table>
+    <div class="callout danger">
+      <span class="t">Glance before you send</span>
+      Logs and traces can contain your file paths, layer names and <b>parts of your key</b>. Mask those if it matters.
+    </div>
+
+    <h3 id="ch7-8-en">7.8 Support</h3>
+    <p>Project home: <a href="https://github.com/Jjo37/new-acad">github.com/Jjo37/new-acad</a> (please use Issues and include the material from 7.7).</p>
+  </div>
+</section>
+
+<footer>
+  <span class="zh">new-acad 使用手册 · 对应版本 v1.12.0 · 2026-10-23</span>
+  <span class="en">new-acad User Guide · for version v1.12.0 · 2026-10-23</span>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function () {
+  var body = document.body;
+  var buttons = document.querySelectorAll('.lang-switch button');
+  var current = 'zh';
+
+  function apply(lang) {
+    current = lang;
+    body.classList.remove('lang-zh', 'lang-en');
+    body.classList.add('lang-' + lang);
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    buttons.forEach(function (b) { b.classList.toggle('active', b.dataset.lang === lang); });
+    try { localStorage.setItem('newacad-manual-lang', lang); } catch (e) {}
+  }
+
+  var saved = null;
+  try { saved = localStorage.getItem('newacad-manual-lang'); } catch (e) {}
+  apply(saved || ((navigator.language || 'zh').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en'));
+
+  buttons.forEach(function (b) { b.addEventListener('click', function () { apply(b.dataset.lang); }); });
+
+  // 子项：同一个小节在中英两套里各有一份标题，点目录时跳到当前语言那一份
+  document.querySelectorAll('.toc a[data-sub]').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      var id = a.dataset.sub + '-' + current;
+      var el = document.getElementById(id);
+      if (el) { ev.preventDefault(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); history.replaceState(null, '', '#' + a.dataset.sub); }
+      // 找不到（例如该章结构不同）就退回 href 默认行为
+    });
+  });
+
+  // 折叠：每个分支一个 twisty，状态记在本地
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem('newacad-manual-toc') || '{}') || {}; } catch (e) { state = {}; }
+  document.querySelectorAll('.toc .twisty').forEach(function (btn) {
+    var box = document.getElementById(btn.dataset.for);
+    if (!box) return;
+    if (state[btn.dataset.for] === false) { box.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var open = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      box.hidden = open;
+      state[btn.dataset.for] = !open;
+      try { localStorage.setItem('newacad-manual-toc', JSON.stringify(state)); } catch (e) {}
+    });
+  });
+
+  // 高亮：章级 + 子项
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var targets = links.map(function (a) {
+    var href = a.getAttribute('href');
+    return { a: a, el: document.getElementById(href.replace('#', '')) };
+  }).filter(function (x) { return x.el; });
+
+  if ('IntersectionObserver' in window && targets.length) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        targets.forEach(function (t) {
+          var hit = t.el === en.target || t.el.contains(en.target);
+          if (hit) {
+            t.a.classList.add('active');
+
+          }
+        });
+      });
+    }, { rootMargin: '-70px 0px -70% 0px', threshold: 0 });
+    targets.forEach(function (t) { io.observe(t.el); });
+  }
+})();
+</script>
+</body>
+</html>

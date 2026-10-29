@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 2026-10-15: UnitSystem 纯函数单测 —— 只编译零 Autodesk 依赖的 UnitSystem.cs，可在无 CAD 的机器/CI 跑 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>UnitSystemTests</AssemblyName>
+    <RootNamespace>Civil3DMcpPlugin.Tests</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\UnitSystem.cs" />
+    <Compile Include="..\..\src\PaletteViewState.cs" />
+    <Compile Include="..\..\src\DestructiveGuard.cs" />
+    <Compile Include="..\..\src\DocLifecyclePolicy.cs" />
+    <Compile Include="..\..\src\PluginTime.cs" />
+    <!-- 2026-10-29: the error-code mapping is a pure function; assert it without CAD -->
+    <Compile Include="..\..\src\JsonRpcProtocol.cs" />
+  </ItemGroup>
+
+</Project>

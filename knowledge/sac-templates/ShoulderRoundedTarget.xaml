@@ -1,0 +1,177 @@
+<Activity mc:Ignorable="sads sap" x:Class="Subassembly" this:Subassembly.Side="[new EnumType(0, &quot;Right&quot;, &quot;Side&quot;)]" this:Subassembly.ShoulderSlope="[new Grade(-0.05)]" this:Subassembly.DaylightSlope="[new Slope(0.5)]" this:Subassembly.RoundingCurve="0.75" this:Subassembly.ShoulderWidth="1.5" this:Subassembly.SurfaceTarget="[new PreviewSurfaceTarget(&quot;SurfaceTarget&quot;, True, 1000, -0.15, -1000, -0.15)]" this:Subassembly.OffsetTarget="[new PreviewOffsetTarget(&quot;OffsetTarget&quot;, True, 0.6)]"
+ xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+ xmlns:asa="clr-namespace:Autodesk.SubassemblyComposer.API;assembly=Subassembly.API"
+ xmlns:asa1="clr-namespace:Autodesk.SubassemblyComposer.ActivityLibrary;assembly=Subassembly.ActivityLibrary"
+ xmlns:asw="clr-namespace:Autodesk.SubassemblyComposer.WorkflowEngine;assembly=Subassembly.WorkflowEngine"
+ xmlns:av="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:mva="clr-namespace:Microsoft.VisualBasic.Activities;assembly=System.Activities"
+ xmlns:s="clr-namespace:System;assembly=mscorlib"
+ xmlns:sa="clr-namespace:System.Activities;assembly=System.Activities"
+ xmlns:sads="http://schemas.microsoft.com/netfx/2010/xaml/activities/debugger"
+ xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+ xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib"
+ xmlns:this="clr-namespace:"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:Members>
+    <x:Property Name="Geometry" Type="InOutArgument(asw:Geometry)" />
+    <x:Property Name="SubassemblyErrorCenter" Type="InOutArgument(asw:SubassemblyErrorCenter)" />
+    <x:Property Name="SubassemblyRunMode" Type="InOutArgument(asw:SubassemblyRunMode)" />
+    <x:Property Name="Side" Type="InArgument(asw:EnumType)" />
+    <x:Property Name="ShoulderSlope" Type="InArgument(asw:Grade)">
+      <x:Property.Attributes>
+        <asw:DisplayName2Attribute DisplayName="Shoulder Slope" />
+        <asw:Description2Attribute Description="Slope of the shoulder" />
+      </x:Property.Attributes>
+    </x:Property>
+    <x:Property Name="DaylightSlope" Type="InArgument(asw:Slope)">
+      <x:Property.Attributes>
+        <asw:DisplayName2Attribute DisplayName="Daylight Slope" />
+        <asw:Description2Attribute Description="The slope for the daylight slope." />
+      </x:Property.Attributes>
+    </x:Property>
+    <x:Property Name="RoundingCurve" Type="InArgument(x:Double)">
+      <x:Property.Attributes>
+        <asw:DisplayName2Attribute DisplayName="Rounding Curve" />
+        <asw:Description2Attribute Description="Specifies value for length" />
+      </x:Property.Attributes>
+    </x:Property>
+    <x:Property Name="ShoulderWidth" Type="InArgument(x:Double)">
+      <x:Property.Attributes>
+        <asw:DisplayName2Attribute DisplayName="Shoulder Width" />
+        <asw:Description2Attribute Description="Width from the attachment point to the shoulder hinge point" />
+      </x:Property.Attributes>
+    </x:Property>
+    <x:Property Name="SurfaceTarget" Type="InArgument(asw:SurfaceTarget)">
+      <x:Property.Attributes>
+        <asw:DisplayName2Attribute DisplayName="Daylight Surface" />
+      </x:Property.Attributes>
+    </x:Property>
+    <x:Property Name="OffsetTarget" Type="InArgument(asw:OffsetTarget)">
+      <x:Property.Attributes>
+        <asw:DisplayName2Attribute DisplayName="Offset Target" />
+      </x:Property.Attributes>
+    </x:Property>
+  </x:Members>
+  <sap:VirtualizedContainerService.HintSize>664,676</sap:VirtualizedContainerService.HintSize>
+  <mva:VisualBasic.Settings>Assembly references and imported namespaces serialized as XML namespaces</mva:VisualBasic.Settings>
+  <Flowchart mva:VisualBasic.Settings="Assembly references and imported namespaces serialized as XML namespaces">
+    <Flowchart.Variables>
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(41, &quot;AwayFromCrown&quot;)]" Modifiers="ReadOnly" Name="AwayFromCrown" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(1, &quot;Left&quot;)]" Modifiers="ReadOnly" Name="Left" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(20, &quot;LeftInsideLane&quot;)]" Modifiers="ReadOnly" Name="LeftInsideLane" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(21, &quot;LeftInsideShoulder&quot;)]" Modifiers="ReadOnly" Name="LeftInsideShoulder" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(22, &quot;LeftOutsideLane&quot;)]" Modifiers="ReadOnly" Name="LeftOutsideLane" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(23, &quot;LeftOutsideShoulder&quot;)]" Modifiers="ReadOnly" Name="LeftOutsideShoulder" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(11, &quot;No&quot;)]" Modifiers="ReadOnly" Name="No" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(-1, &quot;None&quot;)]" Modifiers="ReadOnly" Name="None" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(0, &quot;Right&quot;)]" Modifiers="ReadOnly" Name="Right" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(24, &quot;RightInsideLane&quot;)]" Modifiers="ReadOnly" Name="RightInsideLane" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(25, &quot;RightInsideShoulder&quot;)]" Modifiers="ReadOnly" Name="RightInsideShoulder" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(26, &quot;RightOutsideLane&quot;)]" Modifiers="ReadOnly" Name="RightOutsideLane" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(27, &quot;RightOutsideShoulder&quot;)]" Modifiers="ReadOnly" Name="RightOutsideShoulder" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(30, &quot;Supported&quot;)]" Modifiers="ReadOnly" Name="Supported" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(40, &quot;TowardsCrown&quot;)]" Modifiers="ReadOnly" Name="TowardsCrown" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(31, &quot;Unsupported&quot;)]" Modifiers="ReadOnly" Name="Unsupported" />
+      <Variable x:TypeArguments="asw:EnumType" Default="[new EnumType(10, &quot;Yes&quot;)]" Modifiers="ReadOnly" Name="Yes" />
+    </Flowchart.Variables>
+    <Flowchart.StartNode>
+      <FlowStep x:Name="__ReferenceID0">
+        <asa1:CreatePoint AutoLinkCodes="{x:Null}" AutoLinkGeometryName="{x:Null}" FromPoint="{x:Null}" ActivityId="1" ApplyAOR="False" AutoLink="False" DisplayName="P1" Geometry="[Geometry]" PointNumber="P1" Positioning="DeltaXAndDeltaY" ShowErrors="True" Side="[Side]" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]">
+          <asa1:CreatePoint.Arguments>
+            <InArgument x:TypeArguments="x:Double" x:Key="DeltaX1">0</InArgument>
+            <InArgument x:TypeArguments="x:Double" x:Key="DeltaY1">0</InArgument>
+          </asa1:CreatePoint.Arguments>
+          <asa1:CreatePoint.PointCodes>
+            <scg:List x:TypeArguments="InArgument(x:String)" Capacity="4">
+              <InArgument x:TypeArguments="x:String">Top</InArgument>
+              <InArgument x:TypeArguments="x:String">Hinge</InArgument>
+            </scg:List>
+          </asa1:CreatePoint.PointCodes>
+        </asa1:CreatePoint>
+        <FlowStep.Next>
+          <FlowStep x:Name="__ReferenceID1">
+            <asa1:CreateAuxPoint AutoLinkCodes="{x:Null}" PointCodes="{x:Null}" ActivityId="2" ApplyAOR="False" AutoLink="True" AutoLinkGeometryName="AL1" DisplayName="AP1&amp;AL1" FromPoint="P1" Geometry="[Geometry]" PointNumber="AP1" Positioning="SlopeAndDeltaX" ShowErrors="True" Side="[Side]" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]">
+              <asa1:CreateAuxPoint.Arguments>
+                <InArgument x:TypeArguments="x:Double" x:Key="Slope2">[ShoulderSlope]</InArgument>
+                <InArgument x:TypeArguments="x:Double" x:Key="DeltaX2">[ShoulderWidth]</InArgument>
+                <InArgument x:TypeArguments="asw:OffsetTarget" x:Key="OffsetTarget2">[OffsetTarget]</InArgument>
+                <InArgument x:TypeArguments="asw:ElevationTarget" x:Key="ElevationTarget2" />
+                <InArgument x:TypeArguments="asw:CrossSegmentType" x:Key="Superelevation2" />
+              </asa1:CreateAuxPoint.Arguments>
+            </asa1:CreateAuxPoint>
+            <FlowStep.Next>
+              <FlowStep x:Name="__ReferenceID2">
+                <asa1:CreateAuxPoint AutoLinkCodes="{x:Null}" PointCodes="{x:Null}" ActivityId="3" ApplyAOR="False" AutoLink="True" AutoLinkGeometryName="AL2" DisplayName="AP2&amp;AL2" FromPoint="AP1" Geometry="[Geometry]" PointNumber="AP2" Positioning="SlopeToSurface" ShowErrors="True" Side="[Side]" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]">
+                  <asa1:CreateAuxPoint.Arguments>
+                    <InArgument x:TypeArguments="x:Double" x:Key="Slope3">[DaylightSlope*(IF(AP1.DistanceToSurface(SurfaceTarget)&gt;0,-1,1))]</InArgument>
+                    <InArgument x:TypeArguments="x:Boolean" x:Key="ReverseSlopeDirection3">False</InArgument>
+                    <InArgument x:TypeArguments="asw:SurfaceTarget" x:Key="SurfaceTarget3">[SurfaceTarget]</InArgument>
+                    <InArgument x:TypeArguments="x:Double" x:Key="DeltaXForLayout3">5</InArgument>
+                    <InArgument x:TypeArguments="x:Boolean" x:Key="ShowErrors">True</InArgument>
+                  </asa1:CreateAuxPoint.Arguments>
+                </asa1:CreateAuxPoint>
+                <FlowStep.Next>
+                  <FlowStep x:Name="__ReferenceID3">
+                    <asa1:FilletArcActivity EndPointCodes="{x:Null}" StartPointCodes="{x:Null}" ActivityId="4" DisplayName="L1&amp;P2&amp;P3" EndPointName="P3" FirstLink="AL1" Geometry="[Geometry]" LinkNumber="L1" RoundBy="ByRadius" RoundParameter="[RoundingCurve]" SecondLink="AL2" ShowErrors="True" StartPointName="P2" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]" Tessellation="8">
+                      <asa1:FilletArcActivity.LinkCodes>
+                        <scg:List x:TypeArguments="InArgument(x:String)" Capacity="4">
+                          <InArgument x:TypeArguments="x:String">Top</InArgument>
+                        </scg:List>
+                      </asa1:FilletArcActivity.LinkCodes>
+                    </asa1:FilletArcActivity>
+                    <FlowStep.Next>
+                      <FlowStep x:Name="__ReferenceID4">
+                        <asa1:CreateLink ActivityId="5" ApplyAOR="False" DisplayName="L2" EndPoint="P2" Geometry="[Geometry]" IsEnabled="True" LinkNumber="L2" ShowErrors="True" StartPoint="P1" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]">
+                          <asa1:CreateLink.LinkCodes>
+                            <scg:List x:TypeArguments="InArgument(x:String)" Capacity="4">
+                              <InArgument x:TypeArguments="x:String">Top</InArgument>
+                            </scg:List>
+                          </asa1:CreateLink.LinkCodes>
+                        </asa1:CreateLink>
+                        <FlowStep.Next>
+                          <FlowStep x:Name="__ReferenceID5">
+                            <asa1:CreatePoint AutoLinkCodes="{x:Null}" AutoLinkGeometryName="{x:Null}" ActivityId="6" ApplyAOR="False" AutoLink="False" DisplayName="P4" FromPoint="AP2" Geometry="[Geometry]" PointNumber="P4" Positioning="DeltaXAndDeltaY" ShowErrors="True" Side="[Side]" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]">
+                              <asa1:CreatePoint.Arguments>
+                                <InArgument x:TypeArguments="x:Double" x:Key="DeltaX1">0</InArgument>
+                                <InArgument x:TypeArguments="x:Double" x:Key="DeltaY1">0</InArgument>
+                              </asa1:CreatePoint.Arguments>
+                              <asa1:CreatePoint.PointCodes>
+                                <scg:List x:TypeArguments="InArgument(x:String)" Capacity="4">
+                                  <InArgument x:TypeArguments="x:String">Daylight</InArgument>
+                                  <InArgument x:TypeArguments="x:String">Top</InArgument>
+                                </scg:List>
+                              </asa1:CreatePoint.PointCodes>
+                            </asa1:CreatePoint>
+                            <FlowStep.Next>
+                              <FlowStep x:Name="__ReferenceID6">
+                                <asa1:CreateLink ActivityId="7" ApplyAOR="False" DisplayName="L3" EndPoint="P4" Geometry="[Geometry]" IsEnabled="True" LinkNumber="L3" ShowErrors="True" StartPoint="P3" SubassemblyErrorCenter="[SubassemblyErrorCenter]" SubassemblyRunMode="[SubassemblyRunMode]">
+                                  <asa1:CreateLink.LinkCodes>
+                                    <scg:List x:TypeArguments="InArgument(x:String)" Capacity="4">
+                                      <InArgument x:TypeArguments="x:String">Top</InArgument>
+                                    </scg:List>
+                                  </asa1:CreateLink.LinkCodes>
+                                </asa1:CreateLink>
+                              </FlowStep>
+                            </FlowStep.Next>
+                          </FlowStep>
+                        </FlowStep.Next>
+                      </FlowStep>
+                    </FlowStep.Next>
+                  </FlowStep>
+                </FlowStep.Next>
+              </FlowStep>
+            </FlowStep.Next>
+          </FlowStep>
+        </FlowStep.Next>
+      </FlowStep>
+    </Flowchart.StartNode>
+    <x:Reference>__ReferenceID0</x:Reference>
+    <x:Reference>__ReferenceID1</x:Reference>
+    <x:Reference>__ReferenceID2</x:Reference>
+    <x:Reference>__ReferenceID3</x:Reference>
+    <x:Reference>__ReferenceID4</x:Reference>
+    <x:Reference>__ReferenceID5</x:Reference>
+    <x:Reference>__ReferenceID6</x:Reference>
+  </Flowchart>
+</Activity>

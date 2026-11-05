@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 2026-10-20 审计 F7：原路径 ...\..\Civil3D-MCP-Plugin\ 已不存在（插件已迁至 plugin/AcBridge-v24/src），
+         导致 dotnet run 直接 CS2001 编译失败 ——— 而本套件从未进 CI，所以一直无人发现 -->
+    <Compile Include="..\..\..\..\plugin\AcBridge-v24\src\FileBoundary.cs" Link="FileBoundary.cs" />
+    <Compile Include="..\..\..\..\plugin\AcBridge-v24\src\JsonRpcProtocol.cs" Link="JsonRpcProtocol.cs" />
+    <Compile Include="..\..\..\..\plugin\AcBridge-v24\src\JobRegistry.cs" Link="JobRegistry.cs" />
+    <Compile Include="..\..\..\..\plugin\AcBridge-v24\src\RpcTcpServer.cs" Link="RpcTcpServer.cs" />
+  </ItemGroup>
+</Project>

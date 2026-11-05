@@ -1,0 +1,21 @@
+#!/bin/sh
+# new-acad · pre-commit —— 提交前**只读**门禁（语法 / 版本 / 打包清单 / 文档覆盖 / 已知问题台账）
+#
+# 跳过：git commit --no-verify
+# 启用：git config core.hooksPath .githooks   （或跑 tools/install-hooks.ps1）
+# 说明：只跑不写文件的检查，避免提交过程中污染工作区。
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$root" || exit 0
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[pre-commit] 未找到 node，跳过门禁"
+  exit 0
+fi
+
+echo "[pre-commit] release-gate --precommit ..."
+if ! node tools/release-gate.js --precommit; then
+  echo ""
+  echo "[pre-commit] ✗ 未通过，已阻止提交。修正后再提交；确需跳过：git commit --no-verify"
+  exit 1
+fi

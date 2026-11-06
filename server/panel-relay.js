@@ -66,7 +66,7 @@ const path = require('path');
 const CAD_SESSION_KEY = 'agent:main:cad:panel';             // CAD 专属会话
 
 // 2026-08-06 S2: llm 模式（形态 3）——发布版不依赖 OpenClaw，relay 直接调 LLM
-const { handleMessage, clearActivePlan, hasActivePlan, consumeNewTask } = require('./llm-agent.js');
+const { handleMessage, clearActivePlan, hasActivePlan, consumeNewTask, probeModel } = require('./llm-agent.js');   // 2026-11-06: probeModel = 面板「测试连接」
 const { getLimits } = require('./file-tools.js');   // 2026-10-13 M3: 限额可配（historyKeep 等）
 // 2026-09-22: llm 模式会话历史按作用域分桶并落盘（''=全局 / 项目名）——切项目不串味、重启可续
 const llmHistories = new Map();
@@ -272,7 +272,12 @@ function updateLlmConfig(newLlm) {
     const n = Number(newLlm.maxTurns);
     cfg.llm.maxTurns = (Number.isFinite(n) && n > 0) ? n : (n === 0 ? 0 : 20);
   }
-  if (newLlm.timeoutMs !== undefined) cfg.llm.timeoutMs = Number(newLlm.timeoutMs) || 60000;
+  if (newLlm.timeoutMs !== undefined) cfg.llm.timeoutMs = Number(newLlm.timeoutMs) || 60000;  if (newLlm.thinking !== undefined) {
+    // 2026-11-06: 思考深度 auto|off|low|medium|high|max（统一档位，映射到各家参数在 model-params.js）
+    const levels = require('./model-params.js').THINKING_LEVELS;
+    const v = String(newLlm.thinking || 'auto').toLowerCase();
+    cfg.llm.thinking = levels.indexOf(v) >= 0 ? v : 'auto';
+  }
   cfg.relayMode = 'llm';
   RELAY_MODE = 'llm';        // 2026-08-07: 同步热更新  // 配置 LLM 即强制 llm 模式
   // 写盘（保留其他配置）
@@ -880,7 +885,7 @@ const server = http.createServer((req, res) => {
 
   // ---- GET /llm/options — 服务商+模型预设（面板下拉） ----
   if (req.method === 'GET' && req.url === '/llm/options') {
-    const current = (cfg.llm && cfg.llm.provider) ? { provider: cfg.llm.provider, model: cfg.llm.model || '', baseUrl: cfg.llm.baseUrl || '', maxTurns: (cfg.llm.maxTurns === undefined ? 20 : cfg.llm.maxTurns) } : null;
+    const current = (cfg.llm && cfg.llm.provider) ? { provider: cfg.llm.provider, model: cfg.llm.model || '', baseUrl: cfg.llm.baseUrl || '', maxTurns: (cfg.llm.maxTurns === undefined ? 20 : cfg.llm.maxTurns), thinking: (cfg.llm.thinking || 'auto') } : null;
     res.end(JSON.stringify({ presets: LLM_PRESETS, current, locale: (cfg && cfg.locale) || 'auto' }));
     return;
   }
@@ -928,6 +933,31 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ---- POST /llm/test — 面板「测试连接」：真发一次最小请求，如实返回错误（2026-11-06） ----
+  // 为什么需要：面板里的预设模型是照发布页填的，从来没人跑过 —— 结果 6 个预设里有 3 个选了就 400。
+  // 这个端点让用户在保存之前就能发现自己选的模型跑不通，也让我们拿到一手报错原文。
+  if (req.method === 'POST' && req.url === '/llm/test') {
+    let tb = '';
+    req.on('data', c => tb += c);
+    req.on('end', async () => {
+      try {
+        const j = tb ? JSON.parse(tb) : {};
+        const base = {
+          provider: String(j.provider || (cfg.llm && cfg.llm.provider) || '').trim(),
+          baseUrl: String(j.baseUrl || (cfg.llm && cfg.llm.baseUrl) || '').trim(),
+          apiKey: String(j.apiKey || (cfg.llm && cfg.llm.apiKey) || '').trim(),
+          model: String(j.model || (cfg.llm && cfg.llm.model) || '').trim(),
+          thinking: String(j.thinking || (cfg.llm && cfg.llm.thinking) || 'auto').toLowerCase(),
+        };
+        if (!base.baseUrl) { res.end(JSON.stringify({ ok: false, error: '缺 baseUrl（自定义服务商请先填）', hint: '先选服务商' })); return; }
+        if (!base.model) { res.end(JSON.stringify({ ok: false, error: '缺模型名', hint: '先选模型' })); return; }
+        const r = await probeModel(base, (m) => log('PROBE', m));
+        log('PROBE', base.provider + '/' + base.model + ' → ' + (r.ok ? 'OK ' + r.latencyMs + 'ms' : 'FAIL ' + String(r.error || '').slice(0, 80)));
+        res.end(JSON.stringify(r));
+      } catch (e) { res.end(JSON.stringify({ ok: false, error: e.message, hint: '面板侧请求异常' })); }
+    });
+    return;
+  }
   // ---- POST /llm/config — 面板保存模型+key（热更新，立即生效） ----
   if (req.method === 'POST' && req.url === '/llm/config') {
     let body = '';
@@ -937,7 +967,7 @@ const server = http.createServer((req, res) => {
         const j = JSON.parse(body);
         // 2026-10-15: 清除/重置 AI 配置（用户换服务商 / 不想再用时）
         if (j.clear === true) {
-          cfg.llm = { provider: '', baseUrl: '', apiKey: '', model: '', maxTurns: 20, timeoutMs: 120000 };
+          cfg.llm = { provider: '', baseUrl: '', apiKey: '', model: '', maxTurns: 20, timeoutMs: 120000, thinking: 'auto' };
           try { fs.writeFileSync(path.join(__dirname, '..', 'config.json'), JSON.stringify(cfg, null, 2), 'utf8'); } catch (e) { log('CFG', 'config.json 写入失败: ' + e.message); }
           log('CFG', 'LLM 配置已清除');
           res.end(JSON.stringify({ ok: true, cleared: true }));

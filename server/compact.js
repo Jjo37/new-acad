@@ -4,6 +4,8 @@
 // 安全：压缩边界不跨越未完成的工具调用；摘要失败则降级不压缩
 const http = require('http');
 const https = require('https');
+const { stripUnsupportedParams, isSamplingParamRejection, isResponsesRequired, dropSamplingParams, endpointFor } = require('./model-params.js');   // 2026-11-06: 采样参数 / 端点 能力层
+const RESP = require('./responses-adapter.js');   // 2026-11-06: Responses API 适配（摘要请求也要能走新端点）
 
 // 尾部保留条数（约 2 轮 + 当前 user）：压缩只动更早部分
 const RETAIN_COUNT = 6;
@@ -51,28 +53,65 @@ const CHECKPOINT_PREAMBLE =
 
 /** 无工具调用的纯文本 LLM 请求（摘要用；不动原 callLLM） */
 function callPlain(cfg, messages, timeoutMs, signal) {
+  // 2026-10-29: no vendor fallback (see llm-agent.callLLM) - unconfigured must fail loudly.
+  if (!cfg.baseUrl) return Promise.reject(new Error('未配置模型服务商（baseUrl 为空）：无法压缩上下文'));
+  if (!cfg.model) return Promise.reject(new Error('未配置模型名（model 为空）：无法压缩上下文'));
+  const baseUrl = String(cfg.baseUrl).replace(/\/+$/, '');
+  try { new URL(baseUrl + '/chat/completions'); } catch (e) { return Promise.reject(new Error('baseUrl 无效: ' + e.message)); }
+
+  // 2026-11-06: 过能力层 —— 采样参数按模型剥离/改名，端点按模型选。
+  // 摘要刻意**不指定思考深度**：压缩要的是快和省，思考档留给主链路。
+  let params = stripUnsupportedParams(cfg, cfg.model, { model: cfg.model, messages, temperature: 0.2, max_tokens: 1500 });
+  let endpoint = endpointFor(cfg, cfg.model);
+  let heals = 0;
+
+  const send = () => {
+    if (endpoint === 'responses') {
+      return postPlainJson(new URL(RESP.endpoint(baseUrl)), cfg.apiKey, RESP.buildRequest(params, {}), timeoutMs, signal)
+        .then(RESP.toChatShape);
+    }
+    return postPlainJson(new URL(baseUrl + '/chat/completions'), cfg.apiKey, params, timeoutMs, signal);
+  };
+
+  const attempt = () => send().catch((err) => {
+    if (endpoint === 'chat' && heals < 2 && isResponsesRequired(err)) {
+      heals += 1;
+      endpoint = 'responses';
+      return attempt();
+    }
+    if (heals < 2 && isSamplingParamRejection(err)) {
+      const { params: next, dropped } = dropSamplingParams(params);
+      if (dropped.length) { heals += 1; params = next; return attempt(); }
+    }
+    throw err;
+  });
+
+  return attempt();
+}
+
+/** 发一次摘要请求（不改参数）。400 时把原始响应体挂到 error 上，供自愈判定。 */
+function postPlainJson(u, apiKey, params, timeoutMs, signal) {
+  const body = JSON.stringify(params);
   return new Promise((resolve, reject) => {
-    // 2026-10-29: no vendor fallback (see llm-agent.callLLM) - unconfigured must fail loudly.
-    if (!cfg.baseUrl) return reject(new Error('未配置模型服务商（baseUrl 为空）：无法压缩上下文'));
-    if (!cfg.model) return reject(new Error('未配置模型名（model 为空）：无法压缩上下文'));
-    const baseUrl = String(cfg.baseUrl).replace(/\/+$/, '');
-    let u;
-    try { u = new URL(baseUrl + '/chat/completions'); } catch (e) { return reject(new Error('baseUrl 无效: ' + e.message)); }
-    const body = JSON.stringify({ model: cfg.model, messages, temperature: 0.2, max_tokens: 1500 });
     const mod = u.protocol === 'https:' ? https : http;
     const req = mod.request({
       host: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), path: u.pathname,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + (cfg.apiKey || ''),
+        'Authorization': 'Bearer ' + (apiKey || ''),
         'Content-Length': Buffer.byteLength(body)
       }
     }, (res) => {
       let data = '';
       res.on('data', (c) => data += c);
       res.on('end', () => {
-        if (res.statusCode >= 400) return reject(new Error('LLM API ' + res.statusCode + ': ' + data.slice(0, 300)));
+        if (res.statusCode >= 400) {
+          const err = new Error('LLM API ' + res.statusCode + ': ' + data.slice(0, 300));
+          err.statusCode = res.statusCode;
+          err.apiBody = data;
+          return reject(err);
+        }
         try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('摘要响应解析失败: ' + data.slice(0, 200))); }
       });
     });

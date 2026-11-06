@@ -42,7 +42,7 @@ $files = @(
   'server/time-policy.js',   # 2026-10-28: one storage format for time (relay + store require it)
   'server/judgement.js',   # 2026-10-28: outcome judgement single entry (workflow-store require)
   'server/workflow-store.js',
-  'server/workflow-replay.js','server/workflow-assisted.js','server/workflow-slots.js','server/workflow-describe.js','server/llm-agent.js','server/compact.js','server/cad-tools.js',
+  'server/workflow-replay.js','server/workflow-assisted.js','server/workflow-slots.js','server/workflow-describe.js','server/llm-agent.js','server/compact.js','server/model-params.js','server/responses-adapter.js','server/method-contracts.js','server/cad-tools.js',
 'server/trust-model.js',   # 2026-11-02: trust model + tier rules (relay + workflow-store require)
   'server/file-tools.js','server/trace-image.js','server/relay-launcher.js','server/sacred-mcp.js',
   'user-knowledge/_README.md',   # 2026-10-15 用户知识库说明

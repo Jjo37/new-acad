@@ -15,7 +15,10 @@
 #>
 
 param(
-  [switch]$AllowBundleLocked
+  [switch]$AllowBundleLocked,
+  # 2026-11-06: 发布构建用。工作区有未提交的插件改动时直接失败 ——
+  # 否则 buildStamp 会记成提交前的 HEAD，异机证据永远对不上（当天真踩过）。
+  [switch]$RequireClean
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +90,23 @@ try {
   $gitSha = "nogit"
   try { $gitSha = (& git -C $ROOT rev-parse --short HEAD 2>$null) } catch { $gitSha = "nogit" }
   if (-not $gitSha) { $gitSha = "nogit" }
+  # 2026-11-06: 脏工作区检测。buildStamp 只记录 HEAD；工作区有未提交的 plugin/ 改动时，
+  # DLL 实际含新代码但 stamp 指向旧 commit → 异机证据 check-host-evidence 会判 "plugin/ 变了"。
+  # 当天真实踩过（15:27 修完按钮位置没提交就编译，异机证据白跑一轮）。
+  $dirtyPlugin = @()
+  try {
+    $st = (& git -C $ROOT status --porcelain 2>$null)
+    if ($st) { $dirtyPlugin = @($st | Where-Object { $_ -match '^\s*\S+\s+(plugin/|build-plugin)' }) }
+  } catch { }
+  if ($dirtyPlugin.Count -gt 0) {
+    Write-Host ""
+    Write-Host "[WARN] 工作区有未提交的插件改动 —— 这样构建的 DLL 在异机取证时会对不上:" -ForegroundColor Yellow
+    $dirtyPlugin | ForEach-Object { Write-Host ("       " + $_) -ForegroundColor Yellow }
+    Write-Host "       buildStamp 记的是提交前 HEAD，而 DLL 里是新代码。" -ForegroundColor Yellow
+    Write-Host "       要发布请先提交（或用 -RequireClean 让它直接失败）。" -ForegroundColor Yellow
+    Write-Host ""
+    if ($RequireClean) { Write-Host "[FAIL] -RequireClean: 工作区不干净，拒绝构建" -ForegroundColor Red; exit 1 }
+  }
   $buildStamp = "$gitSha-" + (Get-Date -Format "yyyyMMdd-HHmmss")
   Write-Host "[INFO] build stamp: $buildStamp"
   try { dotnet build -c Release -p:InformationalVersion=$buildStamp 2>&1 | Write-Host } finally { $ErrorActionPreference = $prevEap }

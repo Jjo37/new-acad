@@ -21,7 +21,7 @@ $tpl  = Join-Path $here "public-templates"
 Write-Host "[1/7] snapshot: $Rel -> $Out"
 if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
 robocopy $Rel $Out /E `
-  /XD .git dist dist-bundle node_modules exchange obj bin build-tmp tmp reports user-knowledge `
+  /XD .git dist dist-bundle node_modules exchange obj bin build-tmp tmp reports user-knowledge dotnet10 `
   /XF *.exe *.zip *.log config.json installer.iss *.dll *.pdb *.lock *.tmp *.bak `
   /NFL /NDL /NJH /NJS | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed, code $LASTEXITCODE" }
@@ -68,7 +68,7 @@ $forbiddenFiles = @("BOOTSTRAP.md", "DASHBOARD.md", "ROADMAP.md", "KNOWN-ISSUES.
                     "POSITIONING.md", "AUDIT-STANDARD.md", "glossary.md", "agent-memory.md",
                     "api-inventory.md", "c3d-api-refs.md", "civil3d-objects.md",
                     "method-description-spec.md", "sac-xaml-guide.md", "sac-xaml-guide.en.md")
-$forbiddenDirs = @("docs", "i18n", "marketplace", "tools\public-templates", "tools\archive")
+$forbiddenDirs = @("docs", "i18n", "marketplace", "tools\public-templates", "tools\archive", "dotnet10")
 $bad = @()
 foreach ($f in $forbiddenFiles) {
   $hit = Get-ChildItem $Out -Recurse -File -Filter $f -ErrorAction SilentlyContinue

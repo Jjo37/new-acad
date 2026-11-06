@@ -65,6 +65,7 @@ public static partial class HankPalette
     private static TextBox apiKeyBox;
     private static TextBox baseUrlBox;
     private static TextBox turnsBox;   // 2026-08-10: 工具轮数上限（0=无限）
+    private static ComboBox thinkingCbo;   // 2026-11-06: 思考深度（auto/off/low/medium/high/max）
 
     private static ComboBox projectBox;
     private static Panel cfgPanel;
@@ -386,7 +387,7 @@ public static partial class HankPalette
     // 构建模型配置区（状态栏下方，可折叠显示当前模型）
     private static void BuildCfgPanel()
     {
-        cfgPanel = new Panel { Dock = DockStyle.Top, Height = 234, BackColor = Color.FromArgb(38, 39, 56) };
+        cfgPanel = new Panel { Dock = DockStyle.Top, Height = 272, BackColor = Color.FromArgb(38, 39, 56) };
         var font = new Font("Microsoft YaHei", 8);
         // 2026-08-17: 配置区改 5 个自适应行（TableLayoutPanel + Anchor L|R）——面板任意宽度不溢出不碰撞，按钮 AutoSize 文字完整
         var lblP = new Label { Text = Loc.T("选择模型", "Provider"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(166, 227, 161), Font = font };
@@ -403,6 +404,20 @@ public static partial class HankPalette
         // 2026-10-15: 清除/重置已保存的 AI 配置（换服务商、清 Key）
         var btnClear = new Button { Text = Loc.T("清除配置", "Clear"), Dock = DockStyle.Right, AutoSize = true, Margin = new Padding(4, 2, 4, 2), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(49, 50, 68), ForeColor = Color.FromArgb(243, 139, 168), Font = new Font("Microsoft YaHei", 8) };
         new ToolTip().SetToolTip(btnClear, Loc.T("清除已保存的 AI 配置（服务商 / 模型 / Key）", "Clear the saved AI config (provider / model / key)"));
+        // 2026-11-06: 思考深度 —— 比 temperature 更贴近用户意图的旋钮（越高越准、越慢、越费 token）。
+        // 不支持的档位由 relay 侧能力层归一化或忽略；面板不猜，只把用户意图传下去。
+        var lblThink = new Label { Text = Loc.T("思考深度", "Thinking"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(166, 227, 161), Font = font };
+        thinkingCbo = new ComboBox { Dock = DockStyle.Fill, Margin = new Padding(2), DropDownStyle = ComboBoxStyle.DropDownList, Font = font };
+        StyleCombo(thinkingCbo);
+        thinkingCbo.Items.Add(new KeyValuePair<string, string>("auto", Loc.T("自动（推荐）", "Auto (recommended)")));
+        thinkingCbo.Items.Add(new KeyValuePair<string, string>("off", Loc.T("关（部分模型不支持）", "Off (not all models)")));
+        thinkingCbo.Items.Add(new KeyValuePair<string, string>("low", Loc.T("低（更快更省）", "Low (faster)")));
+        thinkingCbo.Items.Add(new KeyValuePair<string, string>("medium", Loc.T("中", "Medium")));
+        thinkingCbo.Items.Add(new KeyValuePair<string, string>("high", Loc.T("高", "High")));
+        thinkingCbo.Items.Add(new KeyValuePair<string, string>("max", Loc.T("最深（最准最慢）", "Max (slowest)")));
+        thinkingCbo.DisplayMember = "Value";
+        thinkingCbo.SelectedIndex = 0;
+        new ToolTip().SetToolTip(thinkingCbo, Loc.T("思考深度：越高越准，但更慢也更费 token。「自动」= 完全按服务商默认（等于旧版行为）。", "Thinking depth: higher = more accurate but slower and pricier. Auto = provider default (same as before)."));
         // 2026-08-10: 第 4 行——AI 操作步数上限（默认 20；0 = 不限）
         var lblT = new Label { Text = Loc.T("操作上限", "Step limit"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(166, 227, 161), Font = font };
         turnsBox = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(2), Text = "20", BackColor = Color.FromArgb(30, 30, 46), ForeColor = Color.FromArgb(205, 214, 244), BorderStyle = BorderStyle.FixedSingle, Font = font };
@@ -419,12 +434,18 @@ public static partial class HankPalette
         row3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         row3.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         row3.Controls.Add(apiKeyBox, 0, 0); row3.Controls.Add(baseUrlBox, 1, 0); row3.Controls.Add(btnShow, 2, 0);
-        var row4 = new TableLayoutPanel { Location = new Point(6, 120), Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 34, ColumnCount = 4, BackColor = Color.FromArgb(38, 39, 56) };
+        // 2026-11-06: 「测试连接」放这一行（测试→保存同一动作流）。
+        // 之前塞在 API Key 那行：那行 ColumnCount=3，第 4 列不存在 → 按钮根本不渲染。《—— 实测踩过
+        var btnTest = new Button { Text = Loc.T("测试", "Test"), Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(4, 2, 4, 2), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(49, 50, 68), ForeColor = Color.FromArgb(137, 180, 250), Font = new Font("Microsoft YaHei", 8) };
+        new ToolTip().SetToolTip(btnTest, Loc.T("测试连接：真发一次最小请求（含工具调用），结果显示在状态栏", "Test connection: sends one minimal request with a tool call"));
+        btnTest.Click += async (_, _) => { await TestLlmConnectionAsync(); };
+        var row4 = new TableLayoutPanel { Location = new Point(6, 120), Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 34, ColumnCount = 5, BackColor = Color.FromArgb(38, 39, 56) };
         row4.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
         row4.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
+        row4.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         row4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row4.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        row4.Controls.Add(lblT, 0, 0); row4.Controls.Add(turnsBox, 1, 0); row4.Controls.Add(btnClear, 2, 0); row4.Controls.Add(btnSave, 3, 0);
+        row4.Controls.Add(lblT, 0, 0); row4.Controls.Add(turnsBox, 1, 0); row4.Controls.Add(btnTest, 2, 0); row4.Controls.Add(btnClear, 3, 0); row4.Controls.Add(btnSave, 4, 0);
         // project row (2026-08-17)：自适应布局——按钮 AutoSize 按文字自适应（拉宽面板文字始终完整），下拉占剩余宽度
         var projRow = new TableLayoutPanel { Location = new Point(6, 158), Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 34, ColumnCount = 5, BackColor = Color.FromArgb(38, 39, 56) };
         projRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
@@ -582,23 +603,33 @@ public static partial class HankPalette
             if (langCbo.SelectedItem is not KeyValuePair<string, string> lkv) return;
             await SwitchLocaleAsync(lkv.Key);
         };
-        var langRow = new TableLayoutPanel { Location = new Point(6, 196), Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 34, ColumnCount = 2, BackColor = Color.FromArgb(38, 39, 56) };
+        // 2026-11-06: 第 5 行 = 思考深度（原来 196 的 langRow 下移到 234，cfgPanel 高度 234→272）
+        var thinkRow = new TableLayoutPanel { Location = new Point(6, 196), Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 34, ColumnCount = 2, BackColor = Color.FromArgb(38, 39, 56) };
+        thinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+        thinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        thinkRow.Controls.Add(lblThink, 0, 0); thinkRow.Controls.Add(thinkingCbo, 1, 0);
+        var langRow = new TableLayoutPanel { Location = new Point(6, 234), Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 34, ColumnCount = 2, BackColor = Color.FromArgb(38, 39, 56) };
         langRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
         langRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         langRow.Controls.Add(lblLang, 0, 0); langRow.Controls.Add(langCbo, 1, 0);
         cfgPanel.Controls.Add(row1); cfgPanel.Controls.Add(row2); cfgPanel.Controls.Add(row3); cfgPanel.Controls.Add(row4);
-        cfgPanel.Controls.Add(projRow); cfgPanel.Controls.Add(langRow);
+        cfgPanel.Controls.Add(projRow); cfgPanel.Controls.Add(thinkRow); cfgPanel.Controls.Add(langRow);
         // 2026-10-11: optional extra config row (null in the open-source build -> layout unchanged).
-        var extraRow = AdditionalCfgRowFactory?.Invoke(cfgPanel, font, 234);
-        if (extraRow != null) { cfgPanel.Height = 268; cfgPanel.Controls.Add(extraRow); }
+        var extraRow = AdditionalCfgRowFactory?.Invoke(cfgPanel, font, 272);
+        if (extraRow != null) { cfgPanel.Height = 306; cfgPanel.Controls.Add(extraRow); }
         // 全部子控件引用存起来，折叠时统一隐藏/显示
         cfgChildren = extraRow != null
-            ? new System.Windows.Forms.Control[] { row1, row2, row3, row4, projRow, langRow, extraRow }
-            : new System.Windows.Forms.Control[] { row1, row2, row3, row4, projRow, langRow };
+            ? new System.Windows.Forms.Control[] { row1, row2, row3, row4, projRow, thinkRow, langRow, extraRow }
+            : new System.Windows.Forms.Control[] { row1, row2, row3, row4, projRow, thinkRow, langRow };
+        cfgExpandedHeight = cfgPanel.Height;   // 2026-11-06: 记下真实展开高度，折叠逻辑不再写死数字
     }
 
     private static System.Windows.Forms.Control[] cfgChildren = Array.Empty<System.Windows.Forms.Control>();
     private static bool cfgFolded = false;
+    // 2026-11-06: 展开态高度的**单一来源**。构造完 UI 时按实际内容设定，折叠/展开只读它。
+    // 起因：展开高度在构造处写 272、在 ToggleCfgPanel 里写死 234，加了「思考深度」那行后
+    // 折叠一次再展开就少 38px，最后一行被切掉（Bro 实测报障）。
+    private static int cfgExpandedHeight = 272;
     private static ComboBox? langCbo;         // 2026-09-14: 界面语言下拉（自动/中文/English）
     private static bool loadingLang = false;  // 语言下拉回显/重建期间抑制 SelectedIndexChanged
 
@@ -606,7 +637,7 @@ public static partial class HankPalette
     private static void ToggleCfgPanel(Button btnFold)
     {
         cfgFolded = !cfgFolded;
-        cfgPanel.Height = cfgFolded ? 28 : 234;
+        cfgPanel.Height = cfgFolded ? 28 : cfgExpandedHeight;   // 2026-11-06: 不再写死 234
         foreach (var ctl in cfgChildren)
         {
             if (ctl == btnFold) continue;
@@ -706,6 +737,13 @@ public static partial class HankPalette
                 // 2026-08-10: 回显轮数上限（0=无限；旧 relay 无此字段则保持默认 20）
                 if (cur.TryGetProperty("maxTurns", out var mt))
                     turnsBox.Text = mt.ValueKind == System.Text.Json.JsonValueKind.Number ? mt.GetInt32().ToString() : (mt.GetString() ?? "20");
+                // 2026-11-06: 回显思考深度（旧 relay 无此字段 → 保持「自动」）
+                if (cur.TryGetProperty("thinking", out var th))
+                {
+                    var tv2 = th.GetString() ?? "auto";
+                    for (int i = 0; i < thinkingCbo.Items.Count; i++)
+                        if (((KeyValuePair<string, string>)thinkingCbo.Items[i]).Key == tv2) { thinkingCbo.SelectedIndex = i; break; }
+                }
 
                 // project echo (2026-08-17)
                 try
@@ -755,6 +793,50 @@ public static partial class HankPalette
     private static bool loadingProjects = false;
     private static string GlobalModeLabel => Loc.T("（全局模式）", "(Global mode)");   // 2026-08-19: 下拉固定项=无项目普通模式
 
+    // 2026-11-06: 「测试连接」—— 真发一次最小请求（含一个 dummy 工具），把服务端原文错误显示给用户。
+    // 为什么要带工具：用户真正会撞的坑是"这个模型不带工具调用"，不带 tools 的探测测不出来。
+    private static async System.Threading.Tasks.Task TestLlmConnectionAsync()
+    {
+        if (providerCbo.SelectedItem is not KeyValuePair<string, string> prov) { SetStatus(Loc.T("● 请选服务商", "● Select a provider"), Color.FromArgb(249, 226, 175)); return; }
+        var model = modelCbo.SelectedItem as string;
+        if (string.IsNullOrEmpty(model)) { SetStatus(Loc.T("● 请选模型", "● Select a model"), Color.FromArgb(249, 226, 175)); return; }
+        var payload = new System.Collections.Generic.Dictionary<string, string>
+        {
+            ["provider"] = prov.Key,
+            ["model"] = model,
+            ["baseUrl"] = prov.Key == "custom" ? baseUrlBox.Text.Trim() : GetBaseUrlFor(prov.Key)
+        };
+        var key = apiKeyBox.Text.Trim();
+        if (!string.IsNullOrEmpty(key)) payload["apiKey"] = key;
+        if (thinkingCbo.SelectedItem is KeyValuePair<string, string> tk) payload["thinking"] = tk.Key;
+        SetStatus(Loc.T("… 正在测试连接", "… testing connection"), Color.FromArgb(249, 226, 175));
+        try
+        {
+            var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+            var resp = await hc.PostAsync(relayUrl + "/llm/test", content);
+            var txt = await resp.Content.ReadAsStringAsync();
+            var doc = System.Text.Json.JsonDocument.Parse(txt);
+            var ok = doc.RootElement.TryGetProperty("ok", out var okv) && okv.GetBoolean();
+            if (ok)
+            {
+                var ep = doc.RootElement.TryGetProperty("endpoint", out var epv) ? (epv.GetString() ?? "chat") : "chat";
+                var ms = doc.RootElement.TryGetProperty("latencyMs", out var msv) ? msv.GetInt32() : 0;
+                SetStatus(Loc.T("● 连接正常 ", "● OK ") + ep + " " + ms + "ms", Color.FromArgb(166, 227, 161));
+            }
+            else
+            {
+                var err = doc.RootElement.TryGetProperty("error", out var e1) ? (e1.GetString() ?? "") : "";
+                var hint = doc.RootElement.TryGetProperty("hint", out var e2) ? (e2.GetString() ?? "") : "";
+                SetStatus(Loc.T("● 测试失败: ", "● Failed: ") + hint, Color.FromArgb(243, 139, 168));
+                PluginLog.Warn("Palette", "LLM probe failed: " + err);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            SetStatus(Loc.T("● 测试异常: ", "● Test error: ") + ex.Message, Color.FromArgb(243, 139, 168));
+        }
+    }
+
     // 保存模型+key → POST /llm/config（热更新）
     private static async System.Threading.Tasks.Task SaveLlmConfigAsync()
     {
@@ -779,6 +861,8 @@ public static partial class HankPalette
         };
         if (!string.IsNullOrEmpty(key)) payload["apiKey"] = key;
         if (turnsText != "") payload["maxTurns"] = tv.ToString();
+        // 2026-11-06: 思考深度（统一档位，具体参数由 relay 侧能力层映射）
+        payload["thinking"] = thinkingCbo.SelectedItem is KeyValuePair<string, string> tk ? tk.Key : "auto";
         try
         {
             var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");

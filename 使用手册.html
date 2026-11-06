@@ -297,7 +297,7 @@
 
     <h3 id="ch1-2-zh">1.2 安装（4 步）</h3>
     <ol class="steps">
-      <li><b>下载</b>安装包 <code>new-acad-setup-v1.13.1.exe</code>。</li>
+      <li><b>下载</b>安装包 <code>new-acad-setup-v1.14.0.exe</code>。</li>
       <li><b>双击运行</b>，允许管理员权限。安装向导支持中文 / English。</li>
       <li><b>走完向导</b>。装完会调用 <code>install.ps1</code>：检测 AutoCAD / Civil 3D 版本、注册插件自启、引导你填 AI 配置。</li>
       <li><b>完成</b>。勾选"打开使用手册"会打开本文件；随后启动 AutoCAD 或 Civil 3D。</li>
@@ -308,7 +308,7 @@
     </div>
 
     <h3 id="ch1-3-zh">1.3 静默安装（企业 / 批量部署）</h3>
-    <p><code>new-acad-setup-v1.13.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.14.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">静默安装会跳过配置向导</span>
       向导被跳过（<code>skipifsilent</code>），所以<b>不会</b>自动检测 CAD、不会写配置。装完需要人工打开面板填 Key，或直接预置 <code>config.json</code>（字段见 <a href="#ch3">第 3 章</a>）。
@@ -355,7 +355,7 @@
 
     <h3 id="ch1-2-en">1.2 Install (4 steps)</h3>
     <ol class="steps">
-      <li><b>Download</b> <code>new-acad-setup-v1.13.1.exe</code>.</li>
+      <li><b>Download</b> <code>new-acad-setup-v1.14.0.exe</code>.</li>
       <li><b>Run it</b> and allow administrator rights. The wizard speaks Chinese and English.</li>
       <li><b>Finish the wizard.</b> It runs <code>install.ps1</code>: detect AutoCAD / Civil 3D, register autoload, guide you through the AI settings.</li>
       <li><b>Done.</b> Tick "open the manual" and start AutoCAD or Civil 3D.</li>
@@ -366,7 +366,7 @@
     </div>
 
     <h3 id="ch1-3-en">1.3 Silent install (enterprise)</h3>
-    <p><code>new-acad-setup-v1.13.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.14.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">Silent install skips the setup wizard</span>
       Because of <code>skipifsilent</code> it does <b>not</b> detect Civil 3D and does <b>not</b> write configuration. Fill in the key from the palette afterwards, or pre-seed <code>config.json</code> (fields in <a href="#ch3">chapter 3</a>).
@@ -732,6 +732,13 @@
       <li><b>别这么用</b>：显示状态下截图——那是明文 Key，等于把账号给出去了。</li>
     </ul>
 
+    <h4>测试<span class="tag">配置区 · 保存按钮左边</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：不保存也能先验一下「这套服务商 / 模型 / Key」通不通。</li>
+      <li><b>会发生什么</b>：它真发一次最小请求（<b>带一个工具</b>），结果显示在状态栏——成功是「● 连接正常 chat 877ms」，失败会直接告诉你原因（Key 无效 / 模型名不对 / 该模型不支持工具调用 / 必须走 Responses API）。</li>
+      <li><b>为什么带工具</b>：很多模型"能聊天但不能调工具"，不带工具的探测测不出来，等真干活才炸。</li>
+      <li><b>注意</b>：测试<b>不需要先保存</b>，用的是你当前下拉里选的值；但要让设置真正生效，还是得点保存。</li>
+    </ul>
     <h4>操作上限（步数）<span class="tag">配置区</span></h4>
     <ul class="spec">
       <li><b>作用</b>：一次任务里 AI 最多能连续执行多少步。</li>
@@ -745,6 +752,14 @@
       <li><b>会发生什么</b>：状态行显示「● 已保存」；不点保存，改了也不生效。</li>
     </ul>
 
+    <h4>思考深度<span class="tag">配置区 · 语言上方</span></h4>
+    <ul class="spec">
+      <li><b>作用</b>：让模型"想多久再动手"。六档：自动（推荐）/ 关 / 低 / 中 / 高 / 最深。</li>
+      <li><b>取值</b>：<b>自动</b> = 完全按服务商默认（等于旧版行为）；各家参数名不同（OpenAI 是 reasoning_effort，智谱是 thinking.type + reasoning_effort），由程序翻译。模型不支持的档位会就近降级，不会报错。</li>
+      <li><b>实测结论（重要）</b>：同一批画图/查询任务跑四档，<b>通过率一档都没提高</b>，但耗时翻了一倍多、token 多 16%。所以这个旋钮的真实价值是<b>省时间和钱</b>（"关/低"比默认快一倍），<b>不是"更深更准"</b>。</li>
+      <li><b>什么时候调低</b>：批量画图、大批量查询这种"活很确定"的任务；<b>什么时候留默认</b>：多步推理、要判断取舍的任务。</li>
+      <li><b>注意</b>：<b>必须点保存才生效</b>；强制思考的模型（Kimi K3、GLM-5.3）选「关」会被忽略，不会报错。</li>
+    </ul>
     <h3 id="ch4-3-zh">4.3 对话与输入区</h3>
 
     <h4>输入框 + 发送<span class="tag">底部</span></h4>
@@ -939,6 +954,13 @@
       <li><b>Do not</b>: screenshot the key while it is revealed.</li>
     </ul>
 
+    <h4>Test<span class="tag">settings · left of Save</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: check whether this provider / model / key combination works, without saving first.</li>
+      <li><b>Happens</b>: it sends one minimal request <b>with a tool attached</b> and prints the result on the status line — "● OK chat 877ms" on success, or the actual reason (bad key / wrong model id / model cannot call tools / needs the Responses API).</li>
+      <li><b>Why a tool is attached</b>: many models can chat but cannot call tools. A probe without tools never finds that out — you only discover it mid-task.</li>
+      <li><b>Note</b>: testing does <b>not</b> require saving; it uses whatever is selected right now. But saving is still what makes the setting stick.</li>
+    </ul>
     <h4>Step limit<span class="tag">settings</span></h4>
     <ul class="spec">
       <li><b>What</b>: the maximum number of steps the AI may run in one task.</li>
@@ -952,6 +974,14 @@
       <li><b>Happens</b>: the status line shows "● Saved". Nothing you changed applies until you save.</li>
     </ul>
 
+    <h4>Thinking depth<span class="tag">settings · above Language</span></h4>
+    <ul class="spec">
+      <li><b>What</b>: how long the model may think before acting. Six levels: Auto (recommended) / Off / Low / Medium / High / Max.</li>
+      <li><b>Values</b>: <b>Auto</b> = whatever the provider defaults to (same as previous versions). Parameter names differ per vendor (OpenAI uses reasoning_effort, Zhipu uses thinking.type + reasoning_effort); the app translates. A level the model does not support is mapped to the nearest one instead of failing.</li>
+      <li><b>Measured result (important)</b>: four levels were run on the same drawing/query tasks — <b>pass rate did not improve at all</b>, while wall time more than doubled and tokens rose 16%. So the real value of this knob is <b>saving time and money</b> (Off/Low is about twice as fast), <b>not "deeper is more accurate"</b>.</li>
+      <li><b>Turn it down</b> for bulk drawing and mechanical queries; <b>leave the default</b> for multi-step reasoning and trade-off decisions.</li>
+      <li><b>Note</b>: you must press <b>Save</b> for it to apply. Models that always think (Kimi K3, GLM-5.3) ignore "Off" instead of erroring.</li>
+    </ul>
     <h3 id="ch4-3-en">4.3 Chat and input</h3>
 
     <h4>Input + Send<span class="tag">bottom</span></h4>
@@ -1455,8 +1485,8 @@
 </section>
 
 <footer>
-  <span class="zh">new-acad 使用手册 · 对应版本 v1.13.1 · 2026-11-05</span>
-  <span class="en">new-acad User Guide · for version v1.13.1 · 2026-11-05</span>
+  <span class="zh">new-acad 使用手册 · 对应版本 v1.14.0 · 2026-11-05</span>
+  <span class="en">new-acad User Guide · for version v1.14.0 · 2026-11-06</span>
 </footer>
 
 </main>

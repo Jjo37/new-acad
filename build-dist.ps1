@@ -4,19 +4,6 @@
 .DESCRIPTION
   1. 收集运行必需文件到 dist/
   2. 复制 node.exe（便携版，部署机无需装 Node）
-# ---------- 2.9 dist module closure check (source has it, package must too) ----------
-$closureMissing = @()
-foreach ($req in $need) {
-  if ($req -notmatch '\\(server|i18n)\\') { continue }
-  $leaf = $req.Substring($ROOT.Length).TrimStart('\')
-  if (-not (Test-Path (Join-Path $DIST $leaf))) { $closureMissing += $leaf }
-}
-if ($closureMissing.Count -gt 0) {
-  Write-Host "[FAIL] dist missing files (module closure):" -ForegroundColor Red
-  $closureMissing | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
-  exit 1
-}
-Write-Host "[OK] dist module closure: server/i18n files present" -ForegroundColor Green
 
   3. 可选: Compress-Archive 压缩成 zip
 .EXAMPLE
@@ -62,6 +49,9 @@ $need = @(
   "$ROOT\server\workflow-slots.js",
   "$ROOT\server\workflow-describe.js",
   "$ROOT\server\compact.js",   # 2026-08-14: 上下文压缩模块(llm-agent 依赖, 漏打包会 require 失败)
+  "$ROOT\server\model-params.js",   # 2026-11-06: 模型采样参数约束(llm-agent/compact 依赖, 漏打包则 Kimi 的 400 修复不生效)
+  "$ROOT\server\responses-adapter.js",   # 2026-11-06: Responses API 适配(llm-agent/compact 依赖, 漏打包则 OpenAI 新模型跑不通)
+  "$ROOT\server\method-contracts.js",   # 2026-11-06: 高频方法参数契约(llm-agent 依赖, 漏打包则 system prompt 少一段注解)
   "$ROOT\server\cad-tools.js",
   "$ROOT\server\file-tools.js",
   "$ROOT\server\trace-image.js",   # 2026-09-22: 位图→CAD 描摹引擎(llm-agent/file-tools 依赖, 漏打包 traceImage 直接报模块找不到)
@@ -151,6 +141,9 @@ Copy-Item "$ROOT\server\workflow-assisted.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\workflow-slots.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\workflow-describe.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\compact.js" "$DIST\server\" -Force
+Copy-Item "$ROOT\server\model-params.js" "$DIST\server\" -Force   # 2026-11-06
+Copy-Item "$ROOT\server\responses-adapter.js" "$DIST\server\" -Force   # 2026-11-06
+Copy-Item "$ROOT\server\method-contracts.js" "$DIST\server\" -Force   # 2026-11-06
 Copy-Item "$ROOT\server\cad-tools.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\file-tools.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\trace-image.js" "$DIST\server\" -Force   # 2026-09-22
@@ -200,7 +193,7 @@ $distCfg = @{
   relayToken = ""
   relaySessionKey = ""
   relayMode = "llm"
-  llm = @{ provider=""; baseUrl=""; apiKey=""; model=""; maxTurns=20; timeoutMs=120000 }
+  llm = @{ provider=""; baseUrl=""; apiKey=""; model=""; maxTurns=20; timeoutMs=120000; thinking="auto" }
   project = ""
   # 2026-10-15: 与 dev / file-tools LIMIT_DEFAULTS 保持一致（原来模板缺 project/limits 两段）
   limits = @{ readMaxBytes=5242880; imageMaxB64=1572864; writeMaxBytes=2097152; readMaxChars=16000; readMaxCharsCap=32000; spillBytes=8000; spillPreview=1200; ctxMaxBytes=250000; historyKeep=24 }
@@ -253,6 +246,21 @@ popd
 New-Item -ItemType Directory -Path "$DIST\user-knowledge" -Force | Out-Null
 if (Test-Path "$ROOT\user-knowledge\_README.md") { Copy-Item "$ROOT\user-knowledge\_README.md" "$DIST\user-knowledge\" -Force }
 Write-Host "[OK] 项目文件已复制"
+
+# ---------- 2.9 dist module closure check (source has it, package must too) ----------
+# 2026-11-06: 这段原被误插在文件头 <# ... #> 注释块里 = 从未执行（死门禁）。挪到拷贝完成后真跑。
+$closureMissing = @()
+foreach ($req in $need) {
+  if ($req -notmatch '\\(server|i18n)\\') { continue }
+  $leaf = $req.Substring($ROOT.Length).TrimStart('\')
+  if (-not (Test-Path (Join-Path $DIST $leaf))) { $closureMissing += $leaf }
+}
+if ($closureMissing.Count -gt 0) {
+  Write-Host "[FAIL] dist missing files (module closure):" -ForegroundColor Red
+  $closureMissing | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+  exit 1
+}
+Write-Host "[OK] dist module closure: server/i18n files present" -ForegroundColor Green
 
 # ---------- 3. Node 便携版 ----------
 $nodeSrc = (Get-Command node -ErrorAction SilentlyContinue).Source

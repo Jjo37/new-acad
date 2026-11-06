@@ -14,7 +14,11 @@ const { CAD_CALL_TOOL, cadCall, formatResult, mcpCall, MCP_CALL_TOOL, MCPCALL_AL
 const { compactMessages } = require('./compact.js'); // 2026-08-14: 上下文压缩（超限主动摘要，防膨胀超时）
 const { readFile, writeFile, deleteFile, listDir, readImage, traceImage, queryFile, FILE_TOOLS, getFileTools, getAgentWorkDir, getLimits } = require('./file-tools.js');
 const { ocrFile } = require('./ocr.js');   // 2026-10-14: 扫描件 OCR（Windows WinRT，零打包）
-const { localizeToolSchema, resolveLocale } = require('./i18n-en.js');   // 2026-10-14 i18n-B: locale=en 时给 LLM 的工具 schema 出英文描述
+const { localizeToolSchema, resolveLocale } = require('./i18n-en.js');
+const { renderContracts } = require('./method-contracts.js');   // 2026-11-06: 高频方法参数契约（注入 system prompt）
+const MP = require('./model-params.js');   // 2026-11-06: 采样参数 / 端点 / 思考深度 能力层
+const RESP = require('./responses-adapter.js');   // 2026-11-06: Responses API ⇄ Chat Completions 形状适配
+const { stripUnsupportedParams, isSamplingParamRejection, isResponsesRequired, dropSamplingParams, endpointFor, buildThinkingParams, matchThinking } = MP;   // 2026-10-14 i18n-B: locale=en 时给 LLM 的工具 schema 出英文描述
 
 // ---------- 长期记忆（2026-08-07 新增） ----------
 // 分层: 核心记忆（每轮注入 ≤4KB）+ 知识库（按需 readKnowledge）
@@ -469,27 +473,89 @@ const SYSTEM_PROMPT = `你当前在 CAD 面板会话（channel=cad-panel）。
 
 📦 批量优先（硬约束，2026-08-08 精简）：多个同类对象→批量方法/数组参数；>500 数据→文件通道（addSurfacePointsFromFile 等）；**禁止逐个调用**。
 
-🛡️ 护栏（精简）：同一方法失败≥2 次→停，报 [MISSING]；拿不准→问用户。复杂任务按注入的规划执行，撞线时报告进度与剩余步骤。`;
+🛡️ 护栏（精简）：同一方法失败≥2 次→停，报 [MISSING]；拿不准→问用户。复杂任务按注入的规划执行，撞线时报告进度与剩余步骤。
+${renderContracts()}`;
 
 /**
  * 调 OpenAI 兼容 chat/completions（含 tools）
  */
-function callLLM(cfg, messages, timeoutMs, model, signal) {
+const MAX_SELF_HEAL = 2;   // 端点切换 + 参数剥离 各一次，总共不超过 2 次重发
+
+function callLLM(cfg, messages, timeoutMs, model, signal, onLog) {
+  // 2026-10-29: no vendor fallback. A missing baseUrl used to call DeepSeek silently, so an
+  // unconfigured install looked configured and failed later with a confusing provider error.
+  if (!cfg.baseUrl) return Promise.reject(new Error('未配置模型服务商（baseUrl 为空）：请在面板「选择模型」里选一家并保存'));
+  const modelName = model || cfg.model || '';
+  if (!modelName) return Promise.reject(new Error('未配置模型名（model 为空）：请在面板里选一个模型并保存'));
+  const baseUrl = String(cfg.baseUrl).replace(/\/+$/, '');
+  const log = (m) => { try { if (onLog) onLog(m); } catch (_) { /* best-effort */ } };
+
+  // 2026-11-06: 采样参数先过能力层（Kimi 全系 / OpenAI 推理系都不接受 temperature）
+  let params = stripUnsupportedParams(cfg, modelName, {
+    model: modelName,
+    messages,
+    tools: localizeToolSchema([CAD_CALL_TOOL, MCP_CALL_TOOL, ...getFileTools(), ...MEMORY_TOOLS, ...KNOWLEDGE_TOOLS, ...PLAN_TOOLS]),
+    tool_choice: 'auto',
+    temperature: 0.2
+  });
+
+  // 思考深度（auto = 一个参数都不发，行为与旧版完全一致）
+  const thinkRule = matchThinking(cfg, modelName);
+  const think = buildThinkingParams(cfg, modelName, cfg.thinking);
+  if (think.applied) {
+    Object.assign(params, think.params);
+    log('[THINK] ' + modelName + ': ' + think.note);
+  } else if (cfg.thinking && cfg.thinking !== 'auto' && think.note) {
+    log('[THINK] ' + modelName + ': ' + think.note);
+  }
+
+  // 端点：静态规则命中就走 Responses；否则先试 Chat Completions，被拒再自愈切换
+  let endpoint = endpointFor(cfg, modelName);
+  let heals = 0;
+
+  const send = () => {
+    if (endpoint === 'responses') {
+      const body = RESP.buildRequest(params, {
+        thinking: cfg.thinking,
+        targetEfforts: (thinkRule && thinkRule.efforts) || ['low', 'medium', 'high'],
+      });
+      return postJson(new URL(RESP.endpoint(baseUrl)), cfg.apiKey, body, timeoutMs, signal).then(RESP.toChatShape);
+    }
+    return postJson(new URL(baseUrl + '/chat/completions'), cfg.apiKey, params, timeoutMs, signal);
+  };
+
+  const attempt = () => send().catch((err) => {
+    // A. 服务端说「工具调用得走 Responses」→ 换端点重发一次
+    if (endpoint === 'chat' && heals < MAX_SELF_HEAL && isResponsesRequired(err)) {
+      heals += 1;
+      endpoint = 'responses';
+      log('[LLM-PARAM] ' + modelName + ' 要求 Responses API，已切换端点重试');
+      return attempt();
+    }
+    // B. 服务端明确拒绝采样参数 → 去掉该参数重发一次
+    if (heals < MAX_SELF_HEAL && isSamplingParamRejection(err)) {
+      const { params: nextParams, dropped } = dropSamplingParams(params);
+      if (dropped.length) {
+        heals += 1;
+        params = nextParams;
+        log('[LLM-PARAM] ' + modelName + ' 拒绝采样参数，已省略 ' + dropped.join('/') + ' 重试一次');
+        return attempt();
+      }
+    }
+    throw err;
+  });
+
+  return attempt();
+}
+
+/**
+ * 发一次请求（不改参数）。400 时把原始响应体与状态码挂到 error 上，供自愈判定。
+ * @param {URL} u 完整 endpoint
+ * @param {object} params 请求体对象（调用方负责已剥离不支持的字段）
+ */
+function postJson(u, apiKey, params, timeoutMs, signal) {
+  const body = JSON.stringify(params);
   return new Promise((resolve, reject) => {
-    // 2026-10-29: no vendor fallback. A missing baseUrl used to call DeepSeek silently, so an
-    // unconfigured install looked configured and failed later with a confusing provider error.
-    if (!cfg.baseUrl) return reject(new Error('未配置模型服务商（baseUrl 为空）：请在面板「选择模型」里选一家并保存'));
-    const modelName = model || cfg.model || '';
-    if (!modelName) return reject(new Error('未配置模型名（model 为空）：请在面板里选一个模型并保存'));
-    const baseUrl = String(cfg.baseUrl).replace(/\/+$/, '');
-    const u = new URL(baseUrl + '/chat/completions');
-    const body = JSON.stringify({
-      model: modelName,
-      messages,
-      tools: localizeToolSchema([CAD_CALL_TOOL, MCP_CALL_TOOL, ...getFileTools(), ...MEMORY_TOOLS, ...KNOWLEDGE_TOOLS, ...PLAN_TOOLS]),
-      tool_choice: 'auto',
-      temperature: 0.2
-    });
     const isHttps = u.protocol === 'https:';
     const mod = isHttps ? require('https') : require('http');
     const req = mod.request({
@@ -499,7 +565,7 @@ function callLLM(cfg, messages, timeoutMs, model, signal) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + (cfg.apiKey || ''),
+        'Authorization': 'Bearer ' + (apiKey || ''),
         'Content-Length': Buffer.byteLength(body)
       }
     }, (res) => {
@@ -507,7 +573,10 @@ function callLLM(cfg, messages, timeoutMs, model, signal) {
       res.on('data', (c) => data += c);
       res.on('end', () => {
         if (res.statusCode >= 400) {
-          return reject(new Error('LLM API ' + res.statusCode + ': ' + data.slice(0, 500)));
+          const err = new Error('LLM API ' + res.statusCode + ': ' + data.slice(0, 500));
+          err.statusCode = res.statusCode;
+          err.apiBody = data;
+          return reject(err);
         }
         try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('LLM 响应解析失败: ' + data.slice(0, 300))); }
       });
@@ -522,6 +591,89 @@ function callLLM(cfg, messages, timeoutMs, model, signal) {
     req.write(body);
     req.end();
   });
+}
+
+/**
+ * 极简连通性 + 能力探测（面板「测试连接」按钮用，2026-11-06）。
+ * 和 callLLM 的区别：只带一个 dummy 工具、只要求 16 token，便宜且快；
+ * 但**带工具**是关键 —— 用户真正会撞的坑是"这个模型不带工具能力"，不带 tools 的探测测不出来。
+ * @returns {{ok:boolean, endpoint:string, thinking:string|null, latencyMs:number, reply?:string, error?:string, hint?:string}}
+ */
+async function probeModel(cfg, onLog) {
+  const t0 = Date.now();
+  const done = (o) => Object.assign({ ok: false, endpoint: '', thinking: null, latencyMs: Date.now() - t0 }, o);
+  if (!cfg || !cfg.baseUrl) return done({ error: '未配置服务商（baseUrl 为空）', hint: '在面板「选择模型」里选一家并保存' });
+  if (!cfg.model) return done({ error: '未配置模型名', hint: '在面板里选一个模型并保存' });
+
+  const baseUrl = String(cfg.baseUrl).replace(/\/+$/, '');
+  let params = stripUnsupportedParams(cfg, cfg.model, {
+    model: cfg.model,
+    messages: [{ role: 'user', content: 'ping（只回 ok 两个字）' }],
+    tools: [{ type: 'function', function: { name: 'ping_tool', description: 'health check, never call this', parameters: { type: 'object', properties: {} } } }],
+    tool_choice: 'auto',
+    temperature: 0.2,
+    max_tokens: 64,
+  });
+  const think = buildThinkingParams(cfg, cfg.model, cfg.thinking);
+  Object.assign(params, think.params);
+
+  let endpoint = endpointFor(cfg, cfg.model);
+  let heals = 0;
+  const send = () => {
+    if (endpoint === 'responses') {
+      const body = RESP.buildRequest(params, {
+        thinking: cfg.thinking,
+        targetEfforts: ((matchThinking(cfg, cfg.model) || {}).efforts) || ['low', 'medium', 'high'],
+      });
+      return postJson(new URL(RESP.endpoint(baseUrl)), cfg.apiKey, body, 30000, null).then(RESP.toChatShape);
+    }
+    return postJson(new URL(baseUrl + '/chat/completions'), cfg.apiKey, params, 30000, null);
+  };
+  const attempt = () => send().catch((err) => {
+    if (endpoint === 'chat' && heals < 2 && isResponsesRequired(err)) {
+      heals += 1; endpoint = 'responses';
+      try { if (onLog) onLog('[PROBE] ' + cfg.model + ' 要求 Responses API，切端点重试'); } catch (_) { /* best-effort */ }
+      return attempt();
+    }
+    if (heals < 2 && isSamplingParamRejection(err)) {
+      const { params: next, dropped } = dropSamplingParams(params);
+      if (dropped.length) {
+        heals += 1; params = next;
+        try { if (onLog) onLog('[PROBE] ' + cfg.model + ' 拒绝 ' + dropped.join('/') + '，省略后重试'); } catch (_) { /* best-effort */ }
+        return attempt();
+      }
+    }
+    throw err;
+  });
+
+  try {
+    const resp = await attempt();
+    const msg = (resp.choices && resp.choices[0] && resp.choices[0].message) || {};
+    return done({
+      ok: true,
+      endpoint,
+      thinking: think.applied,
+      reply: String(msg.content || '').slice(0, 60) || '(空回复)',
+    });
+  } catch (e) {
+    const raw = String((e && e.apiBody) || (e && e.message) || e);
+    return done({ endpoint, thinking: think.applied, error: String(e.message || e).slice(0, 300), hint: diagnoseLlmError(e) });
+  }
+}
+
+/** 把服务端错误翻译成用户能照着做的动作（面板直接显示这段话） */
+function diagnoseLlmError(err) {
+  const msg = String((err && err.apiBody) || (err && err.message) || '');
+  const status = err && err.statusCode;
+  if (status === 401 || status === 403) return 'API Key 无效或没有该模型权限，请检查面板里填的 key';
+  if (status === 404) return '模型名或 baseUrl 不对：确认模型 ID 拼写，以及 baseUrl 是否以 /v1 结尾';
+  if (status === 429) return '触发限流或余额不足，稍后再试或检查账户额度';
+  if (/model.{0,30}(not exist|not found|unknown|不存在)/i.test(msg)) return '服务商没有这个模型名，去面板点「拉取模型」看看有哪些可选';
+  if (isResponsesRequired(err)) return '该模型必须走 Responses API，但切换后仍然失败：把这个错误原文反馈给我们';
+  if (isSamplingParamRejection(err)) return '该模型不接受某个采样参数（已尝试省略仍失败）：把错误原文反馈给我们';
+  if (/context length|too many tokens|maximum context/i.test(msg)) return '上下文超长：先「取消任务」再重新布置（或减少一次贴入的内容）';
+  if (status >= 500) return '服务商侧故障，过几分钟再试';
+  return '把这个错误原文反馈给我们';
 }
 
 /**
@@ -715,7 +867,7 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
     }
     let resp;
     try {
-      resp = await callLLM(cfg, messages, cfg.timeoutMs || 120000, activeModel, signal);
+      resp = await callLLM(cfg, messages, cfg.timeoutMs || 120000, activeModel, signal, logFn);
     } catch (e) {
       // 2026-09-15: API 400（tool_calls 配对类）时把消息结构快照落日志——只记角色与 id，不记内容
       try {
@@ -1092,7 +1244,7 @@ function validateToolGroups(messages) {
   return problems;
 }
 
-module.exports = { handleMessage, SYSTEM_PROMPT, callLLM, loadMemory, saveMemory, revertMemory, loadKnowledge, loadKnowledgeIndex, loadMemoryIndex, loadUserKbIndex, ingestUserKnowledge, searchUserKnowledge, MEMORY_FILE, KNOWLEDGE_FILE, clearActivePlan, hasActivePlan, consumeNewTask, estimateMessagesBytes, validateToolGroups, spillIfLarge, spillLargestToolMsg };
+module.exports = { handleMessage, SYSTEM_PROMPT, callLLM, probeModel, diagnoseLlmError, loadMemory, saveMemory, revertMemory, loadKnowledge, loadKnowledgeIndex, loadMemoryIndex, loadUserKbIndex, ingestUserKnowledge, searchUserKnowledge, MEMORY_FILE, KNOWLEDGE_FILE, clearActivePlan, hasActivePlan, consumeNewTask, estimateMessagesBytes, validateToolGroups, spillIfLarge, spillLargestToolMsg };
 
 // 2026-08-11: 供 relay 外部调用（/plan/clear 端点 + /clear all 联动）
 function clearActivePlan(project) { activePlan = null; try { savePlanFile(project); } catch (_) { /* best-effort: 删计划文件失败不阻塞 */ } }

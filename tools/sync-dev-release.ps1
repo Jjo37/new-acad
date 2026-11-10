@@ -29,6 +29,10 @@ $files = @(
   'plugin/AcBridge-v24/Civil3DMcpPlugin.dll',
   'plugin/AcBridge-v24/Civil3DMcpPlugin.deps.json',
   'plugin/AcBridge-v24/Civil3DMcpPlugin.runtimeconfig.json',
+  'plugin/AcBridge-v24/net10/Civil3DMcpPlugin.dll',          # 2026-11-10: dual segment (R26.0+ hosts)
+  'plugin/AcBridge-v24/net10/Civil3DMcpPlugin.deps.json',
+  'plugin/AcBridge-v24/net10/Civil3DMcpPlugin.runtimeconfig.json',
+  'tools/switch-runtime.ps1',
   # 2026-10-14 M6 PdfPig 依赖（readPdf 需要，必须随插件目录同步）
   'plugin/AcBridge-v24/UglyToad.PdfPig.dll',
   'plugin/AcBridge-v24/UglyToad.PdfPig.Core.dll',

@@ -7,7 +7,7 @@
 [中文](README.md) | **English**
 
 This is not "yet another pile of CAD tools for an AI". It is **an agent that understands Civil 3D engineering practice, living inside CAD**.
-The built-in agent exposes **exactly 2 tools** to the model (call the plugin, call MCP) — **none of the 427 CAD methods are handed to the model directly**. A layer of engineering judgement decides **which channel** a task should take.
+The built-in agent exposes **exactly 2 tools** to the model (call the plugin, call MCP) — **none of the 430 CAD methods are handed to the model directly**. A layer of engineering judgement decides **which channel** a task should take.
 
 | Layer | What it is | Why it matters |
 |---|---|---|

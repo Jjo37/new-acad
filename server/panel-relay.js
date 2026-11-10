@@ -872,6 +872,43 @@ async function processLlmMessage(entry, msg, lcfg) {
   }
 }
 
+// 2026-11-10: 桥（插件 :8080）可达性探测 —— /health 要能直接回答「插件连上了没有」。
+// 背景：cadSession 只表示 OpenClaw CAD 会话是否建立，发布版（relayMode=llm）恒 false；
+// 曾有人拿它当「插件没连上」的判据，把真正的故障（8080 根本没监听）指错了方向。
+// 结果缓存 2s，避免健康轮询每次都新建 TCP。
+let _bridgeProbe = { at: 0, value: null };
+function probeBridge() {
+  const now = Date.now();
+  if (_bridgeProbe.value && (now - _bridgeProbe.at) < 2000) return Promise.resolve(_bridgeProbe.value);
+  return new Promise((resolve) => {
+    const sock = require('net').connect(BRIDGE_PORT, '127.0.0.1');
+    let buf = '';
+    let done = false;
+    const fin = (v) => {
+      if (done) return;
+      done = true;
+      try { sock.destroy(); } catch (_) { }
+      _bridgeProbe = { at: Date.now(), value: v };
+      resolve(v);
+    };
+    sock.setEncoding('utf8');
+    sock.setTimeout(1500);
+    sock.on('connect', () => sock.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getCivil3DHealth', params: {} }) + '\n'));
+    sock.on('data', (d) => { buf += d; });
+    sock.on('timeout', () => fin({ port: BRIDGE_PORT, reachable: false, error: 'timeout' }));
+    sock.on('error', (e) => fin({ port: BRIDGE_PORT, reachable: false, error: e.code || e.message }));
+    sock.on('close', () => {
+      try {
+        const r = JSON.parse(buf);
+        const h = (r && r.result) || {};
+        fin({ port: BRIDGE_PORT, reachable: true, buildStamp: h.buildStamp || '',
+          pluginVersion: h.pluginVersion || '', hostProduct: h.hostProduct || '',
+          civilAvailable: h.civilAvailable === true });
+      } catch (e) { fin({ port: BRIDGE_PORT, reachable: false, error: 'bad-json' }); }
+    });
+  });
+}
+
 const server = http.createServer((req, res) => {
   // 2026-08-07 安全修复: 来源校验——仅本机(127.0.0.1/localhost)或无 Origin 放行
   const reqOrigin = req.headers.origin || '';
@@ -1106,16 +1143,25 @@ const server = http.createServer((req, res) => {
     const p = inbox.filter(m => m.status === 'pending').length;
     const c = inbox.filter(m => m.status === 'claimed').length;
     const proc = inbox.filter(m => m.status === 'processing').length; // 2026-08-12 M1
-    res.end(JSON.stringify({ ok:true, gateway:ws!==null,
-      // 2026-10-19: 插件/面板要靠这个写对 config.json —— bundle 里有另一份副本，ProjectRoot 可能指错
-      root: path.join(__dirname, '..'),
-      configPath: path.join(__dirname, '..', 'config.json'),
-      gatewayMode: token ? 'openclaw' : 'universal',
-      gatewayReason: !token ? 'no_token' : (ws ? 'connected' : 'unreachable'),
-      gatewayHint: !token ? '未配置 relayToken：编辑 config.json 填 relayToken，或 setx RELAY_TOKEN <token>' : (ws ? '' : '网关未连接：请确认 OpenClaw Gateway 运行中 (:18789)'),
-      cadSession:cadSessionReady,
-      inbox:{pending:p, claimed:c, processing:proc, total:inbox.length}, // 2026-08-12 M1 replies:replies.length,
-      sse:{generic:sseClients.length, reply:replySseClients.length} }));
+    probeBridge().then((bridge) => {
+      res.end(JSON.stringify({ ok:true, gateway:ws!==null,
+        // 2026-10-19: 插件/面板要靠这个写对 config.json —— bundle 里有另一份副本，ProjectRoot 可能指错
+        root: path.join(__dirname, '..'),
+        configPath: path.join(__dirname, '..', 'config.json'),
+        gatewayMode: token ? 'openclaw' : 'universal',
+        gatewayReason: !token ? 'no_token' : (ws ? 'connected' : 'unreachable'),
+        gatewayHint: !token ? '未配置 relayToken：编辑 config.json 填 relayToken，或 setx RELAY_TOKEN <token>' : (ws ? '' : '网关未连接：请确认 OpenClaw Gateway 运行中 (:18789)'),
+        cadSession:cadSessionReady,
+        // 2026-11-10: cadSession 只对 openclaw 模式有意义。判断「插件连上了没有」看 bridge.reachable。
+        cadSessionNote: (RELAY_MODE === 'llm' && !cadSessionReady) ? 'llm 模式不建 CAD 会话，本字段恒为 false 属正常；插件是否可用看 bridge.reachable' : '',
+        bridge,
+        relayMode: RELAY_MODE,
+        inbox:{pending:p, claimed:c, processing:proc, total:inbox.length}, // 2026-08-12 M1 replies:replies.length,
+        sse:{generic:sseClients.length, reply:replySseClients.length} }));
+    }).catch((e) => {
+      res.end(JSON.stringify({ ok:true, gateway:ws!==null, cadSession:cadSessionReady, relayMode: RELAY_MODE,
+        bridge:{ port: BRIDGE_PORT, reachable: false, error: String((e && e.message) || e) } }));
+    });
     return;
   }
 

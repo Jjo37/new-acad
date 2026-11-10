@@ -3,6 +3,19 @@
 $ErrorActionPreference = "SilentlyContinue"
 $ROOT = $PSScriptRoot
 
+# 0. 2026-11-10: 清掉旧 net10 预览包可能留下的 bundle 副本 / 改名残留
+foreach ($b in @(
+    (Join-Path $env:APPDATA "Autodesk\ApplicationPlugins\new-acad-net10.bundle"),
+    (Join-Path $env:LOCALAPPDATA "Autodesk\ApplicationPlugins\new-acad-net10.bundle"),
+    (Join-Path $env:APPDATA "Autodesk\ApplicationPlugins\new-acad-net10.bundle.disabled-by-net10-preview"),
+    (Join-Path $env:LOCALAPPDATA "Autodesk\ApplicationPlugins\new-acad-net10.bundle.disabled-by-net10-preview"))) {
+  if (Test-Path $b) { Remove-Item $b -Recurse -Force -ErrorAction SilentlyContinue }
+}
+# 被预览包改名停用的正式 bundle，还原回来
+foreach ($base in @((Join-Path $env:APPDATA "Autodesk\ApplicationPlugins"), (Join-Path $env:LOCALAPPDATA "Autodesk\ApplicationPlugins"))) {
+  $off = Join-Path $base "new-acad.bundle.disabled-by-net10-preview"
+  if (Test-Path $off) { try { Rename-Item -Path $off -NewName "new-acad.bundle" -ErrorAction Stop } catch { } }
+}
 # 1. 停 relay / MCP / launcher（按命令行匹配，避免误杀其他 node 进程）
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {
   $_.CommandLine -match 'panel-relay|sacred-mcp|relay-launcher'

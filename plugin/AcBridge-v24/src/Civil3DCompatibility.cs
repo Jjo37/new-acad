@@ -196,6 +196,39 @@ internal static class Civil3DCompatibility
     }
   }
 
+  /// <summary>
+  /// 2026-11-10: 原始属性值（不限于标量），交给读器自己做类型转换。
+  /// 读器的"反射兜底"必须走这里 —— tests/reflection_boundary 不允许边界文件之外出现裸反射。
+  /// </summary>
+  public static IReadOnlyList<KeyValuePair<string, object?>> GetReadablePropertyValues(object? target)
+  {
+    var list = new List<KeyValuePair<string, object?>>();
+    if (target == null) return list;
+    foreach (var property in target.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+    {
+      if (!property.CanRead || property.GetIndexParameters().Length > 0) continue;
+      object? value;
+      try { value = property.GetValue(target); } catch { continue; }
+      list.Add(new KeyValuePair<string, object?>(property.Name, value));
+    }
+    return list;
+  }
+
+  /// <summary>2026-11-10: 无参实例方法调用（签名必须无参数，避免误命中重载）。</summary>
+  public static bool TryInvokeParameterlessMethod(object? target, string methodName, out object? result)
+  {
+    result = null;
+    if (target == null) return false;
+    try
+    {
+      var method = target.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+      if (method == null || method.GetParameters().Length != 0) return false;
+      result = method.Invoke(target, null);
+      return true;
+    }
+    catch { return false; }
+  }
+
   public static IReadOnlyDictionary<string, object?> GetReadableScalarProperties(object target)
   {
     var properties = ScalarPropertyCache.GetOrAdd(target.GetType(), static type =>

@@ -35,6 +35,10 @@ $need = @(
   "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.dll",
   "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.deps.json",
   "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.runtimeconfig.json",
+  "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.dll",                 # 2026-11-10: 双段（R26.0+ 宿主）
+  "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.deps.json",
+  "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.runtimeconfig.json",
+  "$ROOT\tools\switch-runtime.ps1",
   "$ROOT\plugin\AcBridge-v24\UglyToad.PdfPig.dll",   # 2026-10-14 M6: readPdf 依赖，漏包则运行时 FileNotFound
   "$ROOT\plugin\AcBridge-v24\SixLabors.ImageSharp.dll",   # 2026-10-14: webp 解码器，漏包则无系统 WIC webp 时解不出
   "$ROOT\server\panel-relay.js",
@@ -125,6 +129,11 @@ Write-Host "[OK] dist/ 已创建"
 Copy-Item "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.dll" "$DIST\plugin\AcBridge-v24\" -Force
 Copy-Item "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.deps.json" "$DIST\plugin\AcBridge-v24\" -Force
 Copy-Item "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.runtimeconfig.json" "$DIST\plugin\AcBridge-v24\" -Force
+# 2026-11-10: 双段安装包 —— net10 段单独一个目录（install.ps1 按宿主版本线选）
+New-Item -ItemType Directory -Path "$DIST\plugin\AcBridge-v24\net10" -Force | Out-Null
+Copy-Item "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.dll" "$DIST\plugin\AcBridge-v24\net10\" -Force
+Copy-Item "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.deps.json" "$DIST\plugin\AcBridge-v24\net10\" -Force
+Copy-Item "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.runtimeconfig.json" "$DIST\plugin\AcBridge-v24\net10\" -Force
 # 2026-10-14: 插件目录内除主 DLL 外的托管依赖（PdfPig 等）必须随包，否则 NETLOAD 后 readPdf 报 FileNotFound
 Get-ChildItem "$ROOT\plugin\AcBridge-v24\*.dll" -File | Where-Object { $_.Name -ne 'Civil3DMcpPlugin.dll' } | ForEach-Object {
   Copy-Item $_.FullName "$DIST\plugin\AcBridge-v24\" -Force
@@ -209,7 +218,8 @@ Copy-Item "$ROOT\tools\port-check.bat" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\port-config.ps1" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\port-config.bat" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\restart-relay.ps1" "$DIST\tools\" -Force   # 2026-11-05: relay 端口切换
-Copy-Item "$ROOT\tools\ocr-check.ps1" "$DIST\tools\" -Force   # 2026-10-15: OCR 语言包预检（install.ps1 调用）
+Copy-Item "$ROOT\tools\ocr-check.ps1" "$DIST\tools\" -Force
+Copy-Item "$ROOT\tools\switch-runtime.ps1" "$DIST\tools\" -Force   # 2026-11-10: net8/net10 手工切换   # 2026-10-15: OCR 语言包预检（install.ps1 调用）
   Copy-Item "$ROOT\tools\smoke-plain-acad.js" "$DIST\tools\" -Force   # 2026-10-27: plain-AutoCAD smoke + evidence generator
 Copy-Item "$ROOT\uninstall.ps1" "$DIST\" -Force
 Copy-Item "$ROOT\uninstall-pre.ps1" "$DIST\" -Force  # 2026-08-25: Inno uninstall pre-cleanup (stop node/task, restore acad.lsp)

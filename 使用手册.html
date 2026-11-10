@@ -297,7 +297,7 @@
 
     <h3 id="ch1-2-zh">1.2 安装（4 步）</h3>
     <ol class="steps">
-      <li><b>下载</b>安装包 <code>new-acad-setup-v1.14.0.exe</code>。</li>
+      <li><b>下载</b>安装包 <code>new-acad-setup-v1.15.0.exe</code>。</li>
       <li><b>双击运行</b>，允许管理员权限。安装向导支持中文 / English。</li>
       <li><b>走完向导</b>。装完会调用 <code>install.ps1</code>：检测 AutoCAD / Civil 3D 版本、注册插件自启、引导你填 AI 配置。</li>
       <li><b>完成</b>。勾选"打开使用手册"会打开本文件；随后启动 AutoCAD 或 Civil 3D。</li>
@@ -306,9 +306,15 @@
       <span class="t">装完怎么确认成功</span>
       启动 CAD，命令行输入 <code>HANK_SHOW</code>。面板能弹出、状态显示「● 就绪」，就是装好了。
     </div>
+    <div class="callout tip">
+      <span class="t">安装包自带两套插件（按 CAD 版本自动选）</span>
+      2025 / 2026 用 <code>net8</code> 版，2027 及以后用 <code>net10</code> 版。安装时按检测到的宿主自动选，不用你操心。
+      想手工切换（装完后想验证另一套）：管理员权限运行 <code>powershell -File tools\switch-runtime.ps1 -Runtime net8|net10</code>，
+      看当前用的是哪套：<code>-Runtime status</code>。切换后重启 CAD 生效。
+    </div>
 
     <h3 id="ch1-3-zh">1.3 静默安装（企业 / 批量部署）</h3>
-    <p><code>new-acad-setup-v1.14.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.15.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">静默安装会跳过配置向导</span>
       向导被跳过（<code>skipifsilent</code>），所以<b>不会</b>自动检测 CAD、不会写配置。装完需要人工打开面板填 Key，或直接预置 <code>config.json</code>（字段见 <a href="#ch3">第 3 章</a>）。
@@ -355,7 +361,7 @@
 
     <h3 id="ch1-2-en">1.2 Install (4 steps)</h3>
     <ol class="steps">
-      <li><b>Download</b> <code>new-acad-setup-v1.14.0.exe</code>.</li>
+      <li><b>Download</b> <code>new-acad-setup-v1.15.0.exe</code>.</li>
       <li><b>Run it</b> and allow administrator rights. The wizard speaks Chinese and English.</li>
       <li><b>Finish the wizard.</b> It runs <code>install.ps1</code>: detect AutoCAD / Civil 3D, register autoload, guide you through the AI settings.</li>
       <li><b>Done.</b> Tick "open the manual" and start AutoCAD or Civil 3D.</li>
@@ -364,9 +370,15 @@
       <span class="t">How to confirm it worked</span>
       Start CAD and type <code>HANK_SHOW</code>. If the palette opens and the status reads "● Ready", you are set.
     </div>
+    <div class="callout tip">
+      <span class="t">The package ships two plug-in builds (picked automatically)</span>
+      2025 / 2026 hosts get the <code>net8</code> build, 2027 and later get the <code>net10</code> build. The installer picks by host version, so there is nothing to choose.
+      To flip it by hand (e.g. to test the other build): run <code>powershell -File tools\switch-runtime.ps1 -Runtime net8|net10</code> as Administrator;
+      <code>-Runtime status</code> shows which one is active. Restart CAD afterwards.
+    </div>
 
     <h3 id="ch1-3-en">1.3 Silent install (enterprise)</h3>
-    <p><code>new-acad-setup-v1.14.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.15.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">Silent install skips the setup wizard</span>
       Because of <code>skipifsilent</code> it does <b>not</b> detect Civil 3D and does <b>not</b> write configuration. Fill in the key from the palette afterwards, or pre-seed <code>config.json</code> (fields in <a href="#ch3">chapter 3</a>).
@@ -1485,8 +1497,8 @@
 </section>
 
 <footer>
-  <span class="zh">new-acad 使用手册 · 对应版本 v1.14.0 · 2026-11-05</span>
-  <span class="en">new-acad User Guide · for version v1.14.0 · 2026-11-06</span>
+  <span class="zh">new-acad 使用手册 · 对应版本 v1.15.0 · 2026-11-05</span>
+  <span class="en">new-acad User Guide · for version v1.15.0 · 2026-11-10</span>
 </footer>
 
 </main>

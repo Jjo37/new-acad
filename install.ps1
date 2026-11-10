@@ -112,6 +112,21 @@ if ($c3d.found) {
   Wn "未检测到 Autodesk AutoCAD 2025/2026（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无产品），用户需手动安装"
 }
 
+# ---------- 2b. 插件运行时选段（2026-11-10：安装包双段，长期策略） ----------
+# 同一个插件编了两套，按宿主版本线选，不按本机 .NET 运行时版本选：
+#   plugin\AcBridge-v24\Civil3DMcpPlugin.dll        -> net8  （R25.x：2025 / 2026）
+#   plugin\AcBridge-v24\net10\Civil3DMcpPlugin.dll  -> net10 （R26.0+：2027 及以后）
+# 手工切换：powershell -File tools\switch-runtime.ps1 -Runtime net8|net10（需管理员）
+$pluginRoot = "$ROOT\plugin\AcBridge-v24"
+$net8Dll = "$pluginRoot\Civil3DMcpPlugin.dll"
+$net10Dll = "$pluginRoot\net10\Civil3DMcpPlugin.dll"
+$seriesNum = 25
+if ($c3d.found -and $c3d.rName -match '^R(\d+)\.') { $seriesNum = [int]$matches[1] }
+$wantNet10 = ($seriesNum -ge 26)
+if ($wantNet10 -and -not (Test-Path $net10Dll)) { Wn "本安装包缺少 net10 段，回退到 net8"; $wantNet10 = $false }
+if (-not (Test-Path $net8Dll)) { throw "本安装包缺少 net8 段: $net8Dll" }
+$PLUGIN_DLL = if ($wantNet10) { $net10Dll } else { $net8Dll }
+Ok ("插件段: " + $(if ($wantNet10) { "net10" } else { "net8" }) + "（宿主 " + $c3d.rName + "）-> " + $PLUGIN_DLL)
 # ---------- 3. accoreconsole ----------
 Write-Host "`n--- 3/11 accoreconsole ---" -ForegroundColor Yellow
 if ($c3d.found -and (Test-Path "$($c3d.installDir)accoreconsole.exe")) {
@@ -274,7 +289,7 @@ if (-not $c3d.found) {
     Wn "宿主支持目录不存在: $c3dSupport（版本可能不是 $($c3d.year)，需手动确认）"
   } else {
     # 生成 Hank.lsp（注入实际 DLL 路径，异机可用）
-    $dllPath = "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.dll"
+    $dllPath = $PLUGIN_DLL
     $dllForward = $dllPath -replace '\\','/'
     $hankContent = @"
 ;; Hank.lsp - auto-show Hank palette (DLL auto-loaded via Applications registry)
@@ -326,7 +341,7 @@ if (-not $c3d.found) {
     try {
       $appKey = "HKLM:\SOFTWARE\Autodesk\AutoCAD\$($c3d.rName)\$($c3d.productKey)\Applications\HankBridge"
       if (-not (Test-Path $appKey)) { New-Item -Path $appKey -Force | Out-Null }
-      New-ItemProperty -Path $appKey -Name "Loader" -Value "$ROOT\plugin\AcBridge-v24\Civil3DMcpPlugin.dll" -PropertyType String -Force | Out-Null
+      New-ItemProperty -Path $appKey -Name "Loader" -Value $PLUGIN_DLL -PropertyType String -Force | Out-Null
       New-ItemProperty -Path $appKey -Name "Managed" -Value 1 -PropertyType DWord -Force | Out-Null
       New-ItemProperty -Path $appKey -Name "LoadCtl" -Value 1 -PropertyType DWord -Force | Out-Null
       New-ItemProperty -Path $appKey -Name "Desc" -Value "new-acad Hank palette plugin (Civil3D MCP bridge)" -PropertyType String -Force | Out-Null
@@ -345,7 +360,7 @@ if (-not $c3d.found) {
 
   # 2026-08-16: TRUSTEDPATHS 写入——插件目录加入可信路径，NETLOAD 不再弹"未签名可执行文件"安全框
   # （实测：全新签名 DLL + TRUSTEDPATHS 含插件目录 → C3D 重启无弹窗，8080 直接监听，两次确认）
-  $pluginDir = "$ROOT\plugin\AcBridge-v24"
+  $pluginDir = Split-Path $PLUGIN_DLL -Parent
   try {
     $profilesKey = "HKCU:\Software\Autodesk\AutoCAD\$($c3d.rName)\ACAD-*\Profiles\*"
     $profiles = Get-ChildItem $profilesKey -ErrorAction SilentlyContinue

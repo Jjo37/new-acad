@@ -53,7 +53,7 @@ public static class PointCommands
     });
   }
 
-  public static Task<object?> CreateCogoPointsAsync(JsonObject? parameters)
+    public static Task<object?> CreateCogoPointsAsync(JsonObject? parameters)
   {
     var pointsNode = PluginRuntime.GetParameter(parameters, "points") as JsonArray;
     if (pointsNode == null || pointsNode.Count == 0)
@@ -62,11 +62,27 @@ public static class PointCommands
     }
 
     var startNumber = PluginRuntime.GetOptionalInt(parameters, "startNumber");
+    if (startNumber.HasValue && startNumber.Value < 1)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "startNumber must be >= 1 (COGO point numbers start at 1).");
+    }
 
     return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var createdNumbers = new List<uint>();
       var collection = civilDoc.CogoPoints;
+
+      // 2026-11-09: 旧实现直接把 PointNumber 赋成 startNumber+index。撞号时 Civil 3D 抛
+      // ArgumentException("PointNumber is existing.")，一路冒到顶层变成 INTERNAL_ERROR ——
+      // 调用方只看到「插件崩了」，看不出是编号冲突。现在先扫已用编号：冲突就顺延到第一段
+      // 放得下的空闲号，并把「要的号 / 实际用的号」都回给调用方。
+      uint? appliedStart = null;
+      var renumbered = false;
+      if (startNumber.HasValue)
+      {
+        var used = new HashSet<uint>(EnumeratePointNumbers(civilDoc, transaction).Select(e => e.Number));
+        appliedStart = AllocatePointNumbers(used, (uint)startNumber.Value, pointsNode.Count, out renumbered);
+      }
 
       for (var index = 0; index < pointsNode.Count; index++)
       {
@@ -83,20 +99,63 @@ public static class PointCommands
         var objectId = collection.Add(new Point3d(x, y, z), description, true);
         var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForWrite);
 
-        if (startNumber.HasValue)
+        if (appliedStart.HasValue)
         {
-          point.PointNumber = (uint)(startNumber.Value + index);
+          var target = appliedStart.Value + (uint)index;
+          // A freshly added point already carries the next free number. Assigning that same
+          // value again makes Civil 3D raise "PointNumber is existing." -- skip when equal.
+          if (point.PointNumber != target)
+          try
+          {
+            point.PointNumber = target;
+          }
+          catch (System.ArgumentException ex)
+          {
+            throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+              $"Cannot assign COGO point number {target}: {ex.Message} (requested start {startNumber}, applied start {appliedStart}).");
+          }
         }
 
         createdNumbers.Add(point.PointNumber);
       }
 
-      return new Dictionary<string, object?>
+      var result = new Dictionary<string, object?>
       {
         ["created"] = createdNumbers.Count,
         ["pointNumbers"] = createdNumbers,
       };
+      if (startNumber.HasValue)
+      {
+        result["requestedStart"] = startNumber.Value;
+        result["appliedStart"] = appliedStart;
+        result["renumbered"] = renumbered;
+      }
+      return result;
     });
+  }
+
+  /// <summary>
+  /// First start (&gt;= desired) with `count` consecutive numbers that are all unused.
+  /// Keeps the caller's intent when possible and reports whether it had to move.
+  /// </summary>
+  private static uint AllocatePointNumbers(HashSet<uint> used, uint desiredStart, int count, out bool renumbered)
+  {
+    renumbered = false;
+    var candidate = desiredStart == 0 ? 1u : desiredStart;
+    while (true)
+    {
+      var collisionAt = -1;
+      for (var i = 0; i < count; i++)
+      {
+        if (used.Contains(candidate + (uint)i)) { collisionAt = i; break; }
+      }
+      if (collisionAt < 0)
+      {
+        renumbered = candidate != desiredStart;
+        return candidate;
+      }
+      candidate = candidate + (uint)collisionAt + 1;
+    }
   }
 
   // 2026-08-07 框架: 文件通道——从文件导入 Cogo 点（AI 只需传路径+格式，数据不走 LLM 上下文）

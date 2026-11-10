@@ -88,11 +88,13 @@ new-acad 由三块拼成，各司其职：
 ## 环境要求
 
 - **Windows**
-- **AutoCAD 2025 / 2026**（正版授权，自行准备）—— 装了 **Civil 3D 2025 / 2026** 则自动获得路线 / 曲面 / 廊道 / 管网等全套专业能力；只有纯 AutoCAD 时，这些 Civil 3D 专有方法会明确返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，绘图、图层、块、文件读写等普通能力照常可用
+- **AutoCAD 2025 / 2026 / 2027**（正版授权，自行准备）—— 装了 **Civil 3D 2025 / 2026 / 2027** 则自动获得路线 / 曲面 / 廊道 / 管网等全套专业能力；只有纯 AutoCAD 时，这些 Civil 3D 专有方法会明确返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，绘图、图层、块、文件读写等普通能力照常可用
 - 一个 LLM 的 **API Key**（默认模式下唯一需要你自己准备的东西）
 - 运行环境（Node 等）由安装脚本自动处理
 
-> ⚠️ **2024 及更早版本不支持。** 插件基于 **.NET 8** 构建；2024 及更早的 AutoCAD / Civil 3D 仍跑在 .NET Framework 4.8 上，两者程序集不兼容。
+> ⚠️ **2024 及更早版本不支持。** 2024 及更早的 AutoCAD / Civil 3D 仍跑在 .NET Framework 4.8 上，与插件的 .NET 程序集不兼容。
+>
+> 📦 **安装包自带两套插件（v1.15.0 起）**：2025 / 2026（R25.x）用 **net8** 版，2027 及以后（R26.0+）用 **net10** 版；安装时按宿主版本自动选，不需要你选。想手工切换：`tools\switch-runtime.ps1 -Runtime net8|net10`（加 `status` 看当前用哪套）。
 >
 > 📌 **纯 AutoCAD 说明（v1.12.0 修正版起）**：宿主是纯 AutoCAD 时插件正常工作，Civil 3D 专有方法返回 `CIVIL3D.CIVIL_NOT_INSTALLED`，不会静默失败、也不会报"内部错误"。
 
@@ -112,7 +114,7 @@ new-acad 由三块拼成，各司其职：
 > 不想自己编译？到 [Releases](https://github.com/Jjo37/new-acad/releases) 页面下载 `setup.exe` 安装包（只发安装包，没有绿色版 zip）。
 
 ```
-① 确保已安装 AutoCAD 2025 / 2026（有 Civil 3D 更好，能力更全）
+① 确保已安装 AutoCAD 2025 / 2026 / 2027（有 Civil 3D 更好，能力更全）
 ② 双击 install.bat（推荐；自动绕过 PowerShell 执行策略）
    或：右键 install.ps1 → 使用 PowerShell 运行
 ③ 安装向导第 11 步会让你选 LLM 服务商 + 填 API Key

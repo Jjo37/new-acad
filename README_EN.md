@@ -84,11 +84,13 @@ new-acad is made of three parts:
 ## Requirements
 
 - **Windows**
-- **AutoCAD 2025 / 2026** (licensed copy — bring your own). With **Civil 3D 2025 / 2026** installed you get the full civil toolkit (alignments / surfaces / corridors / pipe networks); on plain AutoCAD those Civil 3D-only methods return `CIVIL3D.CIVIL_NOT_INSTALLED`, while drafting, layer, block and file-I/O methods keep working
+- **AutoCAD 2025 / 2026 / 2027** (licensed copy — bring your own). With **Civil 3D 2025 / 2026 / 2027** installed you get the full civil toolkit (alignments / surfaces / corridors / pipe networks); on plain AutoCAD those Civil 3D-only methods return `CIVIL3D.CIVIL_NOT_INSTALLED`, while drafting, layer, block and file-I/O methods keep working
 - An **LLM API key** (the only thing you must supply in the default mode)
 - Runtime prerequisites (Node, etc.) are handled by the installer
 
-> ⚠️ **2024 and earlier are not supported.** The plugin is built for **.NET 8**; AutoCAD / Civil 3D 2024 and older still run on .NET Framework 4.8, and the two assembly models are incompatible.
+> ⚠️ **2024 and earlier are not supported.** AutoCAD / Civil 3D 2024 and older still run on .NET Framework 4.8, which is incompatible with the plugin's .NET assemblies.
+>
+> 📦 **The installer ships two plug-in builds (since v1.15.0):** **net8** for 2025 / 2026 (R25.x) and **net10** for 2027 and later (R26.0+). The installer picks by host version — nothing for you to choose. To flip it by hand: `tools\switch-runtime.ps1 -Runtime net8|net10` (add `status` to see which one is active).
 >
 > 📌 **Plain AutoCAD note (since the v1.12.0 corrected build):** on a plain-AutoCAD host the plugin runs normally; Civil 3D-only methods return `CIVIL3D.CIVIL_NOT_INSTALLED` instead of failing silently or reporting an internal error.
 
@@ -105,10 +107,10 @@ new-acad is made of three parts:
 
 ## Quick start
 
-> Don't want to build it yourself? Grab `setup.exe` or the portable zip from the [Releases](https://github.com/Jjo37/new-acad/releases) page.
+> Don't want to build it yourself? Grab `setup.exe` from the [Releases](https://github.com/Jjo37/new-acad/releases) page (installer only — no portable zip is published).
 
 ```
-1. Make sure AutoCAD 2025 / 2026 is installed (add Civil 3D for the full civil toolkit)
+1. Make sure AutoCAD 2025 / 2026 / 2027 is installed (add Civil 3D for the full civil toolkit)
 2. Double-click install.bat  (recommended — bypasses the PowerShell execution policy)
    or: right-click install.ps1 → Run with PowerShell
 3. Step 11 of the wizard: pick your LLM provider and paste your API key

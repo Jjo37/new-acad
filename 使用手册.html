@@ -239,7 +239,7 @@
     <div class="callout warn">
       <span class="t">不写清楚会踩坑</span>
       <ul>
-        <li><b>支持 AutoCAD 2025 / 2026；装了 Civil 3D 2025 / 2026 就多出专业能力</b>。纯 AutoCAD 下路线 / 曲面 / 廊道 / 管网等方法会明确回「需要 Civil 3D」，画图、图层、块、文件读写照常可用。2024 及更早是另一套运行时（.NET Framework 4.8），装不上也用不了。</li>
+        <li><b>支持 AutoCAD 2025 / 2026 / 2027；装了 Civil 3D 2025 / 2026 / 2027 就多出专业能力</b>。纯 AutoCAD 下路线 / 曲面 / 廊道 / 管网等方法会明确回「需要 Civil 3D」，画图、图层、块、文件读写照常可用。2024 及更早是另一套运行时（.NET Framework 4.8），装不上也用不了。</li>
         <li><b>撤销只对普通 AutoCAD 图元承诺</b>（线、多段线、圆、弧、文字、点、块参照）。Civil 3D 对象（路线 / 曲面 / 廊道 / 管网）会标成"不可撤"，不会假装能撤。</li>
         <li><b>工作流回放不能跨图纸</b>：记录里的"句柄"只在录制那张图里有意义，换图后引用句柄的步骤会被拦下。</li>
       </ul>
@@ -268,7 +268,7 @@
     <div class="callout warn">
       <span class="t">Read this before you file a bug</span>
       <ul>
-        <li><b>AutoCAD 2025 / 2026; add Civil 3D 2025 / 2026 for the civil toolkit.</b> On plain AutoCAD, alignment / surface / corridor / pipe-network methods answer "Civil 3D required" explicitly, while drafting, layers, blocks and file I/O work as usual. 2024 and earlier run on a different runtime (.NET Framework 4.8); the plugin will not load.</li>
+        <li><b>AutoCAD 2025 / 2026 / 2027; add Civil 3D 2025 / 2026 / 2027 for the civil toolkit.</b> On plain AutoCAD, alignment / surface / corridor / pipe-network methods answer "Civil 3D required" explicitly, while drafting, layers, blocks and file I/O work as usual. 2024 and earlier run on a different runtime (.NET Framework 4.8); the plugin will not load.</li>
         <li><b>Undo only promises plain AutoCAD entities</b> (line, polyline, circle, arc, text, point, block reference). Civil 3D objects (alignment / surface / corridor / pipe network) are marked "cannot be reverted" instead of pretending.</li>
         <li><b>A recorded workflow cannot be replayed in another drawing</b>: the handles only mean something in the file they were recorded in.</li>
       </ul>
@@ -285,7 +285,7 @@
     <table>
       <tr><th>项目</th><th>要求</th></tr>
       <tr><td>操作系统</td><td>Windows 10 / 11（64 位）</td></tr>
-      <tr><td>CAD</td><td><b>Autodesk AutoCAD 2025 或 2026</b>（正版，自行准备）；装了 <b>Civil 3D 2025 / 2026</b> 则额外获得路线 / 曲面 / 廊道 / 管网等专业能力</td></tr>
+      <tr><td>CAD</td><td><b>Autodesk AutoCAD 2025 或 2026</b>（正版，自行准备）；装了 <b>Civil 3D 2025 / 2026 / 2027</b> 则额外获得路线 / 曲面 / 廊道 / 管网等专业能力</td></tr>
       <tr><td>权限</td><td>安装需要<b>管理员</b>（默认装到 <code>C:\Program Files\new-acad</code>）</td></tr>
       <tr><td>磁盘</td><td>约 300 MB（含内置 Node 运行时与离线手册）</td></tr>
       <tr><td>网络</td><td>需要能访问你选的那家模型服务；不需要连我们的服务器</td></tr>
@@ -308,7 +308,7 @@
     </div>
     <div class="callout tip">
       <span class="t">安装包自带两套插件（按 CAD 版本自动选）</span>
-      2025 / 2026 用 <code>net8</code> 版，2027 及以后用 <code>net10</code> 版。安装时按检测到的宿主自动选，不用你操心。
+      2025 / 2026 / 2027 用 <code>net8</code> 版，2027 及以后用 <code>net10</code> 版。安装时按检测到的宿主自动选，不用你操心。
       想手工切换（装完后想验证另一套）：管理员权限运行 <code>powershell -File tools\switch-runtime.ps1 -Runtime net8|net10</code>，
       看当前用的是哪套：<code>-Runtime status</code>。切换后重启 CAD 生效。
     </div>
@@ -349,7 +349,7 @@
     <table>
       <tr><th>Item</th><th>Requirement</th></tr>
       <tr><td>OS</td><td>Windows 10 / 11 (64-bit)</td></tr>
-      <tr><td>CAD</td><td><b>Autodesk AutoCAD 2025 or 2026</b> (licensed copy). With <b>Civil 3D 2025 / 2026</b> installed you also get alignments / surfaces / corridors / pipe networks</td></tr>
+      <tr><td>CAD</td><td><b>Autodesk AutoCAD 2025 or 2026</b> (licensed copy). With <b>Civil 3D 2025 / 2026 / 2027</b> installed you also get alignments / surfaces / corridors / pipe networks</td></tr>
       <tr><td>Privileges</td><td><b>Administrator</b> to install (defaults to <code>C:\Program Files\new-acad</code>)</td></tr>
       <tr><td>Disk</td><td>~300 MB (bundled Node runtime and offline manual)</td></tr>
       <tr><td>Network</td><td>Must reach the model provider you choose; no connection to our servers needed</td></tr>
@@ -372,7 +372,7 @@
     </div>
     <div class="callout tip">
       <span class="t">The package ships two plug-in builds (picked automatically)</span>
-      2025 / 2026 hosts get the <code>net8</code> build, 2027 and later get the <code>net10</code> build. The installer picks by host version, so there is nothing to choose.
+      2025 / 2026 / 2027 hosts get the <code>net8</code> build, 2027 and later get the <code>net10</code> build. The installer picks by host version, so there is nothing to choose.
       To flip it by hand (e.g. to test the other build): run <code>powershell -File tools\switch-runtime.ps1 -Runtime net8|net10</code> as Administrator;
       <code>-Runtime status</code> shows which one is active. Restart CAD afterwards.
     </div>
@@ -1245,7 +1245,7 @@
 
     <h3 id="ch6-1-zh">6.1 版本与运行环境</h3>
     <ul>
-          <li><b>AutoCAD 2025 / 2026</b>（装了 Civil 3D 则含全套专业能力）；2024 及更早不支持（运行时不同）。</li>
+          <li><b>AutoCAD 2025 / 2026 / 2027</b>（装了 Civil 3D 则含全套专业能力）；2024 及更早不支持（运行时不同）。</li>
           <li>只支持 64 位 Windows 10 / 11。</li>
         </ul>
 
@@ -1308,7 +1308,7 @@
 
     <h3 id="ch6-1-en">6.1 Version and runtime</h3>
     <ul>
-          <li><b>AutoCAD 2025 / 2026</b> (with Civil 3D installed, the full civil toolkit is available); 2024 and earlier are not supported (different runtime).</li>
+          <li><b>AutoCAD 2025 / 2026 / 2027</b> (with Civil 3D installed, the full civil toolkit is available); 2024 and earlier are not supported (different runtime).</li>
           <li>64-bit Windows 10 / 11 only.</li>
         </ul>
 
@@ -1375,7 +1375,7 @@
     <h3 id="ch7-1-zh">7.1 面板弹不出来</h3>
     <ul>
       <li>命令行输 <code>HANK_SHOW</code> 看有没有反应。</li>
-      <li>没反应 → 插件没加载：检查 CAD 版本是否 2025/2026；重装一次；看 <code>plugin.log</code> 有没有加载错误。</li>
+      <li>没反应 → 插件没加载：检查 CAD 版本是否 2025 / 2026 / 2027；重装一次；看 <code>plugin.log</code> 有没有加载错误。</li>
       <li>有反应但面板在屏幕外 → 用命令行 <code>HANK_TOOLS</code> 再试，或重启 CAD。</li>
     </ul>
 
@@ -1437,7 +1437,7 @@
     <h3 id="ch7-1-en">7.1 The palette will not open</h3>
     <ul>
       <li>Type <code>HANK_SHOW</code> in the command line.</li>
-      <li>No reaction → the plugin is not loaded: check Civil 3D is 2025/2026, reinstall, and read <code>plugin.log</code>.</li>
+      <li>No reaction → the plugin is not loaded: check Civil 3D is 2025 / 2026 / 2027, reinstall, and read <code>plugin.log</code>.</li>
       <li>Reacting but off-screen → try <code>HANK_TOOLS</code>, or restart CAD.</li>
     </ul>
 
@@ -1497,7 +1497,7 @@
 </section>
 
 <footer>
-  <span class="zh">new-acad 使用手册 · 对应版本 v1.15.0 · 2026-11-05</span>
+  <span class="zh">new-acad 使用手册 · 对应版本 v1.15.0 · 2026-11-10</span>
   <span class="en">new-acad User Guide · for version v1.15.0 · 2026-11-10</span>
 </footer>
 

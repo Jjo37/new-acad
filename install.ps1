@@ -6,7 +6,7 @@
   2026-09-11: C3D 路径改注册表动态检测（tools/find-civil3d.ps1），支持 2025/2026（2024 = .NET Framework 4.8，与本插件 net8.0 构建不兼容）
 #>
 
-param([string]$Locale = "")
+param([string]$Locale = "", [string]$Hosts = "", [switch]$NonInteractive, [switch]$DetectOnly, [switch]$AutoloadOnly)
 
 $ErrorActionPreference = "Stop"
 
@@ -42,12 +42,22 @@ function Ok  { $script:PASS++; "[PASS] $args" }
 function Ng  { $script:FAIL++; "[FAIL] $args" }
 function Wn  { $script:WARN++; "[WARN] $args" }
 
+# 2026-11-19: 双段安装包 —— 每个宿主按版本线自己挑段（R25.x -> net8，R26.0+ -> net10）
+$pluginRoot = "$ROOT\plugin\AcBridge-v24"
+$net8Dll = "$pluginRoot\Civil3DMcpPlugin.dll"
+$net10Dll = "$pluginRoot\net10\Civil3DMcpPlugin.dll"
+# 2026-11-24: 宿主接线（Hank.lsp / acad.lsp / Applications 注册表）抽到 tools/host-wiring.ps1，
+# 与 tools/manage-hosts.ps1（后续加装、单版本卸载）共用同一份实现——两处各写一份必然漂移。
+$script:NewAcadRoot = $ROOT
+. "$ROOT\tools\host-wiring.ps1"
+
+
 # P2.5: 统一配置入口 — 端口/密钥从 config.json 读（环境变量可覆盖）
 $CONFIG = "$ROOT\config.json"
 # 2026-10-19: install root is authoritative (CIVIL3D_ROOT); the Autoloader bundle copy is not the source of truth
 [Environment]::SetEnvironmentVariable("CIVIL3D_ROOT", $ROOT, "User")
 $env:CIVIL3D_ROOT = $ROOT
-$cfg = [pscustomobject]@{ bridgePort=8080; mcpPort=3000; relayPort=19876; relayToken=""; relaySessionKey=""; locale="auto"; relayMode="llm"; llm=[pscustomobject]@{ provider=""; baseUrl=""; apiKey=""; model=""; maxTurns=20; timeoutMs=120000 } }
+$cfg = [pscustomobject]@{ bridgePort=8080; mcpPort=3000; relayPort=19876; relayToken=""; relaySessionKey=""; locale="auto"; relayMode="llm"; autoFontMapping=$true; llm=[pscustomobject]@{ provider=""; baseUrl=""; apiKey=""; model=""; maxTurns=20; timeoutMs=120000 } }
 if (Test-Path $CONFIG) {
   try { $cfg = Get-Content $CONFIG -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Wn "config.json 解析失败: $_" }
 }
@@ -93,40 +103,83 @@ if ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsI
   } catch { Wn "运行时写权限设置失败: $_" }
 }
 
-# ---------- 2. Autodesk 宿主检测：Civil 3D 或纯 AutoCAD（2026-10-27 v1.11.0-fix）----------
+# ---------- 2. Autodesk 宿主检测：本机所有 AutoCAD / Civil 3D（2026-11-19）----------
+# Bro 需求：安装时自动检测本机所有 AutoCAD / Civil 3D 版本，用户自定义装到哪些上。
+# 以前只挑一个宿主（最高版本、Civil 3D 优先），多版本机器上其余宿主永远不会被配置。
 Write-Host "`n--- 2/11 Autodesk 宿主检查 ---" -ForegroundColor Yellow
-try { $c3d = & "$ROOT\tools\find-civil3d.ps1" | ConvertFrom-Json } catch { $c3d = [pscustomobject]@{ found = $false }; Wn "宿主检测脚本异常: $_" } # 2026-08-14 P2-4
-$hostKind = $(if ($c3d.PSObject.Properties['kind'] -and $c3d.kind) { $c3d.kind } else { 'civil3d' })
-if ($c3d.found) {
-  if ($hostKind -eq 'autocad') {
-    Ok "AutoCAD $($c3d.year) 安装（未检测到 Civil 3D）: $($c3d.installDir)"
-    Ok "纯 AutoCAD 模式：绘图 / 图层 / 块 / 文件读写等能力可用；Civil 3D 专有方法会明确返回 CIVIL3D.CIVIL_NOT_INSTALLED"
-  } else {
-    Ok "Civil 3D $($c3d.year) 安装: $($c3d.installDir)"
-  }
-  if ($c3d.PSObject.Properties['supported'] -and -not $c3d.supported) {
-    Wn "Autodesk $($c3d.year) 不受支持：本插件为 .NET 8 构建，仅支持 2025/2026。装到 2024 会静默不加载。"
-  }
-  if (Test-Path "$($c3d.installDir)acad.exe") { Ok "acad.exe 就绪" } else { Wn "acad.exe 未找到（目录存在但无 acad.exe）" }
+try { $probe = & "$ROOT\tools\find-civil3d.ps1" | ConvertFrom-Json } catch { $probe = [pscustomobject]@{ found = $false; candidates = @() }; Wn "宿主检测脚本异常: $_" }
+$allHosts = @($probe.candidates | Where-Object { $_.installDir -and $_.productKey })
+if ($allHosts.Count -eq 0 -and $probe.found) { $allHosts = @($probe) }   # 旧探测脚本只回单宿主时的兜底
+# Civil 3D 排前面（功能超集），同 kind 内按年份降序
+$allHosts = @($allHosts | Sort-Object @{ Expression = { if ($_.kind -eq 'civil3d') { 0 } else { 1 } } }, @{ Expression = { [int]$_.year }; Descending = $true })
+
+$script:SelectedHosts = @()
+if ($allHosts.Count -eq 0) {
+  Wn "未检测到 Autodesk AutoCAD / Civil 3D（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无产品）"
 } else {
-  Wn "未检测到 Autodesk AutoCAD 2025/2026（注册表 HKLM\SOFTWARE\Autodesk\AutoCAD 下无产品），用户需手动安装"
+  Write-Host "  本机检测到 $($allHosts.Count) 个 Autodesk 宿主：" -ForegroundColor Cyan
+  $i = 0
+  foreach ($h in $allHosts) {
+    $i++
+    $seg = Get-HostSegmentName $h
+    $sup = if ($h.supported -eq $false) { '  [不受支持: 需 2025+]' } else { '' }
+    Write-Host ("    [{0}] {1}  ({2})  插件段={3}  {4}{5}" -f $i, $h.productName, $h.rName, $seg, $h.installDir, $sup) -ForegroundColor Gray
+  }
+  $supportedHosts = @($allHosts | Where-Object { $_.supported -ne $false })
+  $defaultHosts = if ($supportedHosts.Count -gt 0) { $supportedHosts } else { $allHosts }
+  $skippedHosts = @($allHosts | Where-Object { $_.supported -eq $false })
+  # 2026-11-24: 回车语义必须写明"具体装到哪几个"。以前只说"全部受支持宿主"，
+  # 机器上有旧版本被跳过时，用户会以为回车=全装，实际只配了一个。
+  if ($defaultHosts.Count -gt 0) {
+    Write-Host ("  回车将装到: " + (($defaultHosts | ForEach-Object { "$($_.productName) ($($_.rName))" }) -join ' + ')) -ForegroundColor Cyan
+  }
+  if ($skippedHosts.Count -gt 0) {
+    Write-Host ("  回车会跳过（版本不受支持，需 2025 及以上）: " + (($skippedHosts | ForEach-Object { "$($_.productName) ($($_.rName))" }) -join ' + ')) -ForegroundColor DarkYellow
+  }
+  $choice = $Hosts
+  if (-not $choice -and -not $NonInteractive) {
+    Write-Host "  装到哪些宿主？回车=上面列出的宿主（不含被跳过的）；输入编号（如 1,3）；0=都不装（稍后用 tools\manage-hosts.bat 加装）" -ForegroundColor Yellow
+    $choice = (Read-Host "  选择").Trim()
+  }
+  if (-not $choice -and $NonInteractive) { $choice = 'all' }
+  $script:SelectedHosts = @(Resolve-HostSelection -AllHosts $allHosts -Selection $choice)
+  if ($script:SelectedHosts.Count -eq 0) { Wn "按选择跳过自动加载注册（可用 tools\manage-hosts.bat 随时加装）" }
+  foreach ($h in $script:SelectedHosts) {
+    if ($h.supported -eq $false) { Wn "已选中不受支持的宿主：$($h.productName)（插件是 .NET 8/10 构建，装在 2024 及更早的 AutoCAD 上不会加载）" }
+  }
+  if ($script:SelectedHosts.Count -gt 0) {
+    Ok ("将配置自动加载: " + (($script:SelectedHosts | ForEach-Object { $_.productName }) -join ' + '))
+  }
+}
+if ($DetectOnly) {
+  Write-Host ("`n[detect-only] hosts=" + $allHosts.Count + " selected=" + $script:SelectedHosts.Count) -ForegroundColor Cyan
+  foreach ($h in $script:SelectedHosts) { Write-Host ("  selected: " + $h.productName + " " + $h.rName + " -> " + (Get-HostSegmentName $h)) -ForegroundColor Gray }
+  exit 0
 }
 
-# ---------- 2b. 插件运行时选段（2026-11-10：安装包双段，长期策略） ----------
+# ---------- 2b. 插件运行时选段（每个宿主按自己的版本线挑） ----------
 # 同一个插件编了两套，按宿主版本线选，不按本机 .NET 运行时版本选：
 #   plugin\AcBridge-v24\Civil3DMcpPlugin.dll        -> net8  （R25.x：2025 / 2026）
 #   plugin\AcBridge-v24\net10\Civil3DMcpPlugin.dll  -> net10 （R26.0+：2027 及以后）
 # 手工切换：powershell -File tools\switch-runtime.ps1 -Runtime net8|net10（需管理员）
-$pluginRoot = "$ROOT\plugin\AcBridge-v24"
-$net8Dll = "$pluginRoot\Civil3DMcpPlugin.dll"
-$net10Dll = "$pluginRoot\net10\Civil3DMcpPlugin.dll"
-$seriesNum = 25
-if ($c3d.found -and $c3d.rName -match '^R(\d+)\.') { $seriesNum = [int]$matches[1] }
-$wantNet10 = ($seriesNum -ge 26)
-if ($wantNet10 -and -not (Test-Path $net10Dll)) { Wn "本安装包缺少 net10 段，回退到 net8"; $wantNet10 = $false }
 if (-not (Test-Path $net8Dll)) { throw "本安装包缺少 net8 段: $net8Dll" }
-$PLUGIN_DLL = if ($wantNet10) { $net10Dll } else { $net8Dll }
-Ok ("插件段: " + $(if ($wantNet10) { "net10" } else { "net8" }) + "（宿主 " + $c3d.rName + "）-> " + $PLUGIN_DLL)
+$c3d = $probe
+$primaryHost = if ($script:SelectedHosts.Count -gt 0) { $script:SelectedHosts[0] } elseif ($allHosts.Count -gt 0) { $allHosts[0] } else { $null }
+$PLUGIN_DLL = if ($primaryHost) { Get-HostPluginDll $primaryHost } else { $net8Dll }
+if ($primaryHost) {
+  Ok ("主宿主插件段: " + (Get-HostSegmentName $primaryHost) + "（$($primaryHost.productName) / $($primaryHost.rName)）-> " + $PLUGIN_DLL)
+} else {
+  Wn "无宿主，插件段默认 net8"
+}
+# 2026-11-19：只重配自动加载（支持/排障用，不碰 relay / AI 配置）
+if ($AutoloadOnly) {
+  if ($script:SelectedHosts.Count -eq 0) { Wn "未选择任何宿主，跳过自动加载配置" }
+  else { foreach ($h in $script:SelectedHosts) { Install-HostAutoload $h } }
+  Write-Host ("`n结果: $PASS/通过  $FAIL/失败  $WARN/警告") -ForegroundColor Cyan
+  try { Stop-Transcript | Out-Null } catch { }
+  exit $(if ($FAIL -gt 0) { 1 } else { 0 })
+}
+
 # ---------- 3. accoreconsole ----------
 Write-Host "`n--- 3/11 accoreconsole ---" -ForegroundColor Yellow
 if ($c3d.found -and (Test-Path "$($c3d.installDir)accoreconsole.exe")) {
@@ -276,113 +329,11 @@ if (-not $cfg.llm.apiKey) {
   Ok "AI 已配置: $($cfg.llm.provider)/$($cfg.llm.model)（key 已存在，仅本机）"
 }
 
-# 9b. 宿主自动加载插件 (Hank.lsp -> acad.lsp)  [P2: 路径动态化 + Hank.lsp 模板生成]
-if (-not $c3d.found) {
-  Wn "未检测到 AutoCAD / Civil 3D，跳过自动加载配置"
+# 9b. 宿主自动加载插件（逐宿主：本机所有选中版本都写 Applications + Hank.lsp + TRUSTEDPATHS）
+if ($script:SelectedHosts.Count -eq 0) {
+  Wn "未选择任何宿主，跳过自动加载配置（可重跑 install.ps1 或手动 NETLOAD）"
 } else {
-  $c3dSupport = $c3d.supportDir
-  $acadLspPath = "$c3dSupport\acad.lsp"
-  $hankLspTarget = "$c3dSupport\Hank.lsp"
-
-  # 确保支持目录存在
-  if (-not (Test-Path $c3dSupport)) {
-    Wn "宿主支持目录不存在: $c3dSupport（版本可能不是 $($c3d.year)，需手动确认）"
-  } else {
-    # 生成 Hank.lsp（注入实际 DLL 路径，异机可用）
-    $dllPath = $PLUGIN_DLL
-    $dllForward = $dllPath -replace '\\','/'
-    $hankContent = @"
-;; Hank.lsp - auto-show Hank palette (DLL auto-loaded via Applications registry)
-;; Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm') - ASCII only
-;; NETLOAD omitted: double NETLOAD triggers 2nd Initialize, StartServer port conflict kills palette show
-
-(if (not *hank-plugins-loaded*)
-  (progn
-    (setq *hank-plugins-loaded* T)
-    ;; NETLOAD with path arg (verified). -APPLOAD does NOT exist in C3D 2025.
-    ;; STARTUP=0 ensures document exists so acad.lsp runs. Palette shows via Initialize.
-    (setq *hank-dll-path* "$dllForward")
-    (if (findfile *hank-dll-path*)
-      (progn
-        (vl-catch-all-apply
-          (function (lambda () (command "NETLOAD" *hank-dll-path*))))
-        (vl-catch-all-apply
-          (function (lambda () (command "_.HANK_SHOW"))))
-        (princ "\n[HANK] plugin loaded, palette shown")
-      )
-      (princ (strcat "\n[HANK] DLL not found: " *hank-dll-path*))
-    )
-  )
-)
-(princ)
-"@
-    Set-Content $hankLspTarget $hankContent -Encoding ASCII
-    Ok "Hank.lsp 已生成: $hankLspTarget"
-
-    # 检查/创建 acad.lsp（加入 Hank.lsp 加载）
-    if (Test-Path $acadLspPath) {
-      $acadContent = Get-Content $acadLspPath -Raw
-      if ($acadContent -match 'Hank\.lsp') {
-        Ok "acad.lsp 已包含 Hank.lsp 加载"
-      } else {
-        # 2026-08-25: 弃用 Add-Content（PS5.1 按 GBK 重写 UTF-8 文件会把 acad.lsp 损坏成混合编码，AutoCAD 解析报"输入的字符串有缺陷"）
-        [System.IO.File]::AppendAllText($acadLspPath, "`r`n(load ""Hank.lsp"")(princ)", (New-Object System.Text.UTF8Encoding $false))
-        Ok "acad.lsp 已追加 Hank.lsp 加载"
-      }
-    } else {
-      Set-Content $acadLspPath "(load ""Hank.lsp"")(princ)" -Encoding Default
-      Ok "acad.lsp 已创建（自动加载 Hank.lsp）"
-    }
-  }
-
-  # 9c. Applications 注册表自动加载（2026-08-25: 主加载通道, 不依赖 acad.lsp 时序）
-  # DLL 由 AutoCAD 原生机制加载 → IExtensionApplication.Initialize → TCP 服务 + 面板全自动
-  if ($c3d.productKey) {
-    try {
-      $appKey = "HKLM:\SOFTWARE\Autodesk\AutoCAD\$($c3d.rName)\$($c3d.productKey)\Applications\HankBridge"
-      if (-not (Test-Path $appKey)) { New-Item -Path $appKey -Force | Out-Null }
-      New-ItemProperty -Path $appKey -Name "Loader" -Value $PLUGIN_DLL -PropertyType String -Force | Out-Null
-      New-ItemProperty -Path $appKey -Name "Managed" -Value 1 -PropertyType DWord -Force | Out-Null
-      New-ItemProperty -Path $appKey -Name "LoadCtl" -Value 1 -PropertyType DWord -Force | Out-Null
-      New-ItemProperty -Path $appKey -Name "Desc" -Value "new-acad Hank palette plugin (Civil3D MCP bridge)" -PropertyType String -Force | Out-Null
-      Ok "Applications 自动加载: $appKey"
-    } catch { Wn "Applications 自动加载注册失败: $_" }
-  } else { Wn "未取得产品键, 跳过 Applications 自动加载注册" }
-
-  # 9d. STARTUP=0（2026-08-25: 启动直接建图, 保证 acad.lsp 执行——开始页无文档时 acad.lsp 不加载导致插件不自动加载）
-  try {
-    foreach ($prof in Get-ChildItem "HKCU:\Software\Autodesk\AutoCAD\$($c3d.rName)\ACAD-*\Profiles\*" -ErrorAction SilentlyContinue) {
-      $varKey = "$($prof.PSPath)\Variables"
-      if (Test-Path $varKey) { New-ItemProperty -Path $varKey -Name STARTUP -Value 0 -PropertyType DWord -Force | Out-Null }
-    }
-    Ok "STARTUP=0 已设置（启动直接建图, acad.lsp 必然执行）"
-  } catch { Wn "STARTUP=0 设置失败: $_" }
-
-  # 2026-08-16: TRUSTEDPATHS 写入——插件目录加入可信路径，NETLOAD 不再弹"未签名可执行文件"安全框
-  # （实测：全新签名 DLL + TRUSTEDPATHS 含插件目录 → C3D 重启无弹窗，8080 直接监听，两次确认）
-  $pluginDir = Split-Path $PLUGIN_DLL -Parent
-  try {
-    $profilesKey = "HKCU:\Software\Autodesk\AutoCAD\$($c3d.rName)\ACAD-*\Profiles\*"
-    $profiles = Get-ChildItem $profilesKey -ErrorAction SilentlyContinue
-    $touched = 0
-    foreach ($profile in $profiles) {
-      $varKey = "$($profile.PSPath)\Variables"
-      if (-not (Test-Path $varKey)) { continue }
-      $cur = (Get-ItemProperty $varKey -Name TRUSTEDPATHS -ErrorAction SilentlyContinue).TRUSTEDPATHS
-      if ($null -eq $cur) { $cur = "" }
-      if ($cur -match [regex]::Escape($pluginDir)) {
-        Ok "TRUSTEDPATHS 已含插件目录: $($profile.PSChildName)"
-      } else {
-        $sep = if ($cur -and -not $cur.EndsWith(';')) { ';' } else { '' }
-        Set-ItemProperty $varKey -Name TRUSTEDPATHS -Value ($cur + $sep + $pluginDir + ';')
-        Ok "TRUSTEDPATHS 已加入插件目录: $($profile.PSChildName)"
-        $touched++
-      }
-    }
-    if ($touched -eq 0 -and $profiles.Count -eq 0) { Wn "TRUSTEDPATHS: 未找到 宿主 profile（跳过）" }
-  } catch {
-    Wn "TRUSTEDPATHS 写入失败: $_"
-  }
+  foreach ($h in $script:SelectedHosts) { Install-HostAutoload $h }
 }
 # ---------- 10. AI 客户端自动配置（P3.5: 装完即用，用户无需手动配 MCP）----------
 Write-Host "`n--- 10/11 AI 客户端自动配置 ---" -ForegroundColor Yellow
@@ -518,6 +469,20 @@ try {
 } catch { Wn "OCR 预检跳过: $_" }
 
 # ---------- 总结 ----------
+# ---------- host wiring self-check (2026-11-23 P35) ----------
+# The installer lets the user pick which hosts to wire, so "does it actually work on
+# THIS machine" is answered here -- not by a photo taken before the release.
+try {
+  $vih = Join-Path $PSScriptRoot "tools\verify-install-hosts.ps1"
+  if (Test-Path $vih) {
+    $rep = (& $vih 2>&1 | Out-String)
+    $repFile = Join-Path $PSScriptRoot "install-report.txt"
+    try { $rep | Out-File -FilePath $repFile -Encoding UTF8 } catch { }
+    if ($rep -match "FAIL") { Wn ("host wiring self-check reported a problem - see " + $repFile) }
+    else { Ok ("host wiring self-check passed (" + $repFile + ")") }
+  } else { Wn "verify-install-hosts.ps1 not found - skipped host wiring self-check" }
+} catch { Wn ("host wiring self-check skipped: " + $_) }
+
 Write-Host "`n========================================" -ForegroundColor Cyan
 $total = $PASS + $FAIL + $WARN
 Write-Host "结果: $PASS/通过  $FAIL/失败  $WARN/警告（共 $total 项）" -ForegroundColor $(if ($FAIL -gt 0) {"Red"} elseif ($WARN -gt 0) {"Yellow"} else {"Green"})

@@ -15,6 +15,28 @@ internal static class FileBoundary
   private const string SharedRootsVariable = "CIVIL3D_FILE_ROOTS";
   private const string ImportRootsVariable = "CIVIL3D_IMPORT_ROOTS";
   private const string ExportRootsVariable = "CIVIL3D_EXPORT_ROOTS";
+  // 2026-11-16 P6: 当前图纸目录（及一级父目录）作为动态导入根
+  private static IEnumerable<string> DocumentRoots()
+  {
+    string? docPath = null;
+    try
+    {
+      docPath = Autodesk.AutoCAD.ApplicationServices.Core.Application
+        .DocumentManager?.MdiActiveDocument?.Database?.Filename;
+    }
+    catch (System.Exception)
+    {
+      yield break;
+    }
+    if (string.IsNullOrWhiteSpace(docPath)) yield break;
+    string? dir = null;
+    try { dir = Path.GetDirectoryName(docPath!); } catch (System.Exception) { }
+    if (!string.IsNullOrWhiteSpace(dir)) yield return dir!;
+    string? parent = null;
+    try { parent = Path.GetDirectoryName(dir!); } catch (System.Exception) { }
+    if (!string.IsNullOrWhiteSpace(parent)) yield return parent!;
+  }
+
   private const uint FileFlagBackupSemantics = 0x02000000;
   private const uint FileFlagOpenReparsePoint = 0x00200000;
   private const int FileAttributeTagInfoClass = 9;
@@ -79,6 +101,33 @@ internal static class FileBoundary
     }
 
     return path;
+  }
+
+  /// <summary>
+  /// 2026-11-23 P34.3: 写插件**自己维护的第三方配置**（目前只有 AutoCAD 的 acad.fmp 字体映射）。
+  /// 与用户/AI 产物通道无关（文件在 AutoCAD 支持路径下，不是导出目录），所以不做根校验/扩展名黑名单，
+  /// 但**保留原子替换**：先写同目录 .tmp 再 File.Move(overwrite)，写一半失败也不会毁掉用户的映射表。
+  /// 放在这里而不是业务文件里，是为了让 security_boundary 门禁"直接写文件只允许出现在 FileBoundary"继续成立。
+  /// </summary>
+  internal static void WritePluginConfigFile(string path, string content, Encoding encoding)
+  {
+    var directory = Path.GetDirectoryName(path)
+      ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "Plugin config path must include a directory.");
+    var tempPath = Path.Combine(directory, "." + Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+    try
+    {
+      File.WriteAllText(tempPath, content, encoding);
+      File.Move(tempPath, path, true);
+    }
+    catch (Exception exception)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.FILE_IO_ERROR", $"Unable to write plugin config '{path}': {exception.Message}");
+    }
+    finally
+    {
+      try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+      catch (Exception) { /* 残留的隐藏临时文件无害 */ }
+    }
   }
 
   public static string WriteAllTextAtomic(
@@ -181,7 +230,16 @@ internal static class FileBoundary
     //     默认 roots 见 LoadRoots：用户目录 + 程序目录 + exchange\import；NAS 等位置用
     //     CIVIL3D_IMPORT_ROOTS 显式加。
     // 共同护栏不变：绝对路径 / 规范化 / 扩展名白名单 / reparse 防穿越 / 显式 overwrite。
-    var matchedRoot = roots.FirstOrDefault(root => IsWithinRoot(canonicalPath, root));
+    // 2026-11-16 P6: 当前图纸所在目录 + 其父目录始终算合法导入根。
+    //   客户项目常在任意盘符（D:\proj），同目录/上一级的 dwg 应该能直接 openDrawing，
+    //   不该逼用户去设 CIVIL3D_IMPORT_ROOTS（面板 AI 更不知道要设）。
+    var effectiveRoots = new List<string>(roots);
+    foreach (var extraRoot in DocumentRoots())
+    {
+      if (!effectiveRoots.Any(r => string.Equals(r, extraRoot, StringComparison.OrdinalIgnoreCase)))
+        effectiveRoots.Add(extraRoot);
+    }
+    var matchedRoot = effectiveRoots.FirstOrDefault(root => IsWithinRoot(canonicalPath, root));
     if (matchedRoot != null)
     {
       // 命中配置根 → 从该根开始检查 reparse(原有行为)
@@ -194,7 +252,7 @@ internal static class FileBoundary
         throw new JsonRpcDispatchException(
           "CIVIL3D.PATH_NOT_ALLOWED",
           $"Import path is outside the allowed roots: {canonicalPath}. " +
-          "Put the file in one of: " + string.Join("; ", roots.Order()) + " " +
+          "Put the file in one of: " + string.Join("; ", effectiveRoots.Order()) + " " +
           "or add its folder to the CIVIL3D_IMPORT_ROOTS environment variable (semicolon-separated).");
       }
       // 导出：未命中 → 全盘放行, 从驱动器根开始全路径防穿越检查(更强)
@@ -244,6 +302,17 @@ internal static class FileBoundary
         var dir = Path.Combine(projectRoot, "exchange", sub);
         try { Directory.CreateDirectory(dir); } catch (System.Exception ex) { PluginLog.Warn("FileBoundary", "failed to create the export root directory: " + ex.Message); }
         roots.Add(dir);
+        // 2026-11-13: 插件自己的「项目文件夹」也要可读。用户把项目图纸整理进
+        // exchange/projects/<项目>/ 是最自然的用法（那里还有 plan.json / checkpoint.json / agent-work），
+        // 但白名单原来只有 exchange/import —— 真机上 14:48 放入的 6 张 dwg 全部打不开，
+        // AI 只能反过来要求用户加 CIVIL3D_IMPORT_ROOTS，本末倒置。
+        if (operationVariable == ImportRootsVariable)
+        {
+          var projDir = Path.Combine(projectRoot, "exchange", "projects");
+          try { Directory.CreateDirectory(projDir); }
+          catch (System.Exception ex) { PluginLog.Warn("FileBoundary", "failed to create the projects root directory: " + ex.Message); }
+          roots.Add(projDir);
+        }
         // 2026-08-12: 选择集快照目录 exchange\_out 也纳入导出根（_sel.json 走 FileBoundary 原子写）
         if (operationVariable == ExportRootsVariable)
         {

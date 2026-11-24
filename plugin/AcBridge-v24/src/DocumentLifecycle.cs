@@ -138,6 +138,11 @@ internal static class DocumentLifecycle
     try { return App.DocumentManager.MdiActiveDocument; } catch { return null; }
   }
 
+  private static string SafeSnapshotPath()
+  {
+    try { return PluginRuntime.SelectionSnapshotPath(); } catch { return ""; }
+  }
+
   private static string SafeName(object? doc)
   {
     try { return doc is Document d ? (PluginRuntime.GetDrawingIdentity(d) ?? "") : ""; } catch { return ""; }
@@ -153,5 +158,8 @@ internal static class DocumentLifecycle
     ["lastClearedJournal"] = lastClearedJournal,
     ["lastDroppedSelection"] = lastDroppedSelection,
     ["started"] = started,
+    // 2026-11-18 P32: 快照路径自证。ProjectRoot 可能指向 bundle / 环境变量里的目录，
+    // 测试和面板都不该硬编码 exchange/_out/_sel.json（test-doc-lifecycle L5 就因此一直假红）。
+    ["selectionSnapshotPath"] = SafeSnapshotPath(),
   };
 }

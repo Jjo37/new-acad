@@ -16,6 +16,7 @@ process.on('unhandledRejection', (r) => {
   process.exit(1);
 });
 
+const { sanitizeProjectName } = require('./project-scope');
 const http = require('http');
 const workflowStore = require('./workflow-store');   // 2026-10-21 P2.1: 任务记录（工作流捕获）
 const workflowReplay = require('./workflow-replay');   // 2026-10-21 P2.2: 回放（先只做 dry-run）
@@ -79,11 +80,41 @@ function getHistory(scope) {
   llmHistories.set(key, arr);
   return arr;
 }
+// 2026-11-13: 落盘前瘦身（纯函数，便于离线测试）。
+// toolSummary = 该轮工具调用摘要（方法名/关键参数/成败/产出 handle）——续接时 AI 靠它知道
+// "上次实际调了什么"；只存摘要不存结果体（结果体由检查点/计划覆盖）。
+function slimHistoryForDisk(arr, keep) {
+  // 2026-11-13: 落盘条数不再写死 60 —— 原来内存滚动窗口只有 historyKeep(24) 条，
+  // 重启读回 60 条后第一条消息立刻裁到 24，后 36 条白存还被静默丢弃。现在两边同一个数字。
+  const n = Number.isFinite(keep) && keep > 0 ? Math.floor(keep) : getLimits().historyKeep;
+  return (arr || []).filter(m => m && (m.role === 'user' || m.role === 'assistant'))
+    .slice(-n).map(m => {
+      const o = { role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 8000) : JSON.stringify(m.content).slice(0, 8000) };
+      if (m.toolSummary) o.toolSummary = String(m.toolSummary).slice(0, 1500);
+      return o;
+    });
+}
+
+// 2026-11-13: 新任务边界丢弃旧上下文前先备份 —— 边界判错 = 不可逆失忆，得留一份可回滚。
+// 只保留最近一次（覆盖写），不堆积。
+function backupHistoryBeforeClear(scope, arr) {
+  try {
+    const key = scope || '';
+    const list = (arr || []).filter(m => m && (m.role === 'user' || m.role === 'assistant'));
+    if (!list.length) return;
+    const f = path.join(chatScopeDir(key), 'history-before-clear.json');
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify({ at: TP.nowIso(), scope: key, count: list.length, messages: list }, null, 1), 'utf8');
+    log('HIST', 'new-task boundary: backed up ' + list.length + ' msgs -> history-before-clear.json');
+  } catch (e) {
+    log('HIST', 'backup before clear failed (clear continues): ' + e.message);
+  }
+}
+
 function saveHistory(scope) {
   const key = scope || '';
   try {
-    const slim = (llmHistories.get(key) || []).filter(m => m && (m.role === 'user' || m.role === 'assistant'))
-      .slice(-60).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 8000) : JSON.stringify(m.content).slice(0, 8000) }));
+    const slim = slimHistoryForDisk(llmHistories.get(key), getLimits().historyKeep);
     const f = histFile(key);
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.writeFileSync(f, JSON.stringify(slim, null, 1), 'utf8');
@@ -827,9 +858,9 @@ async function processLlmMessage(entry, msg, lcfg) {
       });
       if (wf) log('WORKFLOW', 'recorded ' + wf.taskId + ' (' + wf.steps.length + ' steps, score ' + wf.reusability.score + ')');
     } catch (e) { log('WORKFLOW', 'record failed: ' + e.message); }
-    if (consumeNewTask()) histNow.length = 0;   // 2026-10-13 M3: 上一任务已收尾 → 新任务边界，丢弃旧上下文
+    if (consumeNewTask()) { backupHistoryBeforeClear(llmScope, histNow); histNow.length = 0; }   // 2026-11-13: 清空前备份（边界判错可回滚）
     histNow.push({ role: 'user', content: msg });
-    if (r.reply) histNow.push({ role: 'assistant', content: r.reply });
+    if (r.reply) histNow.push({ role: 'assistant', content: r.reply, toolSummary: r.toolSummary || '' });   // 2026-11-13: 工具调用摘要随历史留存
     const histKeep = getLimits().historyKeep;
     if (histNow.length > histKeep) histNow.splice(1, histNow.length - histKeep);
     saveHistory(llmScope);   // 2026-09-22: 落盘（重启可续）
@@ -903,11 +934,22 @@ function probeBridge() {
         const h = (r && r.result) || {};
         fin({ port: BRIDGE_PORT, reachable: true, buildStamp: h.buildStamp || '',
           pluginVersion: h.pluginVersion || '', hostProduct: h.hostProduct || '',
-          civilAvailable: h.civilAvailable === true });
+          civilAvailable: h.civilAvailable === true,
+          // 2026-11-18 P36: 长操作进度（插件侧 OperationProgress）一并带出来
+          operations: Array.isArray(h.operations) ? h.operations : [] });
       } catch (e) { fin({ port: BRIDGE_PORT, reachable: false, error: 'bad-json' }); }
     });
   });
 }
+
+// 2026-11-18 P36: 长操作（大导出等）进度缓存。面板轮询 /status，所以这里定期问插件一次，
+// 把 operations 透出去，客户端就能看到"跑到第几条"而不是干等。
+let pluginOperations = { at: 0, list: [] };
+setInterval(() => {
+  probeBridge().then((v) => {
+    if (v && v.reachable) pluginOperations = { at: Date.now(), list: Array.isArray(v.operations) ? v.operations : [] };
+  }).catch(() => { });
+}, 3000).unref?.();
 
 const server = http.createServer((req, res) => {
   // 2026-08-07 安全修复: 来源校验——仅本机(127.0.0.1/localhost)或无 Origin 放行
@@ -1134,7 +1176,8 @@ const server = http.createServer((req, res) => {
       ? ((cfg.llm && (cfg.llm.model || cfg.llm.provider)) ? (cfg.llm.provider + '/' + cfg.llm.model) : '未配置')
       : '汉克(OpenClaw)';
     const prog = progressCache && (Date.now() - progressCache.time < 20000) ? progressCache.text : '';
-    res.end(JSON.stringify({state, pending, claimed, processing, lastReply, cadSessionReady, mode: RELAY_MODE, model: modelLabel, progress: prog}));
+    const ops = (Date.now() - pluginOperations.at < 8000) ? pluginOperations.list : [];
+    res.end(JSON.stringify({state, pending, claimed, processing, lastReply, cadSessionReady, mode: RELAY_MODE, model: modelLabel, progress: prog, operations: ops}));
     return;
   }
 
@@ -1287,6 +1330,19 @@ const server = http.createServer((req, res) => {
           const isAllScope = scope === 'all';
           const delScope = isAllScope ? '*' : (currentProject ? sanitizeProjectName(currentProject) : '');
           if (isAllScope) llmHistories.clear(); else llmHistories.delete(delScope);
+          // 2026-11-14: 清内存还不够 —— getHistory 会从 histFile() 读回整份历史（实测 /clear 后上下文仍 129%）。
+          // 所以这里连落盘文件一起处置：先备份成 history-before-clear.json，再删掉，保证「清了就是清了」。
+          try {
+            const scopes = isAllScope ? [...llmHistories.keys(), currentProject ? sanitizeProjectName(currentProject) : ""] : [delScope];
+            for (const sc of scopes) {
+              const hf = histFile(sc || "");
+              if (fs.existsSync(hf)) {
+                try { fs.copyFileSync(hf, path.join(path.dirname(hf), "history-before-clear.json")); } catch (_) { /* 备份失败不阻塞清理 */ }
+                fs.unlinkSync(hf);
+                result["historyFileCleared:" + (sc || "global")] = true;
+              }
+            }
+          } catch (e) { log("CLEAR", "history file clear failed: " + e.message); }
           result['chatRecordsDeleted'] = chatClear(delScope);
           result.chat = true;
         }
@@ -1887,9 +1943,7 @@ server.listen(port, '127.0.0.1', () => {
 
 // 2026-08-17: 项目上下文——用户显式声明的项目名（config.json 顶层 project；空=全局模式）
 let currentProject = (cfg && typeof cfg.project === 'string' && cfg.project.trim()) ? cfg.project.trim() : '';
-function sanitizeProjectName(n) {
-  return String(n || '').replace(/[\\/:*?"<>|]/g, '_').trim() || 'unnamed';
-}
+// 2026-11-14: 与 workflow-store / file-tools 共用同一套命名（project-scope.js），避免同名项目两个目录
 function getProjectDir(sub) {
   if (!currentProject) return path.join(__dirname, '..', 'exchange', sub || 'agent-work');
   return path.join(__dirname, '..', 'exchange', 'projects', sanitizeProjectName(currentProject), sub || 'agent-work');

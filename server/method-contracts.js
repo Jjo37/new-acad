@@ -38,6 +38,20 @@ const CONTRACTS = [
   { name: 'revertEntry', req: [['seq', '数字']], opt: [['through', '布尔']], note: 'through=true 表示该条及其之后一起按逆序撤回' },
   { name: 'getSelectionDetail', req: [], opt: [], note: '' },
   { name: 'journalList', req: [], opt: [['limit', '数字']], note: '' },
+  {
+    name: 'auditFonts',
+    req: [],
+    opt: [['path', '字符串（绝对路径）'], ['deep', '布尔'], ['maxEntities', '数字'], ['refresh', '布尔']],
+    note: '字体体检：列出本机找不到的 SHX/TrueType 字体（角色 primary|bigfont、受影响文字数、是否含中文、建议替代）。不给 path 就查当前图纸；只读',
+    ex: {},
+  },
+  {
+    name: 'openDrawing',
+    req: [['path', '字符串（绝对路径）']],
+    opt: [['readOnly', '布尔'], ['auditFonts', '布尔'], ['fontFallback', '字符串 auto|none|某个.shx']],
+    note: '返回 fontAudit.missingCount>0 = 本机缺字体：图纸数据没丢，但屏幕显示和文字外框(bbox)会按替代字体变化 —— 必须把 missing 里的字体名如实告诉用户',
+    ex: { path: 'D:\\proj\\plan.dwg' },
+  },
   { name: 'closeDrawing', req: [], opt: [['name', '字符串'], ['force', '布尔']], note: '有未保存路径的图默认拒绝；force=true 先存盘再关' },
   { name: 'getCivil3DHealth', req: [], opt: [], note: '' },
   { name: 'newDrawing', req: [], opt: [['templatePath', '字符串']], note: '' },
@@ -53,6 +67,20 @@ const CONTRACTS = [
     ex: { handle: '1A2B', distance: 20 },
   },
   { name: 'getLayers', req: [], opt: [], note: '' },
+  {
+    name: 'profileAddCurve',
+    req: [['alignmentName', '字符串'], ['profileName', '字符串'], ['pviStation', '数字'], ['length', '数字']],
+    opt: [['curveType', '字符串（默认 symmetric_parabola）']],
+    note: '竖曲线作用在已有 PVI 上：pviStation 是该 PVI 的桩号，曲线长度参数叫 length（**不是 radius**）；**没有 passThroughX/passThroughY 这回事**（老描述写错了）',
+    ex: { alignmentName: 'MAIN', profileName: 'FG-DESIGN', pviStation: 611.65, length: 247.69 },
+  },
+  {
+    name: 'profileAddPvis',
+    req: [['alignmentName', '字符串'], ['profileName', '字符串'], ['items', '数组 [{station, elevation, curveLength?}]']],
+    opt: [],
+    note: '批量加变坡点；curveLength>0 时同时建对称抛物线竖曲线。profileName 必须**已存在**（本方法不新建 profile），先用 createProfileFromSurface 或复用现有 profile',
+    ex: { alignmentName: 'MAIN', profileName: 'FG-DESIGN', items: [{ station: 0, elevation: 1161.077, curveLength: 0 }] },
+  },
 ];
 
 function fmt(rows) {

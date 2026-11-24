@@ -82,3 +82,9 @@ user-knowledge/*
 docs/audit/gate-report.json
 # net10 probe outputs (generated evidence, keep local)
 dotnet10/results/
+
+# P32/P33 ������ղ���ű��Խ�������⣩
+tools/.functional-smoke-last.json
+
+# 临时提交信息文件（用 git commit -F 时生成，别提交）
+_commitmsg.txt

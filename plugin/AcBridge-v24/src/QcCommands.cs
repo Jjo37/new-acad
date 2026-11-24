@@ -409,6 +409,15 @@ public static class QcCommands
     var minSlope = PluginRuntime.GetOptionalDouble(parameters, "minSlope");
     var minVelocity = PluginRuntime.GetOptionalDouble(parameters, "minVelocity");
     var maxVelocity = PluginRuntime.GetOptionalDouble(parameters, "maxVelocity");
+    // 2026-11-17 P28: 以前只回 {findings:[], totalViolations:0} —— 没传阈值时它**一项都没检**，
+    //   客户会当成"QC 通过"，而同一张图上 analyzePipeNetworkHydraulics 报 11 根不合格。
+    //   现在回 checksRun（真的跑了哪些）和 thresholds（用的什么判据）。
+    var checksRun = new List<string> { "pipe_connection_integrity" };
+    if (minCover.HasValue) checksRun.Add("pipe_cover");
+    if (minSlope.HasValue) checksRun.Add("pipe_slope_min");
+    if (maxSlope.HasValue) checksRun.Add("pipe_slope_max");
+    if (minVelocity.HasValue) checksRun.Add("pipe_velocity_min");
+    if (maxVelocity.HasValue) checksRun.Add("pipe_velocity_max");
 
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
     {
@@ -426,10 +435,12 @@ public static class QcCommands
           var pipe = transaction.GetObject(pipeId, OpenMode.ForRead);
           var pipeName = CivilObjectUtils.GetName(pipe) ?? pipeId.Handle.ToString();
 
+          // 2026-11-17 P28: Slope 是比值（0.0411 = 4.11%），阈值 minSlope/maxSlope 是百分数 ——
+          //   以前直接拿比值比百分数，minSlope=0.5 时把 4.11% 的管子误判成"低于最小坡度"。
           var slope = GetAnyDouble(pipe, "Slope", "FlowSlope") ?? 0;
-          var absSlope = Math.Abs(slope);
+          var absSlopePercent = Math.Abs(slope) * 100.0;
 
-          if (maxSlope.HasValue && absSlope > maxSlope.Value)
+          if (maxSlope.HasValue && absSlopePercent > maxSlope.Value)
           {
             findings.Add(new Dictionary<string, object?>
             {
@@ -442,7 +453,7 @@ public static class QcCommands
             });
           }
 
-          if (minSlope.HasValue && absSlope < minSlope.Value)
+          if (minSlope.HasValue && absSlopePercent < minSlope.Value)
           {
             findings.Add(new Dictionary<string, object?>
             {
@@ -502,12 +513,26 @@ public static class QcCommands
           }
         }
 
-        return new Dictionary<string, object?>
+        var payload = new Dictionary<string, object?>
         {
           ["networkName"] = name,
+          ["checksRun"] = checksRun,
+          ["thresholds"] = new Dictionary<string, object?>
+          {
+            ["minCover"] = minCover,
+            ["minSlopePercent"] = minSlope,
+            ["maxSlopePercent"] = maxSlope,
+            ["minVelocity"] = minVelocity,
+            ["maxVelocity"] = maxVelocity,
+          },
           ["findings"] = findings,
           ["totalViolations"] = findings.Count,
         };
+        if (checksRun.Count == 1)
+        {
+          payload["hint"] = "Only connection integrity was checked because no thresholds were supplied (minSlope/maxSlope/minCover/minVelocity/maxVelocity). totalViolations=0 here does NOT mean the network passes hydraulic criteria - pass thresholds, or run analyzePipeNetworkHydraulics.";
+        }
+        return payload;
       }
       catch (JsonRpcDispatchException)
       {

@@ -89,11 +89,18 @@ internal static class EntityInfoCommands
         items.Add(info);
       }
 
+      // 2026-11-17 P24: 带几何的图元单条就很大，自己按字节预算裁（前 N 条，顺序不变）
+      var bulkBudget = BulkResponse.ResolveBudget(parameters);
+      var (keptCount, byteLimited) = BulkResponse.Trim(items, bulkBudget);
+      if (byteLimited) truncated = true;
       return new Dictionary<string, object?>
       {
         ["source"] = source,
         ["requested"] = wanted.Count,
         ["count"] = items.Count,
+        ["returnedCount"] = keptCount,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = bulkBudget,
         ["truncated"] = truncated,
         ["maxCount"] = maxCount,
         ["items"] = items,

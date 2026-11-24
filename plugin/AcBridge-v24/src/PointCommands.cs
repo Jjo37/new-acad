@@ -12,12 +12,16 @@ public static class PointCommands
     // 2026-08-12 性能修复: 默认 limit 1000(旧 int.MaxValue——几万点全量物化必超时); 大图纸明确传 limit
     var limit = PluginRuntime.GetOptionalInt(parameters, "limit") ?? 1000;
     var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
+    if (offset < 0) offset = 0;
+    if (limit <= 0) limit = 1000;
 
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       HashSet<uint>? allowedNumbers = null;
       if (!string.IsNullOrWhiteSpace(groupName))
       {
+        // 2026-11-18 P32: 组名拼错时只回 "was not found"，客户 AI 只能猜下一个名字。
+        // helper 里现在会把可用组名一起报出来。
         allowedNumbers = TryGetPointNumbersForGroup(civilDoc, transaction, groupName!);
       }
 
@@ -28,10 +32,18 @@ public static class PointCommands
         .OrderBy(e => e.Number)
         .ToList();
 
-      var page = allEntries.Skip(offset).Take(limit)
+      var built = allEntries.Skip(offset).Take(limit)
         .Select(e => CivilObjectUtils.ToPointData(
           CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, e.Id, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead)))
         .ToList();
+
+      // 2026-11-18 P32: 默认 limit=1000 的返回体约 60KB，旧实现没有任何预算 ——
+      // 真机实测 points 数组被 ResultSummarizer 砍到 500 条，而 totalCount/returnedCount 还是原来的数，
+      // 调用方既不知道被裁，也算不出下一页。这里自己按字节裁（只裁尾巴）并回自证字段。
+      var byteBudget = BulkResponse.ResolveBudget(parameters);
+      var kept = BulkResponse.Fit(built, byteBudget, 2048);
+      var page = kept >= built.Count ? built : built.Take(kept).ToList();
+      var byteLimited = kept < built.Count;
 
       return new Dictionary<string, object?>
       {
@@ -39,6 +51,15 @@ public static class PointCommands
         ["returnedCount"] = page.Count,
         ["points"] = page,
         ["units"] = CivilObjectUtils.LinearUnits(database),
+        // 2026-11-18 P32: 回显"到底有没有按参数过滤" + 机械翻页指针（P24 教训：别让调用方猜下一页）
+        ["groupName"] = string.IsNullOrWhiteSpace(groupName) ? null : groupName,
+        ["filterApplied"] = allowedNumbers != null,
+        ["offset"] = offset,
+        ["limit"] = limit,
+        ["nextOffset"] = offset + page.Count,
+        ["hasMore"] = (offset + page.Count) < allEntries.Count,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = byteBudget,
       };
     });
   }
@@ -328,6 +349,21 @@ public static class PointCommands
     throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", $"COGO point '{pointNumber}' was not found.");
   }
 
+  /// <summary>组名列表（找不到组时列给人看，避免"猜名字"）。</summary>
+  private static string AvailablePointGroupNames(
+    Autodesk.Civil.ApplicationServices.CivilDocument civilDoc,
+    Autodesk.AutoCAD.DatabaseServices.Transaction transaction)
+  {
+    var names = new List<string>();
+    foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.PointGroups)
+    {
+      var group = CivilObjectUtils.GetRequiredObject<PointGroup>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+      if (!string.IsNullOrWhiteSpace(group.Name)) names.Add(group.Name);
+    }
+    if (names.Count == 0) return "(none)";
+    return string.Join(", ", names.Take(10)) + (names.Count > 10 ? ", ..." : "");
+  }
+
   private static HashSet<uint>? TryGetPointNumbersForGroup(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Autodesk.AutoCAD.DatabaseServices.Transaction transaction, string groupName)
   {
     foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.PointGroups)
@@ -341,7 +377,8 @@ public static class PointCommands
       return new HashSet<uint>(group.GetPointNumbers());
     }
 
-    throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", $"Point group '{groupName}' was not found.");
+    throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND",
+      $"Point group '{groupName}' was not found. Available groups: {AvailablePointGroupNames(civilDoc, transaction)}.");
   }
 
   // 2026-10-23: a coordinate column must not follow the machine locale. On a German/French

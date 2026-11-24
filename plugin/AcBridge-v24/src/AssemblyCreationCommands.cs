@@ -221,8 +221,12 @@ public static class AssemblyCreationCommands
     });
   }
 
-  public static Task<object?> ListAssembliesAsync()
+  public static Task<object?> ListAssembliesAsync(JsonObject? parameters)
   {
+    // 2026-11-16 P8: includeSubassemblies=true 时一次把"装配库"列全 ——
+    //   以前客户/AI 要 getAssembly 逐个查才知道每个装配里有什么部件、参数是多少，
+    //   十几套装配就是十几次调用（还得先 listAssemblies 拿名字）。
+    var includeSubassemblies = PluginRuntime.GetOptionalBool(parameters, "includeSubassemblies") ?? false;
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var assemblies = civilDoc.AssemblyCollection
@@ -231,11 +235,27 @@ public static class AssemblyCreationCommands
         {
           var summary = ToAssemblySummary(assembly);
           summary["usedByCorridors"] = new List<string>();
+          if (includeSubassemblies)
+          {
+            var subs = GetSubassemblies(assembly, transaction);
+            summary["subassemblies"] = subs;
+            // 参数键名给一份扁平的，便于直接比对不同装配的差异
+            summary["parameterKeys"] = subs
+              .SelectMany(s => (s["parameters"] as Dictionary<string, object?>)?.Keys ?? Enumerable.Empty<string>())
+              .Distinct()
+              .OrderBy(k => k)
+              .ToList();
+          }
           return summary;
         })
         .ToList();
 
-      return new Dictionary<string, object?> { ["assemblies"] = assemblies };
+      return new Dictionary<string, object?>
+      {
+        ["assemblyCount"] = assemblies.Count,
+        ["includeSubassemblies"] = includeSubassemblies,
+        ["assemblies"] = assemblies,
+      };
     });
   }
 
@@ -420,7 +440,39 @@ public static class AssemblyCreationCommands
             $"shapes[].linkIndices index {idx} out of range (0..{links.Count - 1}).");
         ids.Add(idx);
       }
-      if (ids.Count > 0) shapes.Add((ids, PluginRuntime.GetOptionalString(so, "code")));
+      if (ids.Count > 0)
+      {
+        // 2026-11-16 P1: closed-ring check —— C3D 的 CreateShape.Links 必须首尾相接，
+        //   linkIndices 顺序错时造型被**静默丢弃**（实测第一版 5 个造型只出 3 个，零报错）。
+        //   这里在编译前静态校验环闭合，不合法直接拒绝。
+        var shapeCodeLabel = PluginRuntime.GetOptionalString(so, "code") ?? ("shapes[" + shapes.Count + "]");
+        if (ids.Count < 3)
+        {
+          throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+            $"Shape '{shapeCodeLabel}' has only {ids.Count} link(s); a closed shape needs at least 3.");
+        }
+        var ringStart = links[ids[0]].Item1;
+        var cursor = links[ids[0]].Item2;
+        for (var k = 1; k < ids.Count; k++)
+        {
+          var la = links[ids[k]].Item1;
+          var lb = links[ids[k]].Item2;
+          if (la == cursor) { cursor = lb; }
+          else if (lb == cursor) { cursor = la; }
+          else
+          {
+            throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+              $"Shape '{shapeCodeLabel}' is not a closed ring: link #{ids[k]} ({la}->{lb}) does not connect to the chain end (point {cursor}). " +
+              "Order linkIndices so each link starts where the previous one ends.");
+          }
+        }
+        if (cursor != ringStart)
+        {
+          throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+            $"Shape '{shapeCodeLabel}' is not closed: the chain ends at point {cursor} but started at {ringStart}.");
+        }
+        shapes.Add((ids, PluginRuntime.GetOptionalString(so, "code")));
+      }
     }
 
     // 3.5) 链接码补齐（2026-09-11）：廊道曲面由链接码生成，链接无码 → 曲面收集为空。
@@ -684,6 +736,19 @@ public static class AssemblyCreationCommands
 
     return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
     {
+      // 2026-11-16 P6: 重名必须报 CONFLICT。以前直接把重名抛给 C3D，得到的是
+      //   "INTERNAL_ERROR: ArgumentException: An Assembly with assemblyName is existing" ——
+      //   调用方分不清是自己参数错还是插件坏了，也不知道该不该改名重试。
+      foreach (ObjectId existingId in civilDoc.AssemblyCollection)
+      {
+        var existing = CivilObjectUtils.GetRequiredObject<Assembly>(transaction, existingId, OpenMode.ForRead);
+        if (string.Equals(existing.Name, name, StringComparison.OrdinalIgnoreCase))
+        {
+          throw new JsonRpcDispatchException("CIVIL3D.CONFLICT",
+            $"Assembly '{name}' already exists. Use another name, or delete the existing assembly first.");
+        }
+      }
+
       var assemblyId = civilDoc.AssemblyCollection.Add(name, assemblyType, new Point3d(insertX, insertY, 0));
       var assembly = CivilObjectUtils.GetRequiredObject<Assembly>(transaction, assemblyId, OpenMode.ForWrite);
       assembly.Description = description;
@@ -1115,6 +1180,160 @@ public static class AssemblyCreationCommands
       .Select(id => CivilObjectUtils.GetRequiredObject<AcDbObject>(transaction, id, OpenMode.ForRead))
       .Select(ToSubassemblySummary)
       .ToList();
+  }
+
+  // -------------------------------------------------------------------------
+  // setSubassemblyParameter（2026-11-16 P3）：改已导入子部件的参数值
+  //   背景：参数化 SAC 部件导入后没有 API 改参数 —— "一套模板覆盖多种沟型"走不通。
+  //   真实 API（读路径已在 ToSubassemblySummary 验证）：子部件把参数放在
+  //   ParamsDouble / ParamsLong / ParamsBool / ParamsString 四个集合，每项有 Key 与 Value。
+  //   写入后一律回读校验：C3D 对不存在的参数名不报错，不校验就等于静默失败。
+  // -------------------------------------------------------------------------
+  public static Task<object?> SetSubassemblyParameterAsync(JsonObject? parameters)
+  {
+    var assemblyName = PluginRuntime.GetRequiredString(parameters, "assemblyName");
+    var subassemblyName = PluginRuntime.GetOptionalString(parameters, "subassemblyName");
+    var valuesNode = PluginRuntime.GetParameter(parameters, "parameters") as JsonObject
+      ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+        "setSubassemblyParameter requires 'parameters' object, e.g. {\"DitchW\": 1.6, \"DitchNetH\": 1.2}.");
+    var requested = new List<KeyValuePair<string, string>>();
+    foreach (var kv in valuesNode)
+    {
+      requested.Add(new KeyValuePair<string, string>(kv.Key, PluginRuntime.JsonNodeToString(kv.Value) ?? string.Empty));
+    }
+    if (requested.Count == 0)
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "setSubassemblyParameter: 'parameters' is empty.");
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var assembly = FindAssemblyByName(civilDoc, transaction, assemblyName, OpenMode.ForWrite);
+      var targets = new List<AcDbObject>();
+      foreach (var id in GetSubassemblyIds(assembly))
+      {
+        var sub = CivilObjectUtils.GetRequiredObject<AcDbObject>(transaction, id, OpenMode.ForWrite);
+        var nm = CivilObjectUtils.GetName(sub) ?? sub.Handle.ToString();
+        if (string.IsNullOrWhiteSpace(subassemblyName) ||
+            string.Equals(nm, subassemblyName, StringComparison.OrdinalIgnoreCase))
+        {
+          targets.Add(sub);
+        }
+      }
+      if (targets.Count == 0)
+      {
+        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND",
+          $"Subassembly '{subassemblyName}' was not found in assembly '{assemblyName}'. " +
+          "Call getAssembly to list the subassemblies of an assembly.");
+      }
+
+      var results = new List<Dictionary<string, object?>>();
+      var anyMissing = new List<string>();
+      var anyRejected = new List<string>();
+      foreach (var sub in targets)
+      {
+        var applied = new List<Dictionary<string, object?>>();
+        foreach (var kv in requested)
+        {
+          var ok = TryAssignSubassemblyParameter(sub, kv.Key, kv.Value, out var previous, out var appliedValue, out var collection, out var reason);
+          // 2026-11-16: 值非法(如 DitchW='abc')也必须报错 —— 只 changed=false 属于静默失败，
+          //   调用方会以为改成功了（P1 的清剿对象就是这一类）。
+          if (!ok)
+          {
+            if (collection == null) anyMissing.Add(kv.Key);
+            else anyRejected.Add(kv.Key + ": " + (reason ?? "write rejected"));
+          }
+          applied.Add(new Dictionary<string, object?>
+          {
+            ["name"] = kv.Key,
+            ["requested"] = kv.Value,
+            ["previous"] = previous,
+            ["applied"] = appliedValue,
+            ["collection"] = collection,
+            ["changed"] = ok,
+            ["reason"] = reason,
+          });
+        }
+        var summary = ToSubassemblySummary(sub);
+        results.Add(new Dictionary<string, object?>
+        {
+          ["name"] = summary["name"],
+          ["handle"] = summary["handle"],
+          ["applied"] = applied,
+          ["parameters"] = summary["parameters"],
+        });
+      }
+      if (anyMissing.Count > 0 || anyRejected.Count > 0)
+      {
+        var parts = new List<string>();
+        if (anyMissing.Count > 0)
+          parts.Add("not found: " + string.Join(", ", anyMissing.Distinct()) +
+            " (call getAssembly and read subassemblies[].parameters for the exact names)");
+        if (anyRejected.Count > 0)
+          parts.Add("rejected: " + string.Join("; ", anyRejected.Distinct()));
+        throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+          "setSubassemblyParameter could not apply every value - " + string.Join(" | ", parts));
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["assemblyName"] = assembly.Name,
+        ["subassemblyCount"] = results.Count,
+        ["result"] = results,
+        ["note"] = "parameters are the values reported back AFTER the write; compare against the 'applied' list.",
+      };
+    });
+  }
+
+  // 在四个参数集合里找 Key，按集合类型转换后写 Value；失败给出原因（不静默）
+  private static bool TryAssignSubassemblyParameter(
+    AcDbObject sub, string key, string raw,
+    out object? previous, out object? applied, out string? collection, out string? reason)
+  {
+    previous = null; applied = null; collection = null; reason = null;
+    foreach (var collName in new[] { "ParamsDouble", "ParamsLong", "ParamsBool", "ParamsString" })
+    {
+      var coll = CivilObjectUtils.GetPropertyValue<object>(sub, collName);
+      if (coll == null) continue;
+      var count = Civil3DCompatibility.GetPropertyValue<int?>(coll, "Count") ?? 0;
+      for (var i = 0; i < count; i++)
+      {
+        object? param;
+        try { param = Civil3DCompatibility.GetIndexedPropertyValue(coll, "Item", i); }
+        catch { param = null; }
+        if (param == null) continue;
+        var paramKey = Civil3DCompatibility.GetPropertyValue(param, "Key")?.ToString();
+        if (!string.Equals(paramKey, key, StringComparison.OrdinalIgnoreCase)) continue;
+
+        previous = Civil3DCompatibility.GetPropertyValue(param, "Value");
+        collection = collName;
+        object? converted;
+        switch (collName)
+        {
+          case "ParamsDouble":
+            converted = double.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : (object?)null;
+            break;
+          case "ParamsLong":
+            converted = int.TryParse(raw, out var n) ? n : (object?)null;
+            break;
+          case "ParamsBool":
+            converted = bool.TryParse(raw, out var b) ? b : (object?)null;
+            break;
+          default:
+            converted = raw;
+            break;
+        }
+        if (converted == null)
+        {
+          reason = $"'{raw}' is not a valid {collName} value";
+          applied = previous;
+          return false;
+        }
+        var ok = Civil3DCompatibility.TrySetProperty(param, "Value", converted);
+        applied = ok ? converted : previous;
+        if (!ok) reason = "Value is not writable on this parameter type";
+        return ok;
+      }
+    }
+    return false;
   }
 
   private static Dictionary<string, object?> ToSubassemblySummary(AcDbObject subassembly)

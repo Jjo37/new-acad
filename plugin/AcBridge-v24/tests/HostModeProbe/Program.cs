@@ -135,7 +135,10 @@ try
   if (listMethod == null) listError = "ListMethodsAsync not found";
   else
   {
-    var task = listMethod.Invoke(null, null) as Task<object?>;
+    // 2026-11-18 P32: ListMethodsAsync 在 2026-11-14 加了 parameters 参数（filter 才真正生效），
+    // 探针还按 0 参调用 → TargetParameterCountException。按当前签名传一个 null 参数。
+    var listParameters = listMethod.GetParameters().Length == 0 ? null : new object?[] { null };
+    var task = listMethod.Invoke(null, listParameters) as Task<object?>;
     if (task == null) listError = "unexpected return type";
     else
     {

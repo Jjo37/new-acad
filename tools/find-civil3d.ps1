@@ -58,6 +58,12 @@ if (Test-Path $acadRoot) {
       $installDir = $props.AcadLocation
       if ($installDir -and -not $installDir.EndsWith('\')) { $installDir += '\' }
 
+      # 2026-11-19: 每个候选自带 supported + segment —— 安装器要列出"本机所有版本"并逐宿主选段
+      #   （net8 = R25.x 2025/2026；net10 = R26.0+ 2027+）
+      $candidateSupported = [bool]($year -and [int]$year -ge 2025)
+      $series = 25
+      if ($rName -match '^R(\d+)\.') { $series = [int]$matches[1] }
+      $segment = $(if ($series -ge 26) { 'net10' } else { 'net8' })
       $result.candidates += [pscustomobject]@{
         year        = $year
         installDir  = $installDir
@@ -66,6 +72,8 @@ if (Test-Path $acadRoot) {
         productName = $props.ProductName
         supportDir  = (Get-SupportDir -kind $kind -year $year -rName $rName)
         kind        = $kind
+        supported   = $candidateSupported
+        segment     = $segment
       }
     }
   }

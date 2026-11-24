@@ -137,25 +137,88 @@ public static class SurfaceCommands
   {
     var name = PluginRuntime.GetRequiredString(parameters, "name");
     var analysisType = PluginRuntime.GetOptionalString(parameters, "analysisType");
+    // 2026-11-16 P2: 量算自证。面积/体积这类数字，客户没法自己判对错 —— 让调用方把
+    //   "应该是多少"一起传进来（桩号长度 x 宽度），这里回报偏差与结论。
+    var expectLength = PluginRuntime.GetOptionalDouble(parameters, "expectLength");
+    var expectWidth = PluginRuntime.GetOptionalDouble(parameters, "expectWidth");
+    var expectArea2d = PluginRuntime.GetOptionalDouble(parameters, "expectArea2d");
+    var tolerancePct = PluginRuntime.GetOptionalDouble(parameters, "tolerancePct") ?? 2.0;
+    if (expectArea2d == null && expectLength.HasValue && expectWidth.HasValue)
+      expectArea2d = expectLength.Value * expectWidth.Value;
 
-    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    return CivilExecution.ReadAsyncLight<object?>((doc, civilDoc, database, transaction) =>
     {
       var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, name, OpenMode.ForRead);
-      var generalProperties = surface.GetGeneralProperties();
-      // 2026-09-28: 廊道曲面的 GeometricExtents 可能不可用 → 容错，不让整个 getSurface 挂掉
-      var terrainProperties = GetTerrainProperties(surface);
-      return new Dictionary<string, object?>
+      // 2026-11-12: 刚建的曲面没有任何点/三角面时，GetGeneralProperties() 会抛
+      // InvalidOperationException("The surface has no point or triangle.")，旧实现直接冒成
+      // INTERNAL_ERROR —— 调用方只会以为"插件坏了"。空曲面是合法状态，这里如实返回 0/null。
+      string? emptyNote = null;
+      Dictionary<string, object?> payload;
+      try
       {
-        ["surfaceName"] = surface.Name,
-        ["analysisType"] = analysisType,
-        ["minimumElevation"] = generalProperties.MinimumElevation,
-        ["maximumElevation"] = generalProperties.MaximumElevation,
-        ["meanElevation"] = generalProperties.MeanElevation,
-        ["area2d"] = terrainProperties?.SurfaceArea2D,
-        ["area3d"] = terrainProperties?.SurfaceArea3D,
-        ["numberOfPoints"] = generalProperties.NumberOfPoints,
-        ["numberOfTriangles"] = GetTriangleCount(surface),
-      };
+        var generalProperties = surface.GetGeneralProperties();
+        // 2026-09-28: 廊道曲面的 GeometricExtents 可能不可用 → 容错，不让整个 getSurface 挂掉
+        var terrainProperties = GetTerrainProperties(surface);
+        payload = new Dictionary<string, object?>
+        {
+          ["surfaceName"] = surface.Name,
+          ["analysisType"] = analysisType,
+          ["minimumElevation"] = generalProperties.MinimumElevation,
+          ["maximumElevation"] = generalProperties.MaximumElevation,
+          ["meanElevation"] = generalProperties.MeanElevation,
+          ["area2d"] = terrainProperties?.SurfaceArea2D,
+          ["area3d"] = terrainProperties?.SurfaceArea3D,
+          ["numberOfPoints"] = generalProperties.NumberOfPoints,
+          ["numberOfTriangles"] = GetTriangleCount(surface),
+        };
+      }
+      catch (InvalidOperationException ex)
+      {
+        emptyNote = "surface has no point or triangle yet: " + ex.Message;
+        payload = new Dictionary<string, object?>
+        {
+          ["surfaceName"] = surface.Name,
+          ["analysisType"] = analysisType,
+          ["minimumElevation"] = null,
+          ["maximumElevation"] = null,
+          ["meanElevation"] = null,
+          ["area2d"] = null,
+          ["area3d"] = null,
+          ["numberOfPoints"] = 0,
+          ["numberOfTriangles"] = 0,
+        };
+      }
+      if (emptyNote != null) payload["note"] = emptyNote;
+
+      // 2026-11-16 P2: 期望值对账（只在调用方给了期望时出现）
+      if (expectArea2d.HasValue && expectArea2d.Value > 0)
+      {
+        var expected = expectArea2d.Value;
+        payload["expectedArea2d"] = expected;
+        if (payload["area2d"] is double actual)
+        {
+          var devPct = (actual - expected) / expected * 100.0;
+          payload["deviationPct"] = Math.Round(devPct, 3);
+          payload["tolerancePct"] = tolerancePct;
+          var abs = Math.Abs(devPct);
+          payload["verdict"] = abs <= tolerancePct ? "ok" : (abs <= tolerancePct * 2 ? "warn" : "fail");
+          if (abs > tolerancePct)
+          {
+            payload["verdictNote"] =
+              $"area2d {actual:F2} vs expected {expected:F2} ({devPct:+0.00;-0.00}%). " +
+              "Corridor surfaces are only trustworthy when built from ONE purpose group of link codes " +
+              "(e.g. Surface+DitchTop for a finish surface). Mounting every code double-counts the face.";
+          }
+        }
+        else
+        {
+          payload["deviationPct"] = null;
+          payload["verdict"] = "fail";
+          payload["verdictNote"] = "surface has no area yet (no point or triangle)";
+        }
+      }
+
+      return payload;
     });
   }
 
@@ -286,31 +349,76 @@ public static class SurfaceCommands
     var points = new Point3dCollection();
     var lines = System.IO.File.ReadAllLines(path);
     var headerSkipped = !hasHeader;
+    // 2026-11-14: 解析 0 点时给「可行动诊断」——原先只说"请检查列序"，AI 只能盲猜列号（实测两次猜错→被封锁→降级）
+    var blank = 0;
+    var skippedByRows = 0;
+    var skippedByWidth = 0;
+    var skippedByParse = 0;
+    var widthHistogram = new Dictionary<int, int>();
+    var sample = string.Empty;
+    char[] seps = delimiter switch
+    {
+      "comma" => new[] { ',' },
+      "space" => new[] { ' ', '\t' },
+      "tab" => new[] { '\t' },
+      "semicolon" => new[] { ';' },
+      _ => new[] { ',', ';', '\t', ' ' },   // auto: 全部尝试
+    };
     foreach (var raw in lines)
     {
       var line = raw.Trim();
-      if (line.Length == 0) continue;
-      if (skipRows > 0) { skipRows--; continue; }   // 跳过前 N 行
+      if (line.Length == 0) { blank++; continue; }
+      if (skipRows > 0) { skipRows--; skippedByRows++; continue; }   // 跳过前 N 行
       if (!headerSkipped) { headerSkipped = true; continue; }   // 表头行
-      char[] seps = delimiter switch
-      {
-        "comma" => new[] { ',' },
-        "space" => new[] { ' ', '\t' },
-        "tab" => new[] { '\t' },
-        "semicolon" => new[] { ';' },
-        _ => new[] { ',', ';', '\t', ' ' },   // auto: 全部尝试
-      };
       var parts = line.Split(seps, StringSplitOptions.RemoveEmptyEntries);
-      if (parts.Length <= Math.Max(xCol, Math.Max(yCol, zCol))) continue;
-      if (!double.TryParse(parts[xCol], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double x)) continue;   // 非数字行跳过
-      if (!double.TryParse(parts[yCol], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y)) continue;
-      if (!double.TryParse(parts[zCol], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double z)) continue;
+      if (parts.Length > 0)
+      {
+        widthHistogram.TryGetValue(parts.Length, out var wc);
+        widthHistogram[parts.Length] = wc + 1;
+        if (sample.Length == 0) sample = line.Length > 160 ? line.Substring(0, 160) : line;
+      }
+      if (parts.Length <= Math.Max(xCol, Math.Max(yCol, zCol))) { skippedByWidth++; continue; }
+      if (!double.TryParse(parts[xCol], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double x)) { skippedByParse++; continue; }   // 非数字行跳过
+      if (!double.TryParse(parts[yCol], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y)) { skippedByParse++; continue; }
+      if (!double.TryParse(parts[zCol], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double z)) { skippedByParse++; continue; }
       points.Add(new Point3d(x, y, z));
       if (points.Count > 100000) break;   // 防爆上限
     }
     if (points.Count == 0)
-      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", Loc.Tk("error.surfaceNoValidPoints", ("path", path)));
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", BuildNoPointsDiagnostic(path, hasHeader, xCol, yCol, zCol, lines.Length, blank, skippedByRows, skippedByWidth, skippedByParse, widthHistogram, sample));
     return points;
+  }
+
+  /// <summary>
+  /// 2026-11-14: 点文件 0 命中时的诊断文案。必须回答三件事：文件到底几列、你请求了哪几列、列号从几开始。
+  /// 判据全部来自本次解析实测，不做猜测；建议只给"怎么改参数"，不给"帮你猜一个列序"。
+  /// </summary>
+  private static string BuildNoPointsDiagnostic(string path, bool hasHeader, int xCol, int yCol, int zCol, int totalLines, int blank, int skippedByRows, int skippedByWidth, int skippedByParse, Dictionary<int, int> widthHistogram, string sample)
+  {
+    var typical = widthHistogram.Count > 0
+      ? widthHistogram.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).Select(kv => kv.Key).First()
+      : 0;
+    var maxReq = Math.Max(xCol, Math.Max(yCol, zCol));
+    var minReq = Math.Min(xCol, Math.Min(yCol, zCol));
+    string hint;
+    if (typical > 0 && maxReq >= typical)
+      hint = Loc.Tk("error.surfaceNoValidPoints.hintColumnRange", ("typical", typical), ("req", $"{xCol}/{yCol}/{zCol}"), ("max", typical - 1));
+    else if (minReq < 0)
+      hint = Loc.Tk("error.surfaceNoValidPoints.hintNegative", ("req", $"{xCol}/{yCol}/{zCol}"));
+    else if (skippedByParse > 0)
+      hint = Loc.Tk("error.surfaceNoValidPoints.hintNotNumber", ("parse", skippedByParse));
+    else
+      hint = Loc.Tk("error.surfaceNoValidPoints.hintNoDataRows", ("rows", skippedByRows), ("width", skippedByWidth));
+    return Loc.Tk("error.surfaceNoValidPoints.diag",
+      ("path", path),
+      ("lines", totalLines),
+      ("blank", blank),
+      ("skipRows", skippedByRows),
+      ("header", hasHeader ? "true" : "false"),
+      ("typical", typical > 0 ? typical.ToString() : "?"),
+      ("req", $"{xCol}/{yCol}/{zCol}"),
+      ("sample", sample),
+      ("hint", hint));
   }
 
   public static Task<object?> AddSurfaceBreaklineAsync(JsonObject? parameters)
@@ -376,6 +484,295 @@ public static class SurfaceCommands
         ["vertexCount"] = points.Count,
       };
     });
+  }
+
+  // ─── addSurfaceContours / elevatePolylines (2026-11-12, v1.16.0) ──────────
+  //
+  // 为什么加这两个：本项目 443 条等高线是 AcDb2dPolyline —— 高程存在**对象属性**里、
+  // 顶点 Z 全是 0（18 万顶点里 17.8 万 Z=0）。addSurfacePoints / addSurfaceBreakline 都要
+  // 显式 z，于是这批等高线根本进不了曲面，EG 只能拿 1,481 个标高注记点建（点距 ~40 m，
+  // 土方量 ±10~20%）。而 Civil 3D 原生就有「按多段线对象高程建等高线」：AddContours。
+  //
+  //   addSurfaceContours {name, handles?, layer?, skipZeroElevation?, description?, maxCount?}
+  //   elevatePolylines   {handles?, layer?, deleteSource?, targetLayer?}  ← 降级路径 / 横断面复用
+  //
+  // 两个都只走事务、不碰命令上下文：AddContours 是纯 API，不需要 MERGE 那种交互命令。
+
+  public static Task<object?> AddSurfaceContoursAsync(JsonObject? parameters)
+  {
+    var name = PluginRuntime.GetRequiredString(parameters, "name");
+    var handles = PluginRuntime.GetOptionalStringArray(parameters, "handles");
+    var layer = PluginRuntime.GetOptionalString(parameters, "layer");
+    if ((handles == null || handles.Length == 0) && string.IsNullOrWhiteSpace(layer))
+    {
+      throw new JsonRpcDispatchException(
+        "CIVIL3D.INVALID_INPUT",
+        "addSurfaceContours requires either handles[] or layer (nothing was changed).");
+    }
+    var skipZeroElevation = PluginRuntime.GetOptionalBool(parameters, "skipZeroElevation") ?? true;
+    var midOrdinate = PluginRuntime.GetOptionalDouble(parameters, "midOrdinateDistance") ?? 1.0;
+    var maxDistance = PluginRuntime.GetOptionalDouble(parameters, "maximumDistance") ?? 10.0;
+    var minDistance = PluginRuntime.GetOptionalDouble(parameters, "minimumDistance") ?? 0.5;
+    var weeding = PluginRuntime.GetOptionalDouble(parameters, "weedingFactor") ?? 0.0;
+    if (maxDistance <= weeding || maxDistance <= 0 || midOrdinate <= 0)
+    {
+      throw new JsonRpcDispatchException(
+        "CIVIL3D.INVALID_INPUT",
+        $"addSurfaceContours needs midOrdinateDistance > 0 and maximumDistance > weedingFactor (Civil 3D rejects maximumDistance <= weedingDistance); got midOrdinate={midOrdinate}, max={maxDistance}, min={minDistance}, weeding={weeding} - nothing was changed.");
+    }
+    var description = PluginRuntime.GetOptionalString(parameters, "description");
+    var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 5000;
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var surface = CivilObjectUtils.FindSurfaceByName(civilDoc, transaction, name, OpenMode.ForWrite);
+      if (surface is not TinSurface tinSurface)
+      {
+        throw new JsonRpcDispatchException(
+          "CIVIL3D.API_ERROR",
+          $"Contour definitions are only supported on TIN surfaces; '{surface.Name}' is a {surface.GetType().Name}.");
+      }
+
+      var skipped = new List<Dictionary<string, object?>>();
+      var candidateIds = new List<ObjectId>();
+
+      if (handles != null && handles.Length > 0)
+      {
+        foreach (var handle in handles)
+        {
+          if (candidateIds.Count >= maxCount) { skipped.Add(new Dictionary<string, object?> { ["handle"] = handle, ["reason"] = "maxCount-reached" }); continue; }
+          if (!TryResolveHandle(database, handle, out var id))
+          {
+            skipped.Add(new Dictionary<string, object?> { ["handle"] = handle, ["reason"] = "handle-not-found" });
+            continue;
+          }
+          candidateIds.Add(id);
+        }
+      }
+      else
+      {
+        var space = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(
+          transaction, CivilObjectUtils.GetModelSpaceBlockId(database, transaction), OpenMode.ForRead);
+        foreach (ObjectId id in space)
+        {
+          Autodesk.AutoCAD.DatabaseServices.Entity? ent;
+          try { ent = transaction.GetObject(id, OpenMode.ForRead) as Autodesk.AutoCAD.DatabaseServices.Entity; } catch { continue; }
+          if (ent == null || !string.Equals(ent.Layer, layer, StringComparison.OrdinalIgnoreCase)) continue;
+          candidateIds.Add(id);
+          if (candidateIds.Count >= maxCount) break;
+        }
+      }
+
+      var contourIds = new ObjectIdCollection();
+      var zeroElevation = 0;
+      var notPolylines = 0;
+      var vertexCount = 0;
+      double? minElevation = null, maxElevation = null;
+
+      foreach (var id in candidateIds)
+      {
+        Autodesk.AutoCAD.DatabaseServices.Entity? ent;
+        try { ent = transaction.GetObject(id, OpenMode.ForRead) as Autodesk.AutoCAD.DatabaseServices.Entity; }
+        catch (Autodesk.AutoCAD.Runtime.Exception ex) when (CivilObjectUtils.IsErasedException(ex)) { continue; }
+        catch { continue; }
+        if (ent == null) continue;
+
+        var handleText = id.Handle.ToString();
+        double? elevation;
+        switch (ent)
+        {
+          case Polyline lw:
+            elevation = lw.Elevation;
+            vertexCount += lw.NumberOfVertices;
+            break;
+          case Polyline2d p2:
+            elevation = p2.Elevation;
+            break;
+          case Polyline3d:
+            elevation = null;   // 真 3D：Z 在顶点里，AddContours 直接按顶点走
+            break;
+          default:
+            notPolylines++;
+            skipped.Add(new Dictionary<string, object?> { ["handle"] = handleText, ["reason"] = "not-a-polyline:" + ent.GetType().Name });
+            continue;
+        }
+
+        if (skipZeroElevation && elevation.HasValue && Math.Abs(elevation.Value) < 1.0e-9)
+        {
+          zeroElevation++;
+          skipped.Add(new Dictionary<string, object?> { ["handle"] = handleText, ["reason"] = "object-elevation-is-zero" });
+          continue;
+        }
+
+        if (elevation.HasValue)
+        {
+          minElevation = minElevation.HasValue ? Math.Min(minElevation.Value, elevation.Value) : elevation.Value;
+          maxElevation = maxElevation.HasValue ? Math.Max(maxElevation.Value, elevation.Value) : elevation.Value;
+        }
+        contourIds.Add(id);
+      }
+
+      // 一条都没剩下就别动曲面（避免"空操作也算成功"）
+      if (contourIds.Count == 0)
+      {
+        return new Dictionary<string, object?>
+        {
+          ["surfaceName"] = surface.Name,
+          ["requested"] = candidateIds.Count,
+          ["contoursAdded"] = 0,
+          ["surfaceModified"] = false,
+          ["zeroElevationSkipped"] = zeroElevation,
+          ["notPolylines"] = notPolylines,
+          ["skipped"] = skipped,
+          ["note"] = "No usable contour was left, so the surface was not touched.",
+        };
+      }
+
+      // 2026-11-12 真机实测：AddContours 会校验 maximumDistance > weedingDistance，
+      // 传 (1.0, 0.0, 0.0, 0.0) 直接 ArgumentException("The maximumDistance should greater than weedingDistance.")。
+      // 默认给 C3D 常规值（中点距离 1.0 / 最大 10.0 / 最小 0.5 / 不 weed），需要更细可传参覆盖。
+      tinSurface.ContoursDefinition.AddContours(contourIds, midOrdinate, maxDistance, minDistance, weeding);
+      SetSurfaceDescription(surface, description);
+      RebuildSurfaceIfAvailable(surface);
+
+      return new Dictionary<string, object?>
+      {
+        ["surfaceName"] = surface.Name,
+        ["requested"] = candidateIds.Count,
+        ["contoursAdded"] = contourIds.Count,
+        ["surfaceModified"] = true,
+        ["zeroElevationSkipped"] = zeroElevation,
+        ["notPolylines"] = notPolylines,
+        ["vertexCount"] = vertexCount,
+        ["elevationMin"] = minElevation,
+        ["elevationMax"] = maxElevation,
+        ["skipped"] = skipped,
+      };
+    });
+  }
+
+  public static Task<object?> ElevatePolylinesAsync(JsonObject? parameters)
+  {
+    var handles = PluginRuntime.GetOptionalStringArray(parameters, "handles");
+    var layer = PluginRuntime.GetOptionalString(parameters, "layer");
+    if ((handles == null || handles.Length == 0) && string.IsNullOrWhiteSpace(layer))
+    {
+      throw new JsonRpcDispatchException(
+        "CIVIL3D.INVALID_INPUT",
+        "elevatePolylines requires either handles[] or layer (nothing was changed).");
+    }
+    var deleteSource = PluginRuntime.GetOptionalBool(parameters, "deleteSource") ?? false;
+    var targetLayer = PluginRuntime.GetOptionalString(parameters, "targetLayer");
+    var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 2000;
+
+    return CivilExecution.WriteAsync<object?>((doc, database, transaction) =>
+    {
+      var space = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(
+        transaction, CivilObjectUtils.GetModelSpaceBlockId(database, transaction), OpenMode.ForWrite);
+
+      var sourceIds = new List<ObjectId>();
+      if (handles != null && handles.Length > 0)
+      {
+        foreach (var handle in handles)
+          if (TryResolveHandle(database, handle, out var id)) sourceIds.Add(id);
+      }
+      else
+      {
+        foreach (ObjectId id in space)
+        {
+          Autodesk.AutoCAD.DatabaseServices.Entity? ent;
+          try { ent = transaction.GetObject(id, OpenMode.ForRead) as Autodesk.AutoCAD.DatabaseServices.Entity; } catch { continue; }
+          if (ent == null || !string.Equals(ent.Layer, layer, StringComparison.OrdinalIgnoreCase)) continue;
+          sourceIds.Add(id);
+          if (sourceIds.Count >= maxCount) break;
+        }
+      }
+
+      var created = new List<Dictionary<string, object?>>();
+      var skipped = new List<Dictionary<string, object?>>();
+
+      foreach (var id in sourceIds)
+      {
+        Autodesk.AutoCAD.DatabaseServices.Entity? ent;
+        try { ent = transaction.GetObject(id, OpenMode.ForRead) as Autodesk.AutoCAD.DatabaseServices.Entity; }
+        catch (Autodesk.AutoCAD.Runtime.Exception ex) when (CivilObjectUtils.IsErasedException(ex)) { continue; }
+        catch { continue; }
+        if (ent == null) continue;
+        var handleText = id.Handle.ToString();
+
+        var points = new Point3dCollection();
+        bool closed;
+        switch (ent)
+        {
+          case Polyline lw:
+            closed = lw.Closed;
+            for (var i = 0; i < lw.NumberOfVertices; i++)
+            {
+              var p = lw.GetPoint2dAt(i);
+              points.Add(new Point3d(p.X, p.Y, lw.Elevation));
+            }
+            break;
+          case Polyline2d p2:
+            closed = p2.Closed;
+            foreach (var child in (System.Collections.IEnumerable)p2)
+            {
+              if (child is not ObjectId vid || vid.IsNull) continue;
+              if (transaction.GetObject(vid, OpenMode.ForRead) is Vertex2d v && v.Position is Point3d pv)
+                points.Add(pv);   // Vertex2d.Position 的 Z 已经是多段线高程
+            }
+            break;
+          case Polyline3d:
+            skipped.Add(new Dictionary<string, object?> { ["handle"] = handleText, ["reason"] = "already-3d" });
+            continue;
+          default:
+            skipped.Add(new Dictionary<string, object?> { ["handle"] = handleText, ["reason"] = "not-a-polyline:" + ent.GetType().Name });
+            continue;
+        }
+
+        if (points.Count < 2)
+        {
+          skipped.Add(new Dictionary<string, object?> { ["handle"] = handleText, ["reason"] = "fewer-than-two-vertices" });
+          continue;
+        }
+
+        var elevated = new Polyline3d(Poly3dType.SimplePoly, points, closed);
+        elevated.Layer = targetLayer ?? ent.Layer;
+        space.AppendEntity(elevated);
+        transaction.AddNewlyCreatedDBObject(elevated, true);
+        created.Add(new Dictionary<string, object?>
+        {
+          ["sourceHandle"] = handleText,
+          ["handle"] = elevated.Handle.ToString(),
+          ["vertexCount"] = points.Count,
+          ["z"] = points[0].Z,
+        });
+
+        if (deleteSource)
+        {
+          ent.UpgradeOpen();   // ??????????? OpenMode ?????????????
+          ent.Erase();
+        }
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["created"] = created,
+        ["createdCount"] = created.Count,
+        ["skipped"] = skipped,
+        ["deleteSource"] = deleteSource,
+      };
+    });
+  }
+
+  private static bool TryResolveHandle(Database database, string handle, out ObjectId id)
+  {
+    id = ObjectId.Null;
+    if (!long.TryParse(handle, System.Globalization.NumberStyles.HexNumber,
+          System.Globalization.CultureInfo.InvariantCulture, out var value))
+      return false;
+    try { id = database.GetObjectId(false, new Handle(value), 0); }
+    catch (Autodesk.AutoCAD.Runtime.Exception) { return false; }
+    return !id.IsNull;
   }
 
   public static Task<object?> ExtractSurfaceContoursAsync(JsonObject? parameters)
@@ -1085,20 +1482,13 @@ public static class SurfaceCommands
             }
 
             double elevation;
-            try
-            {
-              elevation = InvokeSurfaceElevation(surface, x, y);
-            }
-            catch
-            {
-              continue;
-            }
-
+            var hasData = TrySampleElevation(surface, x, y, out elevation);
             samples.Add(new Dictionary<string, object?>
             {
               ["x"] = x,
               ["y"] = y,
-              ["elevation"] = elevation,
+              ["elevation"] = hasData ? elevation : (double?)null,
+              ["inside"] = hasData,
             });
           }
         }
@@ -1113,20 +1503,13 @@ public static class SurfaceCommands
           var x = PluginRuntime.GetRequiredDoubleFromNode(pointNode["x"], "points[].x");
           var y = PluginRuntime.GetRequiredDoubleFromNode(pointNode["y"], "points[].y");
           double elevation;
-          try
-          {
-            elevation = InvokeSurfaceElevation(surface, x, y);
-          }
-          catch
-          {
-            continue;
-          }
-
+          var hasData = TrySampleElevation(surface, x, y, out elevation);
           samples.Add(new Dictionary<string, object?>
           {
             ["x"] = x,
             ["y"] = y,
-            ["elevation"] = elevation,
+            ["elevation"] = hasData ? elevation : (double?)null,
+            ["inside"] = hasData,
           });
         }
       }
@@ -1151,21 +1534,14 @@ public static class SurfaceCommands
           var x = x0 + t * (x1 - x0);
           var y = y0 + t * (y1 - y0);
           double elevation;
-          try
-          {
-            elevation = InvokeSurfaceElevation(surface, x, y);
-          }
-          catch
-          {
-            continue;
-          }
-
+          var hasData = TrySampleElevation(surface, x, y, out elevation);
           samples.Add(new Dictionary<string, object?>
           {
             ["x"] = x,
             ["y"] = y,
             ["station"] = t * totalLength,
-            ["elevation"] = elevation,
+            ["elevation"] = hasData ? elevation : (double?)null,
+            ["inside"] = hasData,
           });
         }
       }
@@ -1174,11 +1550,13 @@ public static class SurfaceCommands
         throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"Unknown sampling method '{method}'. Use 'grid', 'points', or 'transect'.");
       }
 
+      var outsideCount = samples.Count(s => s.TryGetValue("inside", out var v) && v is bool b && !b);
       return new Dictionary<string, object?>
       {
         ["surfaceName"] = name,
         ["method"] = method,
         ["sampleCount"] = samples.Count,
+        ["outsideCount"] = outsideCount,
         ["samples"] = samples,
         ["units"] = new Dictionary<string, object?>
         {
@@ -1267,6 +1645,28 @@ public static class SurfaceCommands
       GridSurface => "Grid",
       _ => "TIN",
     };
+  }
+
+  // 2026-11-16 P1: elevation 0 means "no data"
+  //   C3D 的 FindElevationAtXY 对曲面范围外的点**不抛异常，直接返回 0.0** —— 以前这里把 0 当真实高程返回，
+  //   调用方无法区分"高程 0"和"没数据"（真实项目里 GROUND-EXIST 曲面采 446 个桩号，276 个静默返回 0）。
+  //   现在统一约定：0 视为无数据 → elevation=null + inside=false，并计入 outsideCount。
+  //   注意：真实高程恰为 0 的地形（海平面）会被判为无数据，这种数据在本工具范围内不予支持。
+  private static bool TrySampleElevation(CivilSurface surface, double x, double y, out double elevation)
+  {
+    // C3D 的两种失败都要归到「无数据」：
+    //   - 完全在曲面范围外 -> 抛异常 "Point Outside Surface"（以前这会让整批采样中断）
+    //   - 在范围内但缺三角/边界退化 -> 返回 0.0（以前被当成真实高程返回）
+    try
+    {
+      elevation = surface.FindElevationAtXY(x, y);
+    }
+    catch (System.Exception)
+    {
+      elevation = 0;
+      return false;
+    }
+    return elevation != 0.0;
   }
 
   private static double InvokeSurfaceElevation(CivilSurface surface, double x, double y)

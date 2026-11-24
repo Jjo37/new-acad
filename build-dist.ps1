@@ -39,6 +39,8 @@ $need = @(
   "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.deps.json",
   "$ROOT\plugin\AcBridge-v24\net10\Civil3DMcpPlugin.runtimeconfig.json",
   "$ROOT\tools\switch-runtime.ps1",
+  "$ROOT\tools\host-matrix.js",   # 2026-11-23 P35: smoke-plain-acad 产证据 cell 要用（require ./host-matrix）
+  "$ROOT\tools\verify-install-hosts.ps1",   # 2026-11-19: 多宿主安装自检（门禁同款）
   "$ROOT\plugin\AcBridge-v24\UglyToad.PdfPig.dll",   # 2026-10-14 M6: readPdf 依赖，漏包则运行时 FileNotFound
   "$ROOT\plugin\AcBridge-v24\SixLabors.ImageSharp.dll",   # 2026-10-14: webp 解码器，漏包则无系统 WIC webp 时解不出
   "$ROOT\server\panel-relay.js",
@@ -121,6 +123,14 @@ New-Item -ItemType Directory -Path $DIST | Out-Null
 New-Item -ItemType Directory -Path "$DIST\server\mcp" | Out-Null
 New-Item -ItemType Directory -Path "$DIST\plugin\AcBridge-v24" | Out-Null
 New-Item -ItemType Directory -Path "$DIST\tools" | Out-Null
+# 2026-11-23 P35: ship the plugin source commit (installed tree has no .git; evidence binds to it)
+$pluginCommitFile = Join-Path $DIST "tools\plugin-commit.txt"
+if ($env:NEW_ACAD_PLUGIN_COMMIT) {
+  Set-Content -Path $pluginCommitFile -Value $env:NEW_ACAD_PLUGIN_COMMIT -Encoding ASCII -NoNewline
+  Write-Host "[OK] plugin-commit.txt <- $env:NEW_ACAD_PLUGIN_COMMIT"
+} else {
+  Write-Host "[WARN] NEW_ACAD_PLUGIN_COMMIT not set - packaged evidence will not bind to a commit"
+}
 New-Item -ItemType Directory -Path "$DIST\knowledge" | Out-Null
 New-Item -ItemType Directory -Path "$DIST\i18n" | Out-Null   # 2026-10-19
 Write-Host "[OK] dist/ 已创建"
@@ -139,6 +149,12 @@ Get-ChildItem "$ROOT\plugin\AcBridge-v24\*.dll" -File | Where-Object { $_.Name -
   Copy-Item $_.FullName "$DIST\plugin\AcBridge-v24\" -Force
 }
 Copy-Item "$ROOT\server\panel-relay.js" "$DIST\server\" -Force
+Copy-Item "$ROOT\server\project-scope.js" "$DIST\server\" -Force   # 2026-11-18: panel-relay / workflow-store / file-tools require
+Copy-Item "$ROOT\server\block-policy.js" "$DIST\server\" -Force   # 2026-11-18: llm-agent require
+Copy-Item "$ROOT\server\project-memory.js" "$DIST\server\" -Force   # 2026-11-18: llm-agent require
+Copy-Item "$ROOT\server\calc-sandbox.js" "$DIST\server\" -Force   # 2026-11-18: llm-agent require
+Copy-Item "$ROOT\server\calc-runner.js" "$DIST\server\" -Force   # 2026-11-18: llm-agent require
+Copy-Item "$ROOT\server\recipe-index.js" "$DIST\server\" -Force   # 2026-11-18: llm-agent require (findRecipes)
 Copy-Item "$ROOT\server\llm-agent.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\workflow-store.js" "$DIST\server\" -Force
 Copy-Item "$ROOT\server\judgement.js" "$DIST\server\" -Force   # 2026-10-28
@@ -202,6 +218,7 @@ $distCfg = @{
   relayToken = ""
   relaySessionKey = ""
   relayMode = "llm"
+  autoFontMapping = $true
   llm = @{ provider=""; baseUrl=""; apiKey=""; model=""; maxTurns=20; timeoutMs=120000; thinking="auto" }
   project = ""
   # 2026-10-15: 与 dev / file-tools LIMIT_DEFAULTS 保持一致（原来模板缺 project/limits 两段）
@@ -210,6 +227,8 @@ $distCfg = @{
 [System.IO.File]::WriteAllText("$DIST\config.json", ($distCfg | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
 Write-Host "[OK] config.json 已生成（干净模板，无密钥）"
 Copy-Item "$ROOT\tools\find-civil3d.ps1" "$DIST\tools\" -Force
+# 2026-11-24: 宿主契约进包 —— 装机后 smoke/release-gate 产证据要靠它认 cell id
+Copy-Item "$ROOT\docs\audit\supported-hosts.json" "$DIST\tools\supported-hosts.json" -Force
 Copy-Item "$ROOT\tools\clean-runtime.ps1" "$DIST\tools\" -Force
   Copy-Item "$ROOT\tools\locale.ps1" "$DIST\tools\" -Force
 # 2026-08-13: 端口诊断/配置工具（用户端口问题自服务）
@@ -220,7 +239,13 @@ Copy-Item "$ROOT\tools\port-config.bat" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\restart-relay.ps1" "$DIST\tools\" -Force   # 2026-11-05: relay 端口切换
 Copy-Item "$ROOT\tools\ocr-check.ps1" "$DIST\tools\" -Force
 Copy-Item "$ROOT\tools\switch-runtime.ps1" "$DIST\tools\" -Force   # 2026-11-10: net8/net10 手工切换   # 2026-10-15: OCR 语言包预检（install.ps1 调用）
+Copy-Item "$ROOT\tools\verify-install-hosts.ps1" "$DIST\tools\" -Force
+# 2026-11-24: 宿主接线（install.ps1 与 manage-hosts 共用）+ 单版本加装/卸载入口
+Copy-Item "$ROOT\tools\host-wiring.ps1" "$DIST\tools\" -Force
+Copy-Item "$ROOT\tools\manage-hosts.ps1" "$DIST\tools\" -Force
+Copy-Item "$ROOT\manage-hosts.bat" "$DIST\" -Force
   Copy-Item "$ROOT\tools\smoke-plain-acad.js" "$DIST\tools\" -Force   # 2026-10-27: plain-AutoCAD smoke + evidence generator
+Copy-Item "$ROOT\tools\host-matrix.js" "$DIST\tools\" -Force   # 2026-11-23 P35: smoke-plain-acad requires ./host-matrix
 Copy-Item "$ROOT\uninstall.ps1" "$DIST\" -Force
 Copy-Item "$ROOT\uninstall-pre.ps1" "$DIST\" -Force  # 2026-08-25: Inno uninstall pre-cleanup (stop node/task, restore acad.lsp)
 Copy-Item "$ROOT\使用手册.html" "$DIST\" -Force

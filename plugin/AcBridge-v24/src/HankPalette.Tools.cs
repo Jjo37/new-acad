@@ -111,6 +111,32 @@ public static partial class HankPalette
     }
 
     // ---------------- 构建 ----------------
+    // 2026-11-16 P11: 面板把错误码翻成"该怎么办"。API 层已给可行动的 message，
+    //   但状态列窄，放不下全文 —— 这里给短建议，完整信息进 ToolTip。
+    private static string ShortErrCode(string err)
+    {
+        if (string.IsNullOrWhiteSpace(err)) return Loc.T("失败", "failed");
+        return err.Replace("CIVIL3D.", "");
+    }
+
+    private static string ErrAdvice(string err)
+    {
+        if (string.IsNullOrWhiteSpace(err)) return "";
+        var e = err.ToUpperInvariant();
+        if (e.Contains("HOST_BUSY")) return Loc.T("宿主忙，几秒后重试", "host busy - retry in a few seconds");
+        if (e.Contains("OPERATION_TIMEOUT")) return Loc.T("超时（没锁死宿主），可直接重试", "timed out (host NOT locked) - retry is safe");
+        if (e.Contains("JOB_RUNNING")) return Loc.T("有后台任务在跑，等它完成", "background job running - wait");
+        if (e.Contains("CONFLICT")) return Loc.T("重名，换个名字或先删除", "name conflict - rename or delete first");
+        if (e.Contains("OBJECT_NOT_FOUND")) return Loc.T("对象不存在，先 list* 查准确名字", "not found - list the exact name first");
+        if (e.Contains("PATH_NOT_ALLOWED")) return Loc.T("路径不在允许范围", "path outside allowed roots");
+        if (e.Contains("FILE_IO_ERROR")) return Loc.T("文件读写失败，检查目录与只读", "file IO failed - check folder/permissions");
+        if (e.Contains("FILE_TYPE_NOT_ALLOWED")) return Loc.T("扩展名不允许", "file extension not allowed");
+        if (e.Contains("NO_DRAWING")) return Loc.T("没有打开的图纸", "no drawing open");
+        if (e.Contains("INVALID_INPUT")) return Loc.T("参数不对，看 detail", "bad parameters - see detail");
+        if (e.Contains("API_ERROR")) return Loc.T("Civil 3D 接口报错，看 detail", "Civil 3D API error - see detail");
+        return "";
+    }
+
     private static void BuildToolsView(Control host)
     {
         // 2026-10-21: 防重入——面板重建时旧 toolsView 必须先摘掉，否则每开关一次多一层
@@ -779,7 +805,10 @@ public static partial class HankPalette
                 foreach (var r in rows)
                 {
                     // 2026-10-23 (Bro): tell the user up front when a step has no inverse
-                    var statusCell = r.Ok ? (r.Phase == "end" ? "✓" : "▶") : "✗ " + r.Err;
+                    // 2026-11-16 P11: 失败时给"该怎么办"，不只给错误码。
+                    var advice = r.Ok ? "" : ErrAdvice(r.Err);
+                    var statusCell = r.Ok ? (r.Phase == "end" ? "✓" : "▶") : "✗ " + ShortErrCode(r.Err);
+                    if (!r.Ok && advice.Length > 0) statusCell += " · " + advice;
                     if (r.Phase == "end" && UndoJournal.HasNoInverse(r.Method))
                         statusCell += " · " + Loc.T("不可撤", "no undo");
                     var idx = toolsGrid.Rows.Add(
@@ -789,7 +818,13 @@ public static partial class HankPalette
                         r.Phase == "end" ? r.Ms + "ms" : "…",
                         r.Bytes > 0 ? FormatChars(r.Bytes) : "",
                         statusCell);
-                    if (!r.Ok) toolsGrid.Rows[idx].DefaultCellStyle.ForeColor = Color.FromArgb(243, 139, 168);
+                    if (!r.Ok)
+                    {
+                        toolsGrid.Rows[idx].DefaultCellStyle.ForeColor = Color.FromArgb(243, 139, 168);
+                        toolsGrid.Rows[idx].Cells[5].ToolTipText =
+                            Loc.T("错误码: ", "Code: ") + r.Err +
+                            (advice.Length > 0 ? System.Environment.NewLine + Loc.T("建议: ", "What to do: ") + advice : "");
+                    }
                 }
             }
         }

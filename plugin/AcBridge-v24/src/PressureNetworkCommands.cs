@@ -36,7 +36,27 @@ public static class PressureNetworkCommands
         .Select(net => ToPressureNetworkSummary(net, transaction))
         .ToList();
 
-      return new Dictionary<string, object?> { ["networks"] = networks };
+      // 2026-11-17 P28b: 空集合要说清"这张图里就没有压力管网"—— 压力管网是独立子系统，
+      //   和重力管网（listPipeNetworks）不是一回事，客户很容易把两者搞混后以为数据丢了。
+      var payload = new Dictionary<string, object?>
+      {
+        ["networks"] = networks,
+        ["count"] = networks.Count,
+      };
+
+      // 2026-11-18 P34: 光说"没有压力管网"不够用 —— 建网必须给 partsList 名和部件名，
+      // 而压力部件列表（Styles.GetPressurePartLists）原来没有任何方法能列出来，客户只能猜。
+      var partsLists = EnumeratePressurePartsLists(civilDoc, transaction);
+      payload["availablePartsLists"] = partsLists;
+      payload["partsListCount"] = partsLists.Count;
+
+      if (networks.Count == 0)
+      {
+        payload["hint"] = partsLists.Count == 0
+          ? "No pressure network in the current drawing, and no pressure parts list either (parts lists come from the drawing template). Start from a Civil 3D template that includes pressure networks, or import a parts list, then createPressureNetwork."
+          : "No pressure network in the current drawing. Pressure networks are a separate subsystem from gravity pipe networks - a drawing can have pipe networks and still have zero pressure networks. Use availablePartsLists[].name for createPressureNetwork and availablePartsLists[].pipeParts/fittingParts/appurtenanceParts for addPressurePipe / addPressureFitting / addPressureAppurtenance.";
+      }
+      return payload;
     });
   }
 
@@ -86,6 +106,18 @@ public static class PressureNetworkCommands
 
     return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
     {
+      // 2026-11-18 P34: 旧顺序是「先建网 → 再查 partsList」，partsList 不存在时抛错但网已经建出来了，
+      // 客户下次 listPressureNetworks 会看到一个没有部件列表的空网。现在先确认 partsList 存在再动手。
+      var partsListId = FindPressurePartsListId(civilDoc, transaction, partsListName);
+
+      // 同名网先查重（C3D 可能静默改名）
+      foreach (var existing in EnumeratePressureNetworks(civilDoc, transaction, OpenMode.ForRead))
+      {
+        if (string.Equals(CivilObjectUtils.GetName(existing), name, StringComparison.OrdinalIgnoreCase))
+          throw new JsonRpcDispatchException("CIVIL3D.CONFLICT",
+            $"Pressure network '{name}' already exists (handle {CivilObjectUtils.GetHandle(existing)}). Pick another name or use getPressureNetworkInfo to inspect it.");
+      }
+
       var networkId = CreatePressureNetwork(database, name);
       var network = CivilObjectUtils.GetRequiredObject<PressurePipeNetwork>(transaction, networkId, OpenMode.ForWrite);
 
@@ -96,8 +128,6 @@ public static class PressureNetworkCommands
         network.Layer = layer;
       }
 
-      // Parts list
-      var partsListId = FindPressurePartsListId(civilDoc, transaction, partsListName);
       network.PartsListId = partsListId;
 
       // Reference surface
@@ -116,12 +146,22 @@ public static class PressureNetworkCommands
         network.ReferenceAlignmentId = alignment.ObjectId;
       }
 
+      // 回读校验：名字和 partsList 必须真的落地（P29 教训：写操作自证）
+      var actualName = CivilObjectUtils.GetName(network) ?? "";
+      if (!string.Equals(actualName, name, StringComparison.OrdinalIgnoreCase))
+        throw new JsonRpcDispatchException("CIVIL3D.API_ERROR",
+          $"Pressure network was created as '{actualName}' instead of '{name}' (Civil 3D renamed it). Re-query with listPressureNetworks.");
+      if (network.PartsListId.IsNull || network.PartsListId != partsListId)
+        throw new JsonRpcDispatchException("CIVIL3D.API_ERROR",
+          $"Pressure network '{actualName}' was created but its parts list did not stick (requested '{partsListName}').");
+
       return new Dictionary<string, object?>
       {
-        ["name"] = CivilObjectUtils.GetName(network) ?? name,
+        ["name"] = actualName,
         ["handle"] = CivilObjectUtils.GetHandle(network),
         ["partsList"] = partsListName,
         ["created"] = true,
+        ["verified"] = true,
       };
     });
   }
@@ -136,8 +176,24 @@ public static class PressureNetworkCommands
     return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
     {
       var network = FindPressureNetworkByName(civilDoc, transaction, name, OpenMode.ForWrite);
+      var handle = CivilObjectUtils.GetHandle(network);
       network.Erase();
-      return new Dictionary<string, object?> { ["deleted"] = true, ["name"] = name };
+
+      // 2026-11-18 P34: 删完回读确认（P29 教训：写操作不许只说"我删了"）
+      var stillThere = EnumeratePressureNetworks(civilDoc, transaction, OpenMode.ForRead)
+        .Any(n => string.Equals(CivilObjectUtils.GetName(n), name, StringComparison.OrdinalIgnoreCase));
+      if (stillThere)
+        throw new JsonRpcDispatchException("CIVIL3D.API_ERROR",
+          $"Pressure network '{name}' (handle {handle}) was erased but is still listed. Verify the drawing in Civil 3D before continuing.");
+
+      return new Dictionary<string, object?>
+      {
+        ["deleted"] = true,
+        ["name"] = name,
+        ["handle"] = handle,
+        ["remainingNetworkCount"] = EnumeratePressureNetworks(civilDoc, transaction, OpenMode.ForRead).Count(),
+        ["verified"] = true,
+      };
     });
   }
 
@@ -509,12 +565,30 @@ public static class PressureNetworkCommands
     var sp = GetPointProperty(pipe, "StartPoint", "PointAtStart");
     var ep = GetPointProperty(pipe, "EndPoint", "PointAtEnd");
 
+    // 2026-11-18 P34: Civil 3D 2025 的压力管不暴露 Length3D/Length2D/Length（真机全 null，
+    // qtyPressureNetworkLengths 因此报"读不到长度"）。有端点时用三维距离补上，并标明来源。
+    var length = GetAnyDouble(pipe, "Length3D", "Length2D", "Length");
+    string? lengthSource = length.HasValue ? "api" : null;
+    if (!length.HasValue && sp.HasValue && ep.HasValue)
+    {
+      var dx = sp.Value.X - ep.Value.X;
+      var dy = sp.Value.Y - ep.Value.Y;
+      var dz = sp.Value.Z - ep.Value.Z;
+      var computed = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+      if (computed > 0)
+      {
+        length = computed;
+        lengthSource = "computed-from-endpoints";
+      }
+    }
+
     return new Dictionary<string, object?>
     {
       ["name"] = CivilObjectUtils.GetName(pipe) ?? string.Empty,
       ["handle"] = CivilObjectUtils.GetHandle(pipe),
       ["diameter"] = GetAnyDouble(pipe, "InnerDiameter", "InnerDiameterOrWidth", "Diameter"),
-      ["length"] = GetAnyDouble(pipe, "Length3D", "Length2D", "Length"),
+      ["length"] = length,
+      ["lengthSource"] = lengthSource,
       ["material"] = GetAnyString(pipe, "Material", "PartFamilyName", "PartDescription") ?? string.Empty,
       ["startPoint"] = sp.HasValue ? new Dictionary<string, object?> { ["x"] = sp.Value.X, ["y"] = sp.Value.Y, ["z"] = sp.Value.Z } : null,
       ["endPoint"] = ep.HasValue ? new Dictionary<string, object?> { ["x"] = ep.Value.X, ["y"] = ep.Value.Y, ["z"] = ep.Value.Z } : null,
@@ -615,6 +689,55 @@ public static class PressureNetworkCommands
       : pressureNetwork.AddAppurtenance(position, part);
   }
 
+  /// <summary>
+  /// 本图的压力部件列表 + 各类部件名（各取前 12 个，避免返回体膨胀）。
+  /// 建压力管网必须给 partsList 名和部件名，没有这个清单客户只能猜。
+  /// </summary>
+  private static List<Dictionary<string, object?>> EnumeratePressurePartsLists(object civilDoc, Transaction transaction)
+  {
+    var result = new List<Dictionary<string, object?>>();
+    try
+    {
+      foreach (ObjectId listId in ((CivilDocument)civilDoc).Styles.GetPressurePartLists())
+      {
+        var list = CivilObjectUtils.GetRequiredObject<PressurePartList>(transaction, listId, OpenMode.ForRead);
+        result.Add(new Dictionary<string, object?>
+        {
+          ["name"] = list.Name,
+          ["handle"] = CivilObjectUtils.GetHandle(list),
+          ["pipeParts"] = PartNames(list, transaction, PressurePartType.PressurePipe),
+          ["fittingParts"] = PartNames(list, transaction, PressurePartType.Elbow, PressurePartType.Tee, PressurePartType.Wye, PressurePartType.Cross, PressurePartType.Cap, PressurePartType.Coupling, PressurePartType.Plug, PressurePartType.Reducer),
+          ["appurtenanceParts"] = PartNames(list, transaction, PressurePartType.Valve, PressurePartType.Pump, PressurePartType.Hydrant),
+        });
+      }
+    }
+    catch (Exception ex)
+    {
+      result.Add(new Dictionary<string, object?> { ["error"] = ex.GetType().Name + ": " + ex.Message });
+    }
+    return result;
+  }
+
+  private static List<string> PartNames(PressurePartList list, Transaction transaction, params PressurePartType[] types)
+  {
+    var names = new List<string>();
+    foreach (var type in types)
+    {
+      try
+      {
+        foreach (var part in list.GetParts(type))
+        {
+          if (!part.IsValid || string.IsNullOrWhiteSpace(part.Description)) continue;
+          if (names.Contains(part.Description)) continue;
+          names.Add(part.Description);
+          if (names.Count >= 12) return names;
+        }
+      }
+      catch { }
+    }
+    return names;
+  }
+
   private static ObjectId FindPressurePartsListId(object civilDoc, Transaction transaction, string partsListName)
   {
     foreach (ObjectId objectId in ((CivilDocument)civilDoc).Styles.GetPressurePartLists())
@@ -649,12 +772,16 @@ public static class PressureNetworkCommands
 
   private static IEnumerable<ObjectId> GetChildObjectIds(object owner, params string[] memberNames)
   {
+    // 2026-11-18 P34: 多个成员名常常指向同一个集合（真机 getPressureNetworkInfo 对 1 根管报了 2 根），
+    // 必须按 ObjectId 去重，否则 pipes/fittings/appurtenances 都会翻倍。
+    var seen = new HashSet<ObjectId>();
     foreach (var memberName in memberNames)
     {
       var value = CivilObjectUtils.InvokeMethod(owner, memberName) ?? GetNamedMember(owner, memberName);
       foreach (var id in ToObjectIdsFlexible(value))
       {
-        if (id != ObjectId.Null) yield return id;
+        if (id.IsNull) continue;
+        if (seen.Add(id)) yield return id;
       }
     }
   }
@@ -761,13 +888,33 @@ public static class PressureNetworkCommands
     return ObjectId.Null;
   }
 
+  /// <summary>
+  /// 2026-11-18 P34: 只认 {x,y,z} 时，客户传 [x,y,z] 会被当成"没给点"（真机实测：
+  /// addPressurePipe 传数组 → "startPoint is required"）。现在两种形状都收，畸形值直接报错。
+  /// 高程仍然必须给（不做"默认 0"的假设）。
+  /// </summary>
   private static Point3d? ReadPoint(JsonObject? parameters, string paramName)
   {
-    if (PluginRuntime.GetParameter(parameters, paramName) is not JsonObject node) return null;
-    return new Point3d(
-      node["x"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}.x is required."),
-      node["y"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}.y is required."),
-      node["z"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}.z is required; elevation 0 will not be assumed.")
-    );
+    var raw = PluginRuntime.GetParameter(parameters, paramName);
+    if (raw is JsonObject node)
+    {
+      return new Point3d(
+        node["x"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}.x is required."),
+        node["y"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}.y is required."),
+        node["z"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}.z is required; elevation 0 will not be assumed.")
+      );
+    }
+    if (raw is JsonArray arr && arr.Count >= 3)
+    {
+      return new Point3d(
+        arr[0]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}[0] is not a number."),
+        arr[1]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}[1] is not a number."),
+        arr[2]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"{paramName}[2] is required; elevation 0 will not be assumed.")
+      );
+    }
+    if (raw is JsonArray shortArr)
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+        $"{paramName} must be {{x,y,z}} or [x,y,z]; got {shortArr.Count} element(s).");
+    return null;
   }
 }

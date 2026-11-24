@@ -58,13 +58,42 @@ public static class SlopeAnalysisCommands
         surface = GetFirstSurface(civilDoc, transaction);
 
       if (profile == null || surface == null)
-        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", "Could not resolve profile or surface.");
+      {
+        // 2026-11-18 P32: 旧文案 "Could not resolve profile or surface." 既不说是哪个缺，
+        // 也不符合工程里「图纸缺对象 → No ... found」的约定（门禁按措辞分桶，会被误判成真问题）。
+        var missing = (profile == null ? "profile" : "") +
+                      (profile == null && surface == null ? " and " : "") +
+                      (surface == null ? "surface" : "");
+        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND",
+          $"No {missing} found for alignment '{alignment.Name}' - slope geometry needs a finished-grade profile and a surface. Create them (or pass profileName / surfaceName) and retry.");
+      }
 
       var alignLen = alignment.Length;
       var startSta = stationStart ?? alignment.StartingStation;
       var endSta = stationEnd ?? (startSta + alignLen);
 
+      // 2026-11-18 P32: 纵断面范围常常比路线短（投影只覆盖一部分），
+      // 旧实现拿 startSta+alignLen 当终点 → 末段桩号越界，GetProfileElevationAtStation 抛
+      // "Value does not fall within the expected range"，整批采样失败。
+      // 现在把窗口夹到两者的交集，并如实回 profileStationRange。
+      double profStart, profEnd;
+      try { profStart = profile.StartingStation; profEnd = profile.EndingStation; }
+      catch { profStart = startSta; profEnd = endSta; }
+      if (profEnd > profStart)
+      {
+        startSta = Math.Max(startSta, profStart);
+        endSta = Math.Min(endSta, profEnd);
+      }
+      if (endSta <= startSta)
+      {
+        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND",
+          $"No sampled station range found: alignment '{alignment.Name}' runs {alignment.StartingStation:F2}-{alignment.StartingStation + alignLen:F2} but profile '{profile.Name}' only covers {profStart:F2}-{profEnd:F2}. Pass stationStart/stationEnd inside the profile, or pick another profileName.");
+      }
+
       var rows = new List<Dictionary<string, object?>>();
+      // 2026-11-18 P32: 路线端点常落在曲面边界外，FindElevationAtXY 抛 "Point Outside Surface"。
+      // 旧实现让整批采样炸掉（门禁里算成真问题），客户拿到的是一个错误而不是"哪些桩号没数据"。
+      var skippedStations = new List<Dictionary<string, object?>>();
       double maxCutHeight = 0, maxFillHeight = 0;
 
       for (double sta = startSta; sta <= endSta + 0.01; sta += stationInterval)
@@ -72,13 +101,41 @@ public static class SlopeAnalysisCommands
         var clampedSta = Math.Min(sta, endSta);
 
         // Get design elevation at station
-        double designElev = GetProfileElevationAtStation(profile, clampedSta);
+        double designElev;
+        try
+        {
+          designElev = GetProfileElevationAtStation(profile, clampedSta);
+        }
+        catch (JsonRpcDispatchException ex)
+        {
+          skippedStations.Add(new Dictionary<string, object?>
+          {
+            ["station"] = Math.Round(clampedSta, 2),
+            ["reason"] = ex.Message,
+          });
+          if (clampedSta >= endSta) break;
+          continue;
+        }
 
         // Get XY of station on alignment
         var (ptX, ptY) = GetAlignmentPointAtStation(alignment, clampedSta);
 
-        // Get ground elevation at that XY
-        double groundElev = GetSurfaceElevation(surface, ptX, ptY);
+        // Get ground elevation at that XY（越界就跳过并记账，不炸整批）
+        double groundElev;
+        try
+        {
+          groundElev = GetSurfaceElevation(surface, ptX, ptY);
+        }
+        catch (JsonRpcDispatchException ex)
+        {
+          skippedStations.Add(new Dictionary<string, object?>
+          {
+            ["station"] = Math.Round(clampedSta, 2),
+            ["reason"] = ex.Message,
+          });
+          if (clampedSta >= endSta) break;
+          continue;
+        }
 
         double cutFill = designElev - groundElev; // positive = fill, negative = cut
         bool isCut = cutFill < 0;
@@ -108,11 +165,20 @@ public static class SlopeAnalysisCommands
         if (clampedSta >= endSta) break;
       }
 
+      if (rows.Count == 0)
+      {
+        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND",
+          $"No slope samples found for alignment '{alignment.Name}': all {skippedStations.Count} stations fell outside surface '{surface.Name}'. Pass a stationStart/stationEnd inside the surface extents, or pick another surfaceName.");
+      }
+
       return new Dictionary<string, object?>
       {
         ["alignmentName"] = alignment.Name,
         ["profileName"] = profile.Name,
         ["surfaceName"] = surface.Name,
+        ["profileStationRange"] = new List<double> { Math.Round(profStart, 2), Math.Round(profEnd, 2) },
+        ["skippedStationCount"] = skippedStations.Count,
+        ["skippedStations"] = skippedStations.Take(20).ToList(),
         ["cutSlopeRatio"] = $"{cutSlopeRatio}:1",
         ["fillSlopeRatio"] = $"{fillSlopeRatio}:1",
         ["benchWidth"] = benchWidth,

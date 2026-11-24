@@ -7,7 +7,7 @@ public static class WorkflowCommands
 {
   public static async Task<object?> CorridorQcReportWorkflowAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = CorridorEditingCommands.GetCorridorName(parameters);
     var outputPath = PluginRuntime.GetOptionalString(parameters, "outputPath");
     var includeAlignments = PluginRuntime.GetOptionalBool(parameters, "includeAlignments") ?? false;
     var includeProfiles = PluginRuntime.GetOptionalBool(parameters, "includeProfiles") ?? false;

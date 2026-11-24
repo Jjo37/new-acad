@@ -9,10 +9,14 @@
 const fs = require('fs');
 const path = require('path');
 const { fingerprint, collectHandles } = require('./workflow-store');   // 2026-10-21 P2: 结果指纹，回放时对比；2026-10-22 P2.3: 产出句柄（重映射用）
+const { FailTracker } = require('./block-policy');   // 2026-11-14: 失败封锁策略（参数错不封锁；同参同错/同码多次才封）
+const projectMemory = require('./project-memory');
+const recipeIndex = require('./recipe-index');   // 2026-11-18 v1.18: findRecipes（内置配方 + 本项目录制记录）   // 2026-11-14 v1.17: 项目级记忆（L0 铁规注入 / L1 事实 / L2 坑表召回）
 
 const { CAD_CALL_TOOL, cadCall, formatResult, mcpCall, MCP_CALL_TOOL, MCPCALL_ALLOW } = require('./cad-tools.js');
+const { runCalc, CALC_TOOL } = require('./calc-sandbox');   // 2026-11-14 F1: 本地批量计算沙箱（873/1312 次单发三角的解法）
 const { compactMessages } = require('./compact.js'); // 2026-08-14: 上下文压缩（超限主动摘要，防膨胀超时）
-const { readFile, writeFile, deleteFile, listDir, readImage, traceImage, queryFile, FILE_TOOLS, getFileTools, getAgentWorkDir, getLimits } = require('./file-tools.js');
+const { readFile, writeFile, deleteFile, listDir, readImage, traceImage, queryFile, mkdir, copyFile, moveFile, convertPoints, FILE_TOOLS, getFileTools, getAgentWorkDir, getProjectDir, getLimits } = require('./file-tools.js');
 const { ocrFile } = require('./ocr.js');   // 2026-10-14: 扫描件 OCR（Windows WinRT，零打包）
 const { localizeToolSchema, resolveLocale } = require('./i18n-en.js');
 const { renderContracts } = require('./method-contracts.js');   // 2026-11-06: 高频方法参数契约（注入 system prompt）
@@ -187,6 +191,59 @@ function savePlanFile(project) {
   } catch (e) { /* best-effort: 计划落盘失败不阻塞任务 */ }
 }
 
+// 2026-11-13: 上下文检查点落盘。compact.js 生成的那份「八节摘要」原来只活在 messages 内存里，
+// relay 一重启就蒸发（长任务续接直接断片）。落 exchange/projects/<项目>/checkpoint.json，
+// 下次同一个项目的首轮把它注入 system，让 AI 知道自己上次干到哪。
+// 过期（>24h）自动忽略 —— 陈年检查点会误导新任务，比没有更糟。
+const CHECKPOINT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+function checkpointFileFor(project) {
+  const safe = String(project || '').trim().replace(/[\/:*?"<>|]/g, '_');
+  return safe
+    ? path.join(__dirname, '..', 'exchange', 'projects', safe, 'checkpoint.json')
+    : path.join(__dirname, '..', 'exchange', 'checkpoint.json');
+}
+function loadCheckpoint(project, nowMs) {
+  try {
+    const f = checkpointFileFor(project);
+    if (!fs.existsSync(f)) return null;
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (!j || !j.summary) return null;
+    const at = Date.parse(j.at || '');
+    const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+    if (!Number.isFinite(at) || now - at > CHECKPOINT_MAX_AGE_MS) return null;
+    return j;
+  } catch (e) { return null; }   // 坏文件→忽略（与 plan.json 同策略：不能因为读不了就阻塞任务）
+}
+function saveCheckpoint(project, summary, meta) {
+  try {
+    const text = String(summary || '');
+    if (!text) return false;
+    const f = checkpointFileFor(project);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify(Object.assign({
+      at: new Date().toISOString(),
+      summary: text.slice(0, 8000),
+    }, meta || {})), 'utf8');
+    return true;
+  } catch (e) { return false; }
+}
+function clearCheckpoint(project) {
+  try {
+    const f = checkpointFileFor(project);
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+    return true;
+  } catch (e) { return false; }
+}
+// 压缩后收尾：把 newMsgs[1]（compact.js 造的检查点 user 消息）落盘
+function persistCompactionCheckpoint(project, newMsgs, turns, bytes, plan) {
+  try {
+    if (!Array.isArray(newMsgs) || newMsgs.length < 2) return false;
+    const content = String((newMsgs[1] && newMsgs[1].content) || '');
+    if (!/【上下文检查点】/.test(content)) return false;
+    return saveCheckpoint(project, content, { turns, bytes, goal: plan ? String(plan.goal || '') : '' });
+  } catch (e) { return false; }
+}
+
 function planToString(p) {
   if (!p) return '';
   const lines = p.steps.map((s, i) => {
@@ -272,9 +329,52 @@ const MEMORY_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'projectMemory',
+      description: '本项目长期记忆（按项目隔离、条目化）。action=list 列全部；search 按关键词查（支持中文，如"桩号"/"列号"）；add 新增一条（kind=fact 事实 | lesson 坑）；supersede 作废旧条目（可同时给 text 写替代条目）。铁规 PROJECT-RULES.md 只读：要求改规则必须先在回复里向用户提议，用户确认后才动。',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['list', 'search', 'add', 'supersede'] },
+          kind: { type: 'string', enum: ['fact', 'lesson'], description: 'add 时的种类，默认 fact' },
+          text: { type: 'string', description: '条目正文（add 必填；supersede 可选，给了就同时写新条目）' },
+          source: { type: 'string', description: '来源：图纸标注/实测/用户口径/工具行为等' },
+          tags: { type: 'array', items: { type: 'string' }, description: '关键词，便于失败召回' },
+          id: { type: 'string', description: 'supersede 的旧条目 id，如 F-0003' },
+          query: { type: 'string', description: 'search 的关键词（空格分词）' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'readKnowledge',
       description: '读取内置知识库全文（前提核查点 + 注意事项；方法查找靠 listMethods filter，高频方法自带描述）。复杂任务（算量/曲面/批量修改/导出等）先调用本工具核对前提，再决定调什么方法。',
       parameters: { type: 'object', properties: {} }
+    }
+  }
+];
+
+// 2026-11-18 v1.18: 配方检索（任务级"该怎么做"，不是单个方法）
+const RECIPE_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'findRecipes',
+      description: '按任务意图反查「可照抄的做法」（内置配方 + 本项目跑通过的录制记录）。'
+        + '返回 {query, hits:[{source:"builtin"|"recorded", id, title, score, steps:[{method, why}], notes, reuse?}], hint}。'
+        + '用法：任务级说法（"统计地块面积并出报告"/"大图层导出坐标表"/"压力管网建网加管"）先调它，'
+        + '拿到 steps 里的真实方法名和 notes 里的已知坑，再逐个 cadCall 执行；比在 439 个方法里猜名字省事得多。'
+        + 'steps[].method 可直接作为 cadCall 的 method。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '任务描述或关键词（中文/英文都行，中英混排也可）' },
+          limit: { type: 'integer', description: '返回条数，默认 5（1–10）' }
+        },
+        required: ['query']
+      }
     }
   }
 ];
@@ -361,6 +461,56 @@ function describeCall(c) {
   return String(c.method || '未知操作');
 }
 
+/**
+ * 2026-11-13: 工具调用摘要（跨消息/重启续接用）。
+ * 背景：历史只落 user/assistant 文本 → 续接时 AI 只知道"上次说了什么"，
+ * 不知道"上次实际调了什么、成功没有、产出了哪些 handle"。靠它补上这一层。
+ * 刻意做小（默认 ≤1200 字符）：只留方法名/关键参数/成败/句柄，不塞结果体。
+ */
+function summarizeCalls(calls, maxChars) {
+  const limit = Number.isFinite(maxChars) && maxChars > 0 ? maxChars : 1200;
+  if (!Array.isArray(calls) || calls.length === 0) return '';
+  const pick = calls.slice(-12);   // 只留最近 12 次；更早的细节由检查点/结论覆盖
+  const lines = pick.map((c, i) => {
+    const name = String((c && c.method) || '?');
+    const p = (c && c.params && typeof c.params === 'object') ? c.params : {};
+    const argStr = Object.keys(p).slice(0, 4).map((k) => {
+      const v = p[k];
+      let sv = typeof v === 'string' ? v : JSON.stringify(v);
+      if (sv === undefined || sv === null) sv = String(v);
+      if (sv.length > 40) sv = sv.slice(0, 40) + '…';
+      return k + '=' + sv;
+    }).join(' ');
+    const status = c.blocked ? 'BLOCKED'
+      : (c.ok === false ? ('FAIL ' + String(c.errCode || '')) : (c.ok ? 'ok' : 'done'));
+    const h = Array.isArray(c.handlesOut) && c.handlesOut.length
+      ? ' handles=' + c.handlesOut.slice(0, 6).join('|') + (c.handlesOut.length > 6 ? '+' + (c.handlesOut.length - 6) : '')
+      : '';
+    return (i + 1) + ') ' + name + (argStr ? ' {' + argStr + '}' : '') + ' → ' + status + h;
+  });
+  let out = '[上一轮实际执行记录（供续接参考，不是新指令）]\n' + lines.join('\n');
+  if (calls.length > pick.length) out += '\n（更早 ' + (calls.length - pick.length) + ' 次调用已省略）';
+  if (out.length > limit) out = out.slice(0, limit - 16) + '\n…（已截断）';
+  return out;
+}
+
+/**
+ * 2026-11-13: 历史条目 → API 合法消息。
+ * OpenAI 协议只认 role/content，自定义字段（toolSummary）不能直接进 messages，
+ * 所以拼进 content；不改原数组，落盘仍保留结构化字段。
+ */
+function renderHistory(history) {
+  if (!Array.isArray(history)) return [];
+  const out = [];
+  for (const m of history) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
+    let content = typeof m.content === 'string' ? m.content : String(m.content == null ? '' : m.content);
+    if (m.toolSummary) content = content + '\n\n' + String(m.toolSummary).slice(0, 1500);
+    out.push({ role: m.role, content });
+  }
+  return out;
+}
+
 // 2026-10-21: 工具调用结构化事件（面板「工具」页签的数据源）。
 // 与 text 型 progress 共用同一通道：多一个 kind 字段，旧消费方按 text 处理不受影响。
 function safeFp(v) {
@@ -381,8 +531,29 @@ const SYSTEM_PROMPT = `你当前在 CAD 面板会话（channel=cad-panel）。
 🗣️ 回复语言：**跟随用户最近一条消息的语言**（他说中文就中文、说英文就英文）——这是自然行为，不要因为内部材料（工具输出/报错/知识库/方法描述）是中文就改用中文。**没有用户消息时**（开场问候、后台任务完成、超时/失败通知）用界面语言（{{UI_LANG}}）。图纸/图元内生成的文字仍按项目惯例（默认中文，用户另有要求除外）。
 
 🔴 能力边界（安全设计，物理限制）：
-- 主要工具是 cadCall（调用 C3D 插件方法）；另有 mcpCall（MCP 高层向导）、文件工具（readFile 读 / listDir 列目录 / writeFile+deleteFile 限工作区）、记忆与知识库工具（readMemory/writeMemory/readKnowledge）——详见下文各节
-- 不能执行任意系统命令；文件写入/删除仅限 {{WORKDIR}} 工作区（用户文件不可改删，物理边界）
+- 主要工具是 cadCall（调用 C3D 插件方法）；另有 mcpCall（MCP 高层向导）、文件工具（readFile/queryFile/convertPoints 读、listDir 列目录、writeFile/deleteFile/mkdir/copyFile/moveFile 限项目文件夹）、记忆与知识库工具（readMemory/writeMemory/readKnowledge）——详见下文各节
+- **大结果分两种，别搞混**：
+  ① **批量读方法自带字节预算**（getEntitiesByLayer / getEntitiesByBlock / getBlocksByLayer / getBlockDefinitionGeometry /
+     listTexts / getEntitiesInfo / getSelectionDetail / getCorridorFeatureLines）：默认响应 ≤64KB，给不下时**只给前 N 条**，
+     并回 **nextOffset / hasMore / byteLimited**（不会出现 _summarized）。翻页是机械动作：
+     下一页把 **offset 设成上回的 nextOffset**，直到 hasMore=false；两页 handle 不会重复（实测验证过）。
+  ② 其它方法超过 **64KB** 会"摘要降级"（数组被截短 + _summarized 说明，计数已按实际收到内容修正）。
+     需要全量时给该方法传 **fullResult: true**（或 maxResultBytes: 0 = 不限）；全量结果由 relay 外溢落盘，
+     给你文件路径 → 用 **calc（readJson/readCsv）** 或 queryFile 在文件上聚合，**不要把几 MB JSON 塞回对话**。
+  实测：getEntitiesInfo {handles:[...], includeVertices:true, fullResult:true} 一次 400 条线约 40KB，每条自带 startPoint/endPoint/length/angle。
+- **选实体分页**：要按层取全量用 **getEntitiesByLayer {layer, maxCount, offset}** → 顺着 nextOffset 连续翻页，再把 handle 分批喂给 getEntitiesInfo。
+- **selectByCriteria 的两个数字别搞混**：matchedCount = 模型空间里的**精确匹配总数**；handlesReturned = 这次响应给了多少个 handle
+  （maxCount 与字节预算只管返回列表）。handlesTruncated:true 时用 offset=nextOffset 继续取 handle —— 但 CAD 里的选择集
+  是 ssget 按同一套过滤条件建的，**不受 maxCount 限制**（可能已经选中了全部匹配项）。要逐条读几何，走 getEntitiesByLayer 分页更稳。
+- **getSelectionDetail 也可分页**：{offset, maxCount}，看 selectionTotal / nextOffset / hasMore，大选择集别一次全要。
+- **看到 byteLimited=true 不要以为"没有更多数据"**：它的意思是"这一页按体积上限给到这儿了"，用 nextOffset 继续。
+- **导出/选择集这几个字段要看，别只看 count**：
+  exportSelectionToFile 回 count（文件里实际多少行）/ selectionTotal（选择集多少条）/ skippedCount / complete。
+  **complete=false 就是"文件是选择集的子集"**，先看 skippedHandles 再决定能不能当全量用；skippedCount>0 时必须告诉用户少了哪些，不许说"已全部导出"。
+  getSelectedCivilObjectsInfo 默认是数组（limit 默认 100，超过就少给）；要看总量和截断情况就传 details:true，读 returned / selectionTotal / truncated。
+  details.source=snapshot 表示这次读到的是 _sel.json 快照（程序化选择集在 API 侧读不到时的兜底）——结果仍然有效，但如果用户刚手动改了选择集，让他重新发送一次再读。
+- **calc**（本地批量计算沙箱，不碰 CAD）：成批算数一律用它 —— 三角函数/曲线要素/坐标换算/桩号链/CSV 统计/批量格式转换。**一次算完几十上百个**，不要用 cadCall 一个一个算（实测 873/1312 次调用就是"一次一个数"烧掉的）。可用 readFile/readCsv/readJson/listDir/writeFile(仅 agent-work)/out()；无 require、无网络、默认 10s 超时。
+- 不能执行任意系统命令；文件写入/删除仅限**项目文件夹** {{PROJDIR}}（含 agent-work 子目录，用户放在项目外的文件不可改删 —— 物理边界）；plan.json / checkpoint.json / llm-history.json 等运行时状态文件只读不可改
 
 工作流程：
 1. 先调 listMethods 确认方法名（可带 filter 参数精确查：{"method":"listMethods","params":{"filter":"surface"}}；分组摘要不够时再 filter），禁止猜方法名；知识库"已知不支持"清单里的功能直接报 [MISSING]
@@ -432,7 +603,7 @@ const SYSTEM_PROMPT = `你当前在 CAD 面板会话（channel=cad-panel）。
 - writeFile: 在 {{WORKDIR}} 工作区内创建/覆盖文件（生成中间数据/报告）；**大输出分段写**：传 append:true 追加到文件末尾（多次调用拼成完整文件，避免一次内容过大）
 - deleteFile: 删除 {{WORKDIR}} 工作区内自己生成的文件（清理临时/废弃文件）
 - readImage: 读图片并让模型查看（需模型支持视觉；不支持时 API 会报错，如实告知用户即可，不要反复重试）。**图片超限时不自动压缩**——工具会返回选项（压缩看 resize:{maxSide} / 局部高清 crop:{x,y,w,h} / 用户自处理），把选项告诉用户由其决定
-- 插件文档读取（走 cadCall）: readDocx/readDoc{path} / readXlsx/readXls{path,maxRows}（.doc/.xls 老格式也支持，插件自带解析） / readPptx{path} / readZip{path,entry?}——Word/Excel/PPT/压缩包这类二进制格式用它们读（readFile 读不了二进制）；openDrawing{path,readOnly?} 打开已有图纸（半自动多图工作流：openDrawing→操作→saveDrawing→下一张，切图时当前图自动保存）
+- 插件文档读取（走 cadCall）: readDocx/readDoc{path} / readXlsx/readXls{path,maxRows}（.doc/.xls 老格式也支持，插件自带解析） / readPptx{path} / readZip{path,entry?}——Word/Excel/PPT/压缩包这类二进制格式用它们读（readFile 读不了二进制）；openDrawing{path,readOnly?} 打开已有图纸（半自动多图工作流：openDrawing→操作→saveDrawing→下一张，切图时当前图自动保存）。**字体**：返回里的 fontAudit.missingCount>0 表示本机缺图纸引用的 SHX/TrueType 字体 —— 图纸数据没丢（文字串和几何都在 DWG 里），但屏幕显示、文字外框 bbox 会按替代字体变化，中文可能显示成问号；必须把 missing 里的字体名告诉用户，并用 auditFonts{path} 复查。缺字体时插件会自动写字体映射（acad.fmp），并有 backup
 - writeTextFile（插件方法，走 cadCall）: 用户明确要求"生成/保存到某路径"时用（如"笔记生成到 D:\\xxx"）——用户明示=授权写该路径；【只新建不覆盖】已存在则换新文件名或请用户删除旧文件；敏感路径/可执行扩展名禁写
 - 读: 任意本地路径（敏感文件黑名单拦截）；写中间文件: file-tools 工作区；写用户指定位置: 仅用户明示时用插件 writeTextFile
 - ⚠️ .pdf/.dwg 二进制 readFile 读不了；Office 文档走插件方法：.docx→readDocx、.doc→readDoc、.xlsx→readXlsx、.xls→readXls（自带解析，无需装 Office）
@@ -466,6 +637,13 @@ const SYSTEM_PROMPT = `你当前在 CAD 面板会话（channel=cad-panel）。
 - **总量上限 8000 字符**：writeMemory 超限会**直接拒绝**（不静默截断）——先压缩（合并同主题、删过时条目）再写
 - 记忆**索引已注入 system**（只标题行），**要某节全文 / 写入前**用 readMemory 取
 
+📌 项目记忆（projectMemory）——按项目隔离、条目化（2026-11-14 起）：
+- 上面 system 里已经有：本项目**铁规全文**（PROJECT-RULES.md，只读，要改必须先向用户提议）+ 项目事实标题 + 坑表条数
+- 事实/坑用 action=add 逐条写（kind=fact|lesson，带 source 与 tags）；旧结论错了用 supersede 作废并写新条，**不要**整段重写
+- 找细节用 action=search（中文可直接搜，如 "桩号"/"列号"）；全量用 action=list
+- 铁规只读：用户明确要求时你把**提议**写进回复，等用户确认后再改文件，禁止自己改规则
+- 与全局记忆的分工：**跨项目**的偏好/方法论 → writeMemory；**本项目的**基准/口径/坑 → projectMemory
+
 📚 知识库（readKnowledge）：
 - 内置方法速查表 + 关键前提核查清单
 - 复杂任务先 readKnowledge 查方法和前提核查点，再根据用户实际话语核实前提、现场组织步骤
@@ -494,7 +672,7 @@ function callLLM(cfg, messages, timeoutMs, model, signal, onLog) {
   let params = stripUnsupportedParams(cfg, modelName, {
     model: modelName,
     messages,
-    tools: localizeToolSchema([CAD_CALL_TOOL, MCP_CALL_TOOL, ...getFileTools(), ...MEMORY_TOOLS, ...KNOWLEDGE_TOOLS, ...PLAN_TOOLS]),
+    tools: localizeToolSchema([CAD_CALL_TOOL, CALC_TOOL, MCP_CALL_TOOL, ...getFileTools(), ...MEMORY_TOOLS, ...KNOWLEDGE_TOOLS, ...PLAN_TOOLS, ...RECIPE_TOOLS]),
     tool_choice: 'auto',
     temperature: 0.2
   });
@@ -744,9 +922,16 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
       }).filter(Boolean);
       geom = '\n完整几何（已缓存，跨图纸可直接重建）：' + brief.slice(0, 30).join('; ') + (brief.length > 30 ? ' …共' + brief.length + '个' : '');
     }
+    // 2026-11-14: 快照注入加硬上限 —— 选 4 万条线时 handles.join 会把上下文顶到 129%（实测 314KB）。
+    const SNAP_HANDLE_MAX = 80;
+    const allHandles = snapshot.handles || [];
+    const shownHandles = allHandles.slice(0, SNAP_HANDLE_MAX);
+    const handlesText = shownHandles.join(', ') + (allHandles.length > SNAP_HANDLE_MAX
+      ? ' …共 ' + allHandles.length + ' 个（只列前 ' + SNAP_HANDLE_MAX + ' 个；要全部用 getSelectionDetail 或 getEntitiesInfo{handles} 分页取，别让面板一次塞满）'
+      : '');
     snapSection = '\n\n📌 选中集快照（发送时固化，含跨图纸缓存）：\n文档: ' + snapshot.docName + (snapshot.fromCache ? '（缓存，来自上次选中，用户已切图）' : '') +
-      '\nhandles: ' + (snapshot.handles || []).join(', ') + geom +
-      '\n规则：任务全程用快照 handle/几何，不要中途重新 getSelection（可能已变）；用户要"复制到另一张图/跨图纸/粘贴到"时：基于快照几何数据，先告知用户"已获取几何，请切到目标图后回复继续"，切图后用创建方法重建——不要在旧图复制；如当前文档与快照文档不一致，先说明。';
+      '\nhandles: ' + handlesText + geom +
+        '\n规则：任务全程用快照 handle/几何，不要中途重新 getSelection（可能已变）；用户要"复制到另一张图/跨图纸/粘贴到"时：基于快照几何数据，先告知用户"已获取几何，请切到目标图后回复继续"，切图后用创建方法重建——不要在旧图复制；如当前文档与快照文档不一致，先说明。';
   }
   // 2026-08-17: 项目上下文——读 config.json project（用户显式声明，空=全局）；注入 system 让 AI 感知 + 项目级数据落 projects/<名>/
   let projectName = '';
@@ -766,16 +951,25 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
     : '';
     const workDir = getAgentWorkDir();
   activePlan = loadPlanFile(projectName);   // 2026-10-13 M4: 按当前项目恢复任务计划（切项目不串、重启可续）
+  // 2026-11-13: 上次任务的压缩检查点（>24h 或计划已清则忽略）—— relay 重启后靠它续接
+  // 2026-11-14 v1.17: 项目记忆注入 —— L0 铁规全文 + L1 事实标题 + L2 坑表计数
+  //   旧实现只有全局记忆的 ≤300 字标题索引，铁规正文永远进不了上下文（实测整轮没人读 readMemory）。
+  let pmSection = '';
+  try { if (projectName) pmSection = projectMemory.buildInjection(projectName); } catch (e) { console.error("[PM] 项目记忆注入失败: " + e.message); }
+  const lastCheckpoint = loadCheckpoint(projectName);
+  const cpSection = lastCheckpoint
+    ? '\n\n🧷 上次任务检查点（' + String(lastCheckpoint.at || '').slice(0, 16).replace('T', ' ') + ' 自动生成；仅在续接旧任务时参考，与本条消息无关就忽略）：\n' + String(lastCheckpoint.summary || '')
+    : '';
   // 2026-10-19: 不按配置"强推"回复语言——语言跟随用户；配置只作"没有用户消息时"的默认
   const uiLangLabel = uiLocale.startsWith('en') ? '英文（English）' : '中文（Chinese）';
   const langNote = '';
   // 2026-10-15: locale=en 时用英文系统提示（此前 system-prompt-en.js 是死文件，从未接入）
   const baseSystemPrompt = uiLocale.startsWith('en') ? require('./system-prompt-en.js') : SYSTEM_PROMPT;
-  const sysPrompt = baseSystemPrompt.replaceAll('{{WORKDIR}}', workDir).replaceAll('{{UI_LANG}}', uiLangLabel) + '\n\n' + mSection + uSection + kSection + snapSection + projSection + langNote + (activePlan ? '\n\n⚠️ 当前任务计划（每完成一步用 updatePlan 更新；新任务 createPlan 自动覆盖旧计划）：\n' + planToString(activePlan) : '') + (planNote || '');
+  const sysPrompt = baseSystemPrompt.replaceAll('{{WORKDIR}}', workDir).replaceAll('{{PROJDIR}}', path.dirname(workDir)).replaceAll('{{UI_LANG}}', uiLangLabel) + '\n\n' + mSection + uSection + kSection + snapSection + projSection + pmSection + langNote + (activePlan ? '\n\n⚠️ 当前任务计划（每完成一步用 updatePlan 更新；新任务 createPlan 自动覆盖旧计划）：\n' + planToString(activePlan) : '') + cpSection + (planNote || '');
 
   const messages = [
     { role: 'system', content: sysPrompt },
-    ...(history || []),
+    ...renderHistory(history),
     { role: 'user', content: text }
   ];
 
@@ -784,8 +978,7 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
   const activeModel = useSmart ? cfg.smartModel : (cfg.model || '');   // 2026-10-29: no vendor default; callLLM rejects an empty model
 
   const calls = [];
-  const failCount = new Map();   // 同方法失败次数统计（防重试打转）
-  const blockedMethods = new Set();  // 2026-08-10: 连续失败≥2次物理封锁（换参数也算，LLM 无法绕过）
+  const failTracker = new FailTracker();   // 2026-11-14: 见 block-policy.js（原 failCount + blockedMethods 已移除：同方法错 2 次不区分原因就封锁，实测把可修的参数错也封了）
   let turns = 0;
   let lastSuccessTurn = 0;   // 2026-08-08: 最近一次成功工具调用轮次（无进展检测）
   let warned = false;            // 轮次预警只触发一次
@@ -800,6 +993,7 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
       const newMsgs = await compactMessages(cfg, messages, signal);
       if (newMsgs && newMsgs.length < messages.length) {
         messages.length = 0;
+        persistCompactionCheckpoint(projectName, newMsgs, turns, messagesBytes, activePlan);
         messages.push(...newMsgs);
         compacted = true;
         imageMsgIndex = -1;   // 图片消息可能已被摘要, 重置索引
@@ -825,6 +1019,7 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
         const newMsgs = await compactMessages(cfg, messages, signal);
         if (newMsgs && newMsgs.length < messages.length) {
           messages.length = 0;
+          persistCompactionCheckpoint(projectName, newMsgs, turns, messagesBytes, activePlan);
           messages.push(...newMsgs);
           compacted = true;
           imageMsgIndex = -1;
@@ -959,7 +1154,7 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
           }
           continue;
         }
-        if (fn.name === 'readFile' || fn.name === 'writeFile' || fn.name === 'listDir' || fn.name === 'deleteFile' || fn.name === 'queryFile') {
+        if (fn.name === 'readFile' || fn.name === 'writeFile' || fn.name === 'listDir' || fn.name === 'deleteFile' || fn.name === 'queryFile' || fn.name === 'mkdir' || fn.name === 'copyFile' || fn.name === 'moveFile' || fn.name === 'convertPoints') {
           let args = {};
           try { args = JSON.parse(fn.arguments || '{}'); } catch (_) { args = {}; }
           calls.push({ method: fn.name, params: args });
@@ -968,6 +1163,10 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
               : fn.name === 'queryFile' ? queryFile(args)
               : fn.name === 'listDir' ? listDir(args)
               : fn.name === 'deleteFile' ? deleteFile(args)
+              : fn.name === 'mkdir' ? mkdir(args)
+              : fn.name === 'copyFile' ? copyFile(args)
+              : fn.name === 'moveFile' ? moveFile(args)
+              : fn.name === 'convertPoints' ? convertPoints(args)
               : writeFile(args);
             resultText = JSON.stringify(r);   // 2026-10-13 P0: 过大结果改由 spillIfLarge 外溢（原 4000 字静默截断已移除）
             lastSuccessTurn = turns;   // 2026-10-13: 文件类工具成功也算“有进展”（原只算 cadCall → 读图/读文件被误判无进展而停）
@@ -1001,7 +1200,7 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
               const prev = activePlan;
               const prevFinished = !!prev && prev.steps.every(x => x.status === 'done' || x.status === 'failed');
               activePlan = { goal: String(args.goal || '').slice(0, 120), steps: steps.map(t => ({ text: t, status: 'pending' })), updatedAt: new Date().toISOString() };
-              if (prev && prevFinished) pendingNewTask = true;   // 上一任务已收尾 → 本计划=新任务，置边界
+              if (prev && prevFinished) { pendingNewTask = true; clearCheckpoint(projectName); }   // 2026-11-13: 新任务边界 → 旧检查点作废
               savePlanFile(projectName);   // 2026-10-13 M4: 持久化（按项目）
               resultText = '计划已创建（' + steps.length + ' 步）。每完成一步用 updatePlan 更新状态。\n' + planToString(activePlan);
             }
@@ -1053,6 +1252,40 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
           messages.push({ role: 'tool', tool_call_id: tc.id, content: spillIfLarge(fn.name, resultText) });
           continue;
         }
+        if (fn.name === 'projectMemory') {
+          let args = {};
+          try { args = JSON.parse(fn.arguments || '{}'); } catch (_) { args = {}; }
+          calls.push({ method: 'projectMemory:' + (args.action || ''), params: args });
+          try {
+            if (!projectName) throw new Error('当前未声明项目（config.json 无 project 字段），项目记忆不可用');
+            if (args.action === 'list') {
+              resultText = JSON.stringify({ entries: projectMemory.live(projectName) });
+            } else if (args.action === 'search') {
+              resultText = JSON.stringify({ hits: projectMemory.search(projectName, args.query || "", { limit: 10 }) });
+            } else if (args.action === 'add') {
+              resultText = JSON.stringify({ added: projectMemory.add(projectName, args) });
+            } else if (args.action === 'supersede') {
+              resultText = JSON.stringify(projectMemory.supersede(projectName, args.id, args));
+            } else {
+              throw new Error('未知 action: ' + args.action);
+            }
+          } catch (e) { resultText = '项目记忆操作失败: ' + e.message; }
+          if (!/操作失败/.test(resultText)) lastSuccessTurn = turns;
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: spillIfLarge(fn.name, resultText) });
+          continue;
+        }
+        if (fn.name === 'findRecipes') {
+          let args = {};
+          try { args = JSON.parse(fn.arguments || '{}'); } catch (_) { args = {}; }
+          calls.push({ method: 'findRecipes', params: { query: String(args.query || '').slice(0, 80), limit: args.limit || null } });
+          try {
+            const res = recipeIndex.search(projectName, args.query || '', { limit: args.limit });
+            resultText = JSON.stringify(res);
+            if (res.hits && res.hits.length) lastSuccessTurn = turns;
+          } catch (e) { resultText = '配方检索失败: ' + e.message; }
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: spillIfLarge(fn.name, resultText) });
+          continue;
+        }
         if (fn.name === 'mcpCall') {
           let args = {};
           try { args = JSON.parse(fn.arguments || '{}'); } catch (_) { args = {}; }
@@ -1074,6 +1307,9 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
             const mr = await mcpCall(tool, params, 30000, signal);
             resultText = formatResult(mr);
             if (mr && mr.error) { mcpOk = false; mcpErr = String(mr.error.code || mr.error); }
+            // 2026-11-13: 查文档/能力清单成功也算「有进展」——原来只算 readImage/文件/cadCall，
+            // 于是 AI 连续 5 轮研究（civil3d_docs→help→list_capabilities）就被无进展检测杀掉。
+            else lastSuccessTurn = turns;
           } catch (e) {
             resultText = 'MCP 调用异常: ' + e.message + '（如 MCP 服务器未运行或工具需插件在线。原子操作应走 cadCall）';
             mcpOk = false;
@@ -1082,8 +1318,34 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
           emitToolEvent(onProgress, { phase: 'end', id: tc.id, method: tool, via: 'mcp', ms: Date.now() - mcpT0, ok: mcpOk, errCode: mcpErr, bytes: resultText.length });
           {
             const c = calls[calls.length - 1];
-            if (c) Object.assign(c, { ok: mcpOk, errCode: mcpErr, ms: Date.now() - mcpT0, bytes: resultText.length });
+            if (c) Object.assign(c, { ok: mcpOk, errCode: mcpErr, errMsg: mcpOk ? '' : String(resultText || '').slice(0, 400), ms: Date.now() - mcpT0, bytes: resultText.length });
           }
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: spillIfLarge(fn.name, resultText) });
+          continue;
+        }
+        if (fn.name === 'calc') {
+          let args = {};
+          try { args = JSON.parse(fn.arguments || '{}'); } catch (_) { args = {}; }
+          calls.push({ method: 'calc', params: { codeChars: String(args.code || '').length, timeoutMs: args.timeoutMs || null } });
+          const _t0 = Date.now();
+          const projRootAbs = projectName ? projRoot : path.join(__dirname, "..");
+          const workAbs = projectName ? projWork : path.join(__dirname, "..", "exchange", "agent-work");
+          let calcRes;
+          try {
+            calcRes = await runCalc({ code: args.code, projectRoot: projRootAbs, workDir: workAbs, timeoutMs: args.timeoutMs, maxOutputChars: args.maxOutputChars });
+          } catch (e) { calcRes = { ok: false, error: e.message, result: "", logs: [], writes: [], ms: Date.now() - _t0 }; }
+          const lines = [];
+          if (calcRes.ok) lines.push("✅ calc 完成（" + calcRes.ms + " ms）：");
+          else lines.push("❌ calc 失败（" + calcRes.ms + " ms）：" + (calcRes.error || "未知错误"));
+          if (calcRes.result) lines.push(calcRes.result);
+          if (calcRes.logs && calcRes.logs.length) lines.push("— 输出 —\n" + calcRes.logs.join("\n"));
+          if (calcRes.writes && calcRes.writes.length) lines.push("— 写盘 —\n" + calcRes.writes.join("\n"));
+          if (calcRes.softLimit) lines.push("（提示：" + calcRes.softLimit + "，文件隔离由沙箱上下文兜底）");
+          resultText = lines.join("\n");
+          // 2026-11-14: calc 成功 = 有进展。原来只有 cadCall/mcpCall 更新 lastSuccessTurn，
+          //   连着算几轮就被「连续 5 轮无成功进展」误杀 —— 与 11-13 的 mcpCall bug 同款。
+          if (calcRes.ok) lastSuccessTurn = turns;
+          { const c = calls[calls.length - 1]; if (c) Object.assign(c, { ok: !!calcRes.ok, errCode: calcRes.ok ? "" : "CALC_ERROR", errMsg: calcRes.ok ? "" : String(calcRes.error || "").slice(0, 300), ms: calcRes.ms, bytes: resultText.length }); }
           messages.push({ role: 'tool', tool_call_id: tc.id, content: spillIfLarge(fn.name, resultText) });
           continue;
         }
@@ -1092,10 +1354,9 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
           try { args = JSON.parse(fn.arguments || '{}'); } catch (_) { args = { method: String(fn.arguments || '').slice(0, 100) }; }
           const method = args.method || '';
           const params = args.params || {};
-          if (blockedMethods.has(method)) {
+          if (failTracker.isBlocked(method)) {
             calls.push({ method, params, blocked: true });
-            const bm = '⚠️ 方法 ' + method + ' 已被封锁（本任务内连续失败≥2 次），禁止再调用。请换方法；若卡住，向用户说明情况并询问如何继续，不要继续猜测参数。';
-            messages.push({ role: 'tool', tool_call_id: tc.id, content: bm });
+            messages.push({ role: 'tool', tool_call_id: tc.id, content: failTracker.blockedMessage(method) });
             continue;
           }
           calls.push({ method, params });
@@ -1137,6 +1398,16 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
               await new Promise(r => setTimeout(r, 8000));
               pluginResp = await cadCall(method, params, 30000, signal);
             }
+            // 2026-11-14: 插件 64KB 摘要降级会**静默砍掉半个数组**（实测 106 条线只回 53 条）。
+            //   批量读类方法一旦发现 _summarized，自动带 fullResult:true 重取一次，别让 AI 拿着半份数据往下算。
+            const BULK_READ = new Set(['getEntitiesInfo', 'getCivilObjectsInfo', 'getSelectionDetail', 'getEntitiesByLayer', 'getBlocksByLayer', 'listTexts', 'getEntitiesByBlock']);
+            if (pluginResp && !pluginResp.error && pluginResp.result && pluginResp.result._summarized
+                && BULK_READ.has(method) && !(params && params.fullResult)) {
+              try {
+                const retry = await cadCall(method, Object.assign({}, params, { fullResult: true }), 60000, signal);
+                if (retry && !retry.error && retry.result && !retry.result._summarized) pluginResp = retry;
+              } catch (_) { /* 重取失败就沿用摘要结果，下面 formatResult 会明确标注 */ }
+            }
             resultText = formatResult(pluginResp, method, params);
             resFp = pluginResp && !pluginResp.error ? safeFp(pluginResp.result) : '';
             resHandles = pluginResp && !pluginResp.error ? collectHandles(pluginResp.result) : [];
@@ -1144,29 +1415,32 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
             // 插件返回 error → 记失败（不计成功）
             if (pluginResp && !pluginResp.error) lastSuccessTurn = turns;
             if (pluginResp && pluginResp.error) {
-              const _fc = (failCount.get(method) || 0) + 1;
-              failCount.set(method, _fc);
-              if (_fc >= 2) {
-                blockedMethods.add(method);
-                resultText += '（方法 ' + method + ' 已连续失败 ' + _fc + ' 次，已封锁，本任务内禁止再调用（新任务自动解锁）。请换方法；若卡住，向用户说明"遇到问题"并询问如何继续，不要继续猜测参数）';
-              }
+              // 2026-11-14: 封锁判定交给 block-policy —— 参数类错误（INVALID_INPUT/-32602）不封锁，只提示改参数
+              // 2026-11-14 v1.17 L2: 失败即召回项目坑表（"记忆要在需要的时机自己跳出来"）
+              try {
+                const lessons = projectMemory.recall(projectName || "", { method, errCode: toolErr }, { limit: 3 });
+                if (lessons.length) {
+                  resultText += "\n🧯 本项目坑表（历史实测，先看再改参数）：" + lessons.map((e) => "\n- [" + e.id + "] " + e.text).join("");
+                }
+              } catch (e) { /* 召回失败不影响主流程 */ }
+              const verdict = failTracker.note({ method, errCode: toolErr, params });
+              resultText += '\n' + verdict.note;
+              if (verdict.block) resultText += "\n" + failTracker.blockedMessage(method);
             }
           } catch (e) {
             resultText = '桥接执行异常: ' + e.message;
             toolOk = false;
             toolErr = 'BRIDGE_EXCEPTION';
-            const _fc = (failCount.get(method) || 0) + 1;
-              failCount.set(method, _fc);
-            if (_fc >= 2) {
-                blockedMethods.add(method);
-                resultText += '（方法 ' + method + ' 已连续失败 ' + _fc + ' 次，已封锁，本任务内禁止再调用（新任务自动解锁）。请换方法；若卡住，向用户说明"遇到问题"并询问如何继续，不要继续猜测参数）';
-              }
+            // 2026-11-14: 桥接/超时属 transient，同样交给 block-policy（不按"错 2 次就封"处理）
+            const verdict2 = failTracker.note({ method, errCode: toolErr, params });
+            resultText += '\n' + verdict2.note;
+            if (verdict2.block) resultText += "\n" + failTracker.blockedMessage(method);
           }
           emitToolEvent(onProgress, { phase: 'end', id: tc.id, method, via: 'tcp', ms: Date.now() - toolT0, ok: toolOk, errCode: toolErr, bytes: resultText.length });
           // 2026-10-21 P2: 把结果写回 calls[]，供 workflow-store 生成可复用记录（不丢结果体，只留长度）
           {
             const c = calls[calls.length - 1];
-            if (c && c.method === method) Object.assign(c, { ok: toolOk, errCode: toolErr, ms: Date.now() - toolT0, bytes: resultText.length, fp: toolOk ? resFp : '', handlesOut: toolOk ? resHandles : [] });
+            if (c && c.method === method) Object.assign(c, { ok: toolOk, errCode: toolErr, errMsg: toolOk ? '' : String(resultText || '').slice(0, 400), ms: Date.now() - toolT0, bytes: resultText.length, fp: toolOk ? resFp : '', handlesOut: toolOk ? resHandles : [] });
           }
         } else {
           resultText = '未知工具: ' + fn.name;
@@ -1210,9 +1484,9 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
         continue;
       }
       const acts = calls.length > 0 ? calls.map((c, k) => (k + 1) + '. ' + describeCall(c)).join('\n') : '';
-      return { reply: '⚠️ 模型本轮未返回内容' + (acts ? '（本轮已执行 ' + calls.length + ' 个操作）' : '') + '。回复「继续」我接着做。' + (acts ? '\n\n📋 本轮操作：\n' + acts : ''), turns, calls };
+      return { reply: '⚠️ 模型本轮未返回内容' + (acts ? '（本轮已执行 ' + calls.length + ' 个操作）' : '') + '。回复「继续」我接着做。' + (acts ? '\n\n📋 本轮操作：\n' + acts : ''), turns, calls, toolSummary: summarizeCalls(calls) };
     }
-    return { reply: finalText, turns, calls };
+    return { reply: finalText, turns, calls, toolSummary: summarizeCalls(calls) };
   }
 
   // 到顶: 汇总已调用动作作为"进展"，提示可续做（2026-08-07: 改为自然语言动作描述）
@@ -1221,7 +1495,8 @@ async function handleMessage(cfg, history, text, snapshot, onProgress, signal, p
   return {
     reply: '⚠️ 已达到工具调用上限 (' + maxTurns + ' 轮)，已停止。\n\n📋 已完成的步骤：\n' + doneSteps + planSummary + '\n\n📋 剩余工作流：请回复"继续"或补充指令，我会基于已完成部分接着做（会话历史已保留）。',
     turns,
-    calls
+    calls,
+    toolSummary: summarizeCalls(calls)
   };
 }
 
@@ -1244,8 +1519,8 @@ function validateToolGroups(messages) {
   return problems;
 }
 
-module.exports = { handleMessage, SYSTEM_PROMPT, callLLM, probeModel, diagnoseLlmError, loadMemory, saveMemory, revertMemory, loadKnowledge, loadKnowledgeIndex, loadMemoryIndex, loadUserKbIndex, ingestUserKnowledge, searchUserKnowledge, MEMORY_FILE, KNOWLEDGE_FILE, clearActivePlan, hasActivePlan, consumeNewTask, estimateMessagesBytes, validateToolGroups, spillIfLarge, spillLargestToolMsg };
+module.exports = { handleMessage, SYSTEM_PROMPT, callLLM, probeModel, diagnoseLlmError, loadMemory, saveMemory, revertMemory, loadKnowledge, loadKnowledgeIndex, loadMemoryIndex, loadUserKbIndex, summarizeCalls, renderHistory, loadCheckpoint, saveCheckpoint, clearCheckpoint, checkpointFileFor, persistCompactionCheckpoint, ingestUserKnowledge, searchUserKnowledge, MEMORY_FILE, KNOWLEDGE_FILE, clearActivePlan, hasActivePlan, consumeNewTask, estimateMessagesBytes, validateToolGroups, spillIfLarge, spillLargestToolMsg };
 
 // 2026-08-11: 供 relay 外部调用（/plan/clear 端点 + /clear all 联动）
-function clearActivePlan(project) { activePlan = null; try { savePlanFile(project); } catch (_) { /* best-effort: 删计划文件失败不阻塞 */ } }
+function clearActivePlan(project) { activePlan = null; try { savePlanFile(project); } catch (_) { /* best-effort: 删计划文件失败不阻塞 */ } clearCheckpoint(project); }   // 2026-11-13: 计划清了=任务结束，检查点一并清（防下次误当续接）
 function hasActivePlan() { return activePlan !== null; }

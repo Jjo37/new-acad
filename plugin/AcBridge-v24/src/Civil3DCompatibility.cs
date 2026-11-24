@@ -10,6 +10,33 @@ namespace Civil3DMcpPlugin;
 /// </summary>
 internal static class Civil3DCompatibility
 {
+  /// <summary>
+  /// 2026-11-18 P32: 运行期成员转储（debug:true 用）。
+  /// 反射只能活在兼容边界里 —— 门禁 tests/reflection_boundary.test.ts 会扫边界外的 System.Reflection / BindingFlags。
+  /// 用途：改方法前对齐真实 API，而不是靠猜属性名（P30 的 listPipePartsCatalog 就是猜错的代价）。
+  /// </summary>
+  internal static Dictionary<string, object?> DescribeMembers(object target, int maxMembers = 160)
+  {
+    var info = new Dictionary<string, object?>();
+    try
+    {
+      var type = target.GetType();
+      info["type"] = type.FullName;
+      var chain = new List<string>();
+      for (var t = type.BaseType; t != null && chain.Count < 6; t = t.BaseType) chain.Add(t.FullName ?? t.Name);
+      info["baseTypes"] = chain;
+      var members = new List<string>();
+      foreach (var member in type.GetMembers(BindingFlags.Public | BindingFlags.Instance))
+      {
+        if (members.Count >= maxMembers) break;
+        members.Add(member.MemberType + ":" + member.Name);
+      }
+      info["members"] = members;
+    }
+    catch (Exception ex) { info["membersError"] = ex.GetType().Name + ": " + ex.Message; }
+    return info;
+  }
+
   internal readonly record struct ParameterShape(Type Type);
   private sealed record CachedProperty(PropertyInfo? Value);
   private sealed record CachedMethods(MethodInfo[] Values);

@@ -29,7 +29,7 @@ public static class EarthworkCommands
 {
   public static Task<object?> ComputeCorridorEarthworkAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = CorridorEditingCommands.GetCorridorName(parameters);
     var baseName = PluginRuntime.GetRequiredString(parameters, "baseSurface");
     var designName = PluginRuntime.GetRequiredString(parameters, "designSurface");
     var interval = PluginRuntime.GetOptionalDouble(parameters, "interval") ?? 5.0;          // 桩号区间

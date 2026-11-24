@@ -41,7 +41,16 @@ public static partial class AcadCommands
 
       // 写 _sel.json 供 getSelection 读取。2026-08-07 修复：仅捕获到选择集才写——
       // 失焦时 SelectImplied 返回空，空覆盖会丢掉 ImpliedSelectionChanged 事件保存的好数据（“对话后被取消选中”根因）
-      WriteSelectionSnapshot(doc, entries);
+      if (entries.Count == 0)
+      {
+        // 2026-11-19 P1: 但"用户显式调用 saveSelection 且当前真的没有选择"必须清掉旧快照 ——
+        // 否则后续导出会静默沿用上一次的 2354 条（真机实测：选择性清空后导出仍导旧数据）。
+        DropSelectionSnapshot("explicit-save-with-empty-selection");
+      }
+      else
+      {
+        WriteSelectionSnapshot(doc, entries);
+      }
 
       return new Dictionary<string, object?>
       {
@@ -207,26 +216,37 @@ public static partial class AcadCommands
       var bulgesNode = PluginRuntime.GetParameter(parameters, "bulges") as JsonArray;
       for (var index = 0; index < pointsNode.Count; index++)
       {
-        if (pointsNode[index] is not JsonObject point)
+        // 2026-11-18 P33: 旧实现只认 {x,y}，传 [x,y] 时 **静默 continue** ——
+        // 结果画出一条 0 顶点的空多段线却回 "成功"（真机实测 vertexCount:0 + 有 handle）。
+        double x, y2;
+        if (pointsNode[index] is JsonObject point)
         {
-          continue;
+          x = point["x"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"points[{index}] is missing required x.");
+          y2 = point["y"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"points[{index}] is missing required y.");
         }
-
-        var x = point["x"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "Point is missing x.");
-        var y = point["y"]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "Point is missing y.");
+        else if (pointsNode[index] is JsonArray pair && pair.Count >= 2)
+        {
+          x = pair[0]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"points[{index}][0] is not a number.");
+          y2 = pair[1]?.GetValue<double>() ?? throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"points[{index}][1] is not a number.");
+        }
+        else
+        {
+          throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+            $"points[{index}] must be {{x,y}} or [x,y]; got {pointsNode[index]?.ToJsonString() ?? "null"}.");
+        }
         double bulge = 0;
         if (bulgesNode != null && index < bulgesNode.Count && bulgesNode[index] is JsonValue bulgeValue)
         {
           bulge = bulgeValue.GetValue<double>();
         }
-        polyline.AddVertexAt(index, new Point2d(x, y), bulge, 0, 0);
+        polyline.AddVertexAt(polyline.NumberOfVertices, new Point2d(x, y2), bulge, 0, 0);
       }
 
       polyline.Closed = closed;
 
       if (!string.IsNullOrWhiteSpace(layerName))
       {
-        var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+        var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
         polyline.LayerId = layerId;
       }
 
@@ -238,6 +258,10 @@ public static partial class AcadCommands
       transaction.AddNewlyCreatedDBObject(polyline, true);
 
       var created = CivilObjectUtils.GetRequiredObject<Polyline>(transaction, polylineId, OpenMode.ForRead);
+
+      if (created.NumberOfVertices < 2)
+        throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+          $"createPolyline needs at least 2 usable points; only {created.NumberOfVertices} were added.");
 
       return new Dictionary<string, object?>
       {
@@ -275,7 +299,7 @@ public static partial class AcadCommands
 
       if (!string.IsNullOrWhiteSpace(layerName))
       {
-        var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+        var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
         dbText.LayerId = layerId;
       }
 
@@ -337,7 +361,7 @@ public static partial class AcadCommands
 
       if (!string.IsNullOrWhiteSpace(layerName))
       {
-        var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+        var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
         polyline3d.LayerId = layerId;
       }
 
@@ -381,7 +405,7 @@ public static partial class AcadCommands
 
       if (!string.IsNullOrWhiteSpace(layerName))
       {
-        var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+        var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
         line.LayerId = layerId;
       }
 
@@ -436,7 +460,7 @@ public static partial class AcadCommands
 
       if (!string.IsNullOrWhiteSpace(layerName))
       {
-        var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+        var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
         mtext.LayerId = layerId;
       }
 
@@ -1060,7 +1084,7 @@ public static partial class AcadCommands
         if (o is not Entity ent) continue;
         if (!string.IsNullOrWhiteSpace(layerName))
         {
-          var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+          var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
           ent.LayerId = layerId;
         }
         var newId = modelSpace.AppendEntity(ent);
@@ -1484,7 +1508,7 @@ public static partial class AcadCommands
       using var br = new BlockReference(new Point3d(x, y, 0), blockTable[blockName]);
       br.ScaleFactors = new Scale3d(scale, scale, scale);
       br.Rotation = rotation;
-      if (!string.IsNullOrWhiteSpace(layerName)) br.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      if (!string.IsNullOrWhiteSpace(layerName)) br.LayerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       var newId = modelSpace.AppendEntity(br);
       transaction.AddNewlyCreatedDBObject(br, true);
       var created = CivilObjectUtils.GetRequiredObject<BlockReference>(transaction, newId, OpenMode.ForRead);
@@ -1554,7 +1578,7 @@ public static partial class AcadCommands
       dim.XLine1Point = new Point3d(x1, y1, 0);
       dim.XLine2Point = new Point3d(x2, y2, 0);
       dim.DimLinePoint = new Point3d(dimX, dimY, 0);
-      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       var id = modelSpace.AppendEntity(dim);
       transaction.AddNewlyCreatedDBObject(dim, true);
       var created = CivilObjectUtils.GetRequiredObject<AlignedDimension>(transaction, id, OpenMode.ForRead);
@@ -1576,7 +1600,7 @@ public static partial class AcadCommands
       dim.XLine1Point = new Point3d(x1, y1, 0);
       dim.XLine2Point = new Point3d(x2, y2, 0);
       dim.DimLinePoint = new Point3d(dimX, dimY, 0);
-      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       var id = modelSpace.AppendEntity(dim);
       transaction.AddNewlyCreatedDBObject(dim, true);
       var created = CivilObjectUtils.GetRequiredObject<AlignedDimension>(transaction, id, OpenMode.ForRead);
@@ -1609,7 +1633,7 @@ public static partial class AcadCommands
       }
       dim.ChordPoint = circle.Center + dir * circle.Radius; // 钳制到圆周 → Measurement 恒=真实半径
       dim.LeaderLength = Math.Max(circle.Radius * 0.5, 1.0);
-      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       var newId = modelSpace.AppendEntity(dim);
       transaction.AddNewlyCreatedDBObject(dim, true);
       var created = CivilObjectUtils.GetRequiredObject<RadialDimension>(transaction, newId, OpenMode.ForRead);
@@ -1640,7 +1664,7 @@ public static partial class AcadCommands
       dim.ChordPoint = circle.Center + dir * circle.Radius;
       dim.FarChordPoint = circle.Center - dir * circle.Radius;
       dim.LeaderLength = Math.Max(circle.Radius * 0.5, 1.0);
-      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      if (!string.IsNullOrWhiteSpace(layerName)) dim.LayerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       var newId = modelSpace.AppendEntity(dim);
       transaction.AddNewlyCreatedDBObject(dim, true);
       var created = CivilObjectUtils.GetRequiredObject<DiametricDimension>(transaction, newId, OpenMode.ForRead);
@@ -1893,7 +1917,7 @@ public static partial class AcadCommands
 
     if (!string.IsNullOrWhiteSpace(layerName))
     {
-      var layerId = LookupUtils.GetLayerId(database, transaction, layerName);
+      var layerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       solid.LayerId = layerId;
     }
 
@@ -2209,7 +2233,7 @@ public static partial class AcadCommands
       var blockTable = CivilObjectUtils.GetRequiredObject<BlockTable>(transaction, database.BlockTableId, OpenMode.ForRead);
       var modelSpace = CivilObjectUtils.GetRequiredObject<BlockTableRecord>(transaction, blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
       if (!string.IsNullOrWhiteSpace(layerName))
-        surf.LayerId = LookupUtils.GetLayerId(database, transaction, layerName);
+        surf.LayerId = LookupUtils.GetLayerId(database, transaction, layerName, strict: true);
       var id = modelSpace.AppendEntity(surf);
       transaction.AddNewlyCreatedDBObject(surf, true);
       var created = CivilObjectUtils.GetRequiredObject<Autodesk.AutoCAD.DatabaseServices.NurbSurface>(transaction, id, OpenMode.ForRead);
@@ -2673,42 +2697,104 @@ public static partial class AcadCommands
     // 2026-08-13: z 范围过滤（服务端筛异常点，AI 不用拉全量被截断）——如 minZ=-1 maxZ=3 找异常低点
     var minZ = PluginRuntime.GetOptionalDouble(parameters, "minZ");
     var maxZ = PluginRuntime.GetOptionalDouble(parameters, "maxZ");
+    // 2026-11-18 P35: 客户拿不到"这层到底有多少个"就只能一页页翻到 hasMore=false。
+    // 默认做一次全量计数（一个图层扫描一遍）；超大图可传 includeTotal:false 只取本页。
+    var includeTotal = PluginRuntime.GetOptionalBool(parameters, "includeTotal") ?? true;
     return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
+      // 2026-11-16 P10: 图层不存在时必须说出来。以前按名过滤模型空间，
+      //   拼错图层名和"图层是空的"返回完全一样的 {count:0, entities:[]}，
+      //   客户/面板 AI 会得出"这图层没东西"的错误结论。
+      var layerTable = transaction.GetObject(database.LayerTableId, OpenMode.ForRead) as LayerTable;
+      var allLayers = new List<string>();
+      var layerExists = false;
+      if (layerTable != null)
+      {
+        foreach (ObjectId lid in layerTable)
+        {
+          var ltr = transaction.GetObject(lid, OpenMode.ForRead) as LayerTableRecord;
+          if (ltr == null) continue;
+          allLayers.Add(ltr.Name);
+          if (string.Equals(ltr.Name, layer, StringComparison.OrdinalIgnoreCase)) layerExists = true;
+        }
+      }
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
       var results = new List<Dictionary<string, object?>>();
-      int skipped = 0;
+      // 2026-11-18 P35: 旧实现凑够 maxCount 就 break —— 于是 matchedCount 永远等于"本页条数"，
+      // 客户无法知道这层实际有多少、要翻几页。现在扫一遍：计数走全量，行只收集 [offset, offset+maxCount)。
+      var matchedOnLayer = 0;      // 该图层上的实体总数（不含 z 过滤）
+      var matchedAfterFilters = 0; // 套用 minZ/maxZ 之后的实体总数（= 分页空间的大小）
+      var collectedThrough = offset + maxCount;
       foreach (ObjectId id in ms!)
       {
-        if (results.Count >= maxCount) break;
         var ent = transaction.GetObject(id, OpenMode.ForRead, false) as Entity;
         if (ent == null || ent.Layer != layer) continue;
-        if (skipped++ < offset) continue;
+        matchedOnLayer++;
+
+        Point3d? pos = null;
         if (minZ != null || maxZ != null)
         {
-          var pos = GetEntityPosition(ent);
+          pos = GetEntityPosition(ent);
           if (pos == null) continue; // 无位置实体在 z 过滤下跳过（无法判断 z）
           if (minZ != null && pos.Value.Z < minZ.Value) continue;
           if (maxZ != null && pos.Value.Z > maxZ.Value) continue;
         }
+        matchedAfterFilters++;
+
+        var index = matchedAfterFilters - 1;             // 过滤后序列里的下标
+        if (index < offset) continue;                    // offset 之前不取
+        if (index >= collectedThrough)                     // 本页之外：只要计数，不必收集
+        {
+          if (!includeTotal) break;                        // 明确不要总量时提前收工
+          continue;
+        }
+        if (results.Count >= maxCount) continue;
+
         var info = new Dictionary<string, object?>
         {
           ["handle"] = ent.Handle.ToString(),
           ["type"] = ent.GetRXClass().Name,
           ["layer"] = ent.Layer
         };
-        var pos2 = GetEntityPosition(ent);
-        if (pos2 != null) { info["x"] = pos2.Value.X; info["y"] = pos2.Value.Y; info["z"] = pos2.Value.Z; }
+        if (pos == null) pos = GetEntityPosition(ent);
+        if (pos != null) { info["x"] = pos.Value.X; info["y"] = pos.Value.Y; info["z"] = pos.Value.Z; }
         if (ent is DBText t1) info["text"] = t1.TextString;
         else if (ent is MText t2) info["text"] = t2.Contents;
         results.Add(info);
       }
+      // 2026-11-17 P24: 自己按字节预算裁（保留前 N 条，翻页顺序不变），不交给 ResultSummarizer 切半
+      var bulkBudget = BulkResponse.ResolveBudget(parameters);
+      var (keptCount, byteLimited) = BulkResponse.Trim(results, bulkBudget);
+      var nextOffset = offset + keptCount;
+      var total = includeTotal ? matchedAfterFilters : -1;
       return (object?)new Dictionary<string, object?>
       {
         ["count"] = results.Count,
+        ["returnedCount"] = keptCount,
+        // 2026-11-18 P35: 「选到多少」和「这次给你多少」必须分开（P25 教训）
+        ["matchedCount"] = total,
+        ["matchedOnLayerCount"] = includeTotal ? matchedOnLayer : -1,
+        ["totalKnown"] = includeTotal,
+        ["offsetApplied"] = offset,
+        ["nextOffset"] = nextOffset,
+        ["hasMore"] = includeTotal ? nextOffset < matchedAfterFilters : results.Count >= maxCount,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = bulkBudget,
+        ["filtersApplied"] = new Dictionary<string, object?>
+        {
+          ["minZ"] = minZ,
+          ["maxZ"] = maxZ,
+          ["includeTotal"] = includeTotal,
+        },
+        ["layerExists"] = layerExists,
+        ["layerName"] = layer,
+        ["similarLayers"] = layerExists ? null : (allLayers.Count == 0 ? new List<string>() : allLayers
+          .Where(n => n.IndexOf(layer, StringComparison.OrdinalIgnoreCase) >= 0)
+          .OrderBy(n => n).Take(8).ToList()),
+        ["hint"] = layerExists ? null : $"Layer '{layer}' does not exist in this drawing ({allLayers.Count} layers total); similarLayers shows the closest names — check the spelling before assuming the layer is empty.",
         ["offset"] = offset,
-        ["truncated"] = results.Count >= maxCount,
+        ["truncated"] = (includeTotal ? nextOffset < matchedAfterFilters : results.Count >= maxCount) || byteLimited,
         ["entities"] = results
       };
     });
@@ -2719,16 +2805,20 @@ public static partial class AcadCommands
   {
     var block = PluginRuntime.GetRequiredString(parameters, "blockName");
     var maxCount = PluginRuntime.GetOptionalCount(parameters) ?? 500;
+    // 2026-11-17 P24: 补 offset —— 以前只有 maxCount，块参照超过预算就只能靠猜下一页
+    var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
     return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
       var ms = transaction.GetObject(bt![BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
       var results = new List<Dictionary<string, object?>>();
+      var skippedMatches = 0;
       foreach (ObjectId id in ms!)
       {
         if (results.Count >= maxCount) break;
         if (transaction.GetObject(id, OpenMode.ForRead, false) is BlockReference br && br.Name == block)
         {
+          if (skippedMatches++ < offset) continue;
           results.Add(new Dictionary<string, object?>
           {
             ["handle"] = br.Handle.ToString(),
@@ -2740,10 +2830,96 @@ public static partial class AcadCommands
           });
         }
       }
+      // 2026-11-16 P12: 块名写错同样要自证（以前和"块确实没有实例"一样返回 count:0）
+      var blockExists = false;
+      var similarBlocks = new List<string>();
+      {
+        var blockTable = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
+        var allBlockNames = new List<string>();
+        if (blockTable != null)
+        {
+          foreach (ObjectId bid in blockTable)
+          {
+            var btr = transaction.GetObject(bid, OpenMode.ForRead) as BlockTableRecord;
+            if (btr == null) continue;
+            allBlockNames.Add(btr.Name);
+            if (string.Equals(btr.Name, block, StringComparison.OrdinalIgnoreCase)) blockExists = true;
+          }
+        }
+        if (!blockExists)
+          similarBlocks = allBlockNames.Where(n => n.IndexOf(block, StringComparison.OrdinalIgnoreCase) >= 0).Take(8).ToList();
+      }
+      // 2026-11-17 P24: 字节预算 + 翻页指针（同 getEntitiesByLayer）
+      var reachedMax = results.Count >= maxCount;
+      var bulkBudget = BulkResponse.ResolveBudget(parameters);
+      var (keptCount, byteLimited) = BulkResponse.Trim(results, bulkBudget);
       return (object?)new Dictionary<string, object?>
       {
         ["count"] = results.Count,
-        ["truncated"] = results.Count >= maxCount,
+        ["returnedCount"] = keptCount,
+        ["offset"] = offset,
+        ["nextOffset"] = offset + keptCount,
+        ["hasMore"] = reachedMax || byteLimited,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = bulkBudget,
+        ["truncated"] = reachedMax || byteLimited,
+        ["blockExists"] = blockExists,
+        ["blockName"] = block,
+        ["similarBlocks"] = similarBlocks,
+        ["hint"] = blockExists ? null : $"Block definition '{block}' does not exist in this drawing; similarBlocks lists the closest names.",
+        ["entities"] = results
+      };
+    });
+  }
+
+  // 2026-11-15: 读「块定义内部」图元几何——标准图/图签类图纸的详图线条常在块定义里，
+  //   模型空间枚举（getEntitiesByLayer / getEntitiesByBlock）只能看到块参照，块内一条线都拿不到。
+  //   复用 EntityReaders.Read：直线 start/end、多段线 vertices(含 bulge)、圆弧/圆/填充/标注全覆盖。
+  //   嵌套块参照原样返回（name/position/rotation），客户端可再按 blockName 递归取下一层。
+  public static Task<object?> GetBlockDefinitionGeometryAsync(JsonObject? parameters)
+  {
+    var blockName = PluginRuntime.GetRequiredString(parameters, "blockName");
+    var maxCount = PluginRuntime.GetOptionalCount(parameters) ?? 200;
+    var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
+    return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
+    {
+      var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
+      if (bt == null || !bt.Has(blockName))
+        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", "Block definition not found: " + blockName);
+      var btr = transaction.GetObject(bt[blockName], OpenMode.ForRead) as BlockTableRecord;
+      if (btr == null)
+        throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", "Block definition unreadable: " + blockName);
+
+      var results = new List<Dictionary<string, object?>>();
+      int total = 0, skipped = 0;
+      foreach (ObjectId id in btr)
+      {
+        var ent = transaction.GetObject(id, OpenMode.ForRead, false) as Entity;
+        if (ent == null || ent.IsErased) continue;
+        total++;
+        if (skipped++ < offset) continue;
+        if (results.Count >= maxCount) continue;
+        results.Add(EntityReaders.Read(ent, transaction)); // 完整几何，字段与 getEntityInfo 一致
+      }
+
+      // 2026-11-17 P24: 块内几何单条就很大（含 vertices），必须自己按字节裁
+      var bulkBudget = BulkResponse.ResolveBudget(parameters);
+      var (keptCount, byteLimited) = BulkResponse.Trim(results, bulkBudget);
+      return (object?)new Dictionary<string, object?>
+      {
+        ["blockName"] = blockName,
+        ["isAnonymous"] = btr.IsAnonymous,
+        ["isDynamicBlock"] = btr.IsDynamicBlock,
+        ["basePoint"] = new Dictionary<string, object?> { ["x"] = btr.Origin.X, ["y"] = btr.Origin.Y, ["z"] = btr.Origin.Z },
+        ["total"] = total,
+        ["offset"] = offset,
+        ["count"] = results.Count,
+        ["returnedCount"] = keptCount,
+        ["nextOffset"] = offset + keptCount,
+        ["hasMore"] = offset + keptCount < total,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = bulkBudget,
+        ["truncated"] = offset + results.Count < total,
         ["entities"] = results
       };
     });
@@ -2820,20 +2996,53 @@ public static partial class AcadCommands
         info["blockTexts"] = defTexts;
         results.Add(info);
       }
+      var reachedMax = results.Count >= maxCount;
+      var bulkBudget = BulkResponse.ResolveBudget(parameters);
+      var (keptCount, byteLimited) = BulkResponse.Trim(results, bulkBudget);
       return (object?)new Dictionary<string, object?>
       {
         ["count"] = results.Count,
+        ["returnedCount"] = keptCount,
         ["offset"] = offset,
-        ["truncated"] = results.Count >= maxCount,
+        ["nextOffset"] = offset + keptCount,
+        ["hasMore"] = reachedMax || byteLimited,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = bulkBudget,
+        ["truncated"] = reachedMax || byteLimited,
         ["blocks"] = results
       };
     });
   }
 
 
+  // 2026-11-19 P2：selectByCriteria 通过 LISP 投递 ssget，CAD 的选择集是**全部命中**（不受 maxCount 限制）；
+  //   而 ImpliedSelectionChanged 事件会把这个全量选择集写回 _sel.json，把 selectByCriteria 刚写的
+  //   maxCount 限定快照覆盖成全层 —— 调用方说“选了 3 条”然后导出，拿到的却是 2354 条。
+  //   这里记下“程序化选择”的窗口和预期条数：事件里如果条数正好对得上，就别覆盖我们的快照；
+  //   用户自己重新选择（条数不同）照常更新。
+  private static DateTime _programmaticSelectionUntilUtc = DateTime.MinValue;
+  private static int _programmaticSelectionCount = -1;
+
+  internal static bool ShouldSkipImpliedSelectionSave(int selectionCount)
+  {
+    if (DateTime.UtcNow > _programmaticSelectionUntilUtc) return false;
+    return selectionCount == _programmaticSelectionCount;
+  }
+
+  private static void MarkProgrammaticSelection(int selectionCount)
+  {
+    _programmaticSelectionCount = selectionCount;
+    _programmaticSelectionUntilUtc = DateTime.UtcNow.AddSeconds(15);
+  }
+
   public static Task<object?> SelectEntitiesAsync(JsonObject? parameters)
   {
     var handles = ParseHandleArray(parameters, "handles");
+    // 2026-11-19 P2 修复：以前 >500 返回 {selected:2000, total:2000, error:"..."} ——
+    //   形状是"成功"、选择集却是空的，只读 selected 的调用方会以为选中了。
+    //   超限是调用错误，就该按错误返回，并且别让 CAD 做无谓的 LISP 投递。
+    if (handles.Count > 500)
+      throw new JsonRpcDispatchException("CIVIL3D.TOO_MANY_HANDLES", Loc.Tk("error.tooManyHandles", ("n", handles.Count)));
     return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var ids = new List<ObjectId>();
@@ -2854,8 +3063,6 @@ public static partial class AcadCommands
         var selFilter = handles.Count == 1
           ? "'((5 . \"" + handles[0] + "\"))"
           : "'((-4 . \"<OR\") " + string.Join(" ", handles.Select(h => "(5 . \"" + h + "\")")) + " (-4 . \"OR>\"))";
-        if (handles.Count > 500)
-          return (object?)new Dictionary<string, object?> { ["selected"] = ids.Count, ["total"] = handles.Count, ["error"] = Loc.Tk("error.tooManyHandles", ("n", handles.Count)) };
         doc.SendStringToExecute("(sssetfirst nil (ssget \"_X\" " + selFilter + ")) ", true, false, false);
       }
       return (object?)new Dictionary<string, object?> { ["selected"] = ids.Count, ["total"] = handles.Count, ["note"] = "Selection dispatched; switch back to CAD to see the dashed highlight (count = ModelSpace matches; the actual selection may also include entities on frozen or locked layers)", ["countSource"] = "modelspace" };
@@ -2880,6 +3087,10 @@ public static partial class AcadCommands
       typeFilter = typeFilter == null ? [typeName] : typeFilter.Append(typeName).ToArray();
     var color = PluginRuntime.GetOptionalInt(parameters, "color");
     var maxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount") ?? 5000;
+    // 2026-11-14: offset 分页 —— 原来只有 maxCount（默认 5000），模型空间超过就永久取不全，
+    //   实测 43k 条线的图层只能拿到前 5000（AI 因此做不了全量坡率统计）。与 getEntitiesByLayer 对齐。
+    var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
+    var skippedByOffset = 0;
     return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var bt = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
@@ -2887,21 +3098,30 @@ public static partial class AcadCommands
       var ids = new List<ObjectId>();
       var handles = new List<string>();
       var entries = new List<Dictionary<string, string?>>();  // 2026-08-10: 同步写快照用
+      // 2026-11-17 P25: 以前 `selected` 就是"收了多少条"，maxCount 之外的匹配项从未被数过 ——
+      //   调用方会以为"这层只有 2000 个"。现在把「匹配总数」和「交给你的条数」分开：
+      //   matchedCount 全量扫描（不提前 break），selected 仍是本次收集/写快照的条数。
+      var matchedCount = 0;
       foreach (ObjectId id in ms!)
       {
-        if (ids.Count >= maxCount) break;
         var ent = transaction.GetObject(id, OpenMode.ForRead, false) as Entity;
         if (ent == null) continue;
         if (layerFilter != null && !layerFilter.Contains(ent.Layer, StringComparer.OrdinalIgnoreCase)) continue;
         if (typeFilter != null && !typeFilter.Any(t => MatchesType(ent, t))) continue;
         if (color != null && ent.ColorIndex != color.Value) continue;
         if (blockName != null && (ent is not BlockReference br || !string.Equals(br.Name, blockName, StringComparison.OrdinalIgnoreCase))) continue;
+        matchedCount++;
+        if (ids.Count >= maxCount) continue;   // 继续数匹配总数，但不再收进本次结果
+        if (skippedByOffset < offset) { skippedByOffset++; continue; }   // 跳页只跳「匹配项」，不是模型空间前 N 个
         ids.Add(id);
         handles.Add(ent.Handle.ToString());
         entries.Add(new Dictionary<string, string?> { { "handle", ent.Handle.ToString() }, { "rxClass", ent.GetRXClass().Name } });
       }
       // 2026-08-10: LISP 投递不触发快照事件 → 主动写快照（否则 selectByCriteria 后 exportSelectionToFile 读到旧数据）
-      WriteSelectionSnapshot(doc, entries);
+      // 2026-11-19 P1/P2 修复：0 命中时必须把旧快照清掉。WriteSelectionSnapshot 对空集合是直接 return，
+      //   于是"这层没有实体"之后导出会把**上一次**的 2354 条又导一遍，还报 complete=true（审计真机复现）。
+      if (entries.Count > 0) WriteSelectionSnapshot(doc, entries);
+      else DropSelectionSnapshot("selectByCriteria: zero matches");
       if (ids.Count > 0)
       {
         // 2026-08-08: LISP sssetfirst 投递(命令上下文 SetImpliedSelection 会被清;ssget 全图按条件过滤)
@@ -2912,9 +3132,62 @@ public static partial class AcadCommands
         if (color != null) filters.Add("(62 . " + color + ")");
         if (blockName != null) filters.Add("(2 . \"" + blockName + "\")");
         var lisp = "(sssetfirst nil (ssget \"_X\" '(" + string.Join(" ", filters) + ")))";
+        MarkProgrammaticSelection(matchedCount);
         doc.SendStringToExecute(lisp + " ", true, false, false);
       }
-      return (object?)new Dictionary<string, object?> { ["selected"] = ids.Count, ["handles"] = handles, ["appliedToCad"] = ids.Count > 0, ["filters"] = new { layer, layers, typeName, types, color, blockName }, ["note"] = "Selection dispatched; switch back to CAD to see the dashed highlight (count = ModelSpace matches; the actual selection may also include entities on frozen or locked layers)", ["countSource"] = "modelspace" };
+      // 2026-11-16 P12: 图层名写错时不能只说"选到 0 个" —— 和 getEntitiesByLayer 同一个坑。
+      var unknownLayers = new List<string>();
+      var similarLayers = new List<string>();
+      if (layerFilter != null)
+      {
+        var layerTable = transaction.GetObject(database.LayerTableId, OpenMode.ForRead) as LayerTable;
+        var allLayerNames = new List<string>();
+        if (layerTable != null)
+        {
+          foreach (ObjectId lid in layerTable)
+          {
+            var ltr = transaction.GetObject(lid, OpenMode.ForRead) as LayerTableRecord;
+            if (ltr != null) allLayerNames.Add(ltr.Name);
+          }
+        }
+        foreach (var want in layerFilter)
+        {
+          if (allLayerNames.Any(n => string.Equals(n, want, StringComparison.OrdinalIgnoreCase))) continue;
+          unknownLayers.Add(want);
+          similarLayers.AddRange(allLayerNames.Where(n => n.IndexOf(want, StringComparison.OrdinalIgnoreCase) >= 0).Take(3));
+        }
+      }
+      // 2026-11-17 P25: handles 自己按字节预算裁；selected（真的选中多少）与 handlesReturned（给了你多少）分开报。
+      //   注意：CAD 里的选择集由 ssget 用同一套过滤条件建立，不受 maxCount 限制 —— note 里写清这点。
+      var handlesBudget = BulkResponse.ResolveBudget(parameters);
+      var (handlesKept, handlesByteLimited) = BulkResponse.TrimStrings(handles, handlesBudget);
+      var handlesCappedByMaxCount = matchedCount > offset + ids.Count;
+      return (object?)new Dictionary<string, object?>
+      {
+        ["selected"] = ids.Count,
+        // 2026-11-19 P2：快照里到底放了几条（= selected，maxCount/offset 已生效）。
+        //   以前调用方拿 selected 去猜导出条数，而 CAD 选择集由 ssget 建立、不受 maxCount 限制，两个数天然不同。
+        ["snapshotItems"] = entries.Count,
+        ["matchedCount"] = matchedCount,
+        ["handlesTotal"] = ids.Count,
+        ["handlesReturned"] = handlesKept,
+        ["handlesOmitted"] = ids.Count - handlesKept,
+        ["handlesTruncated"] = handlesCappedByMaxCount || handlesByteLimited,
+        ["byteLimited"] = handlesByteLimited,
+        ["responseByteBudget"] = handlesBudget,
+        ["offset"] = offset,
+        ["nextOffset"] = offset + ids.Count,
+        ["handles"] = handles,
+        ["appliedToCad"] = ids.Count > 0,
+        ["filters"] = new { layer, layers, typeName, types, color, blockName },
+        ["unknownLayers"] = unknownLayers,
+        ["similarLayers"] = similarLayers.Distinct().Take(8).ToList(),
+        ["hint"] = unknownLayers.Count > 0
+          ? $"Layer(s) not in this drawing: {string.Join(", ", unknownLayers)}. similarLayers lists the closest names — a typo here returns 0 entities and looks like an empty layer."
+          : null,
+        ["note"] = "The CAD selection set is built by ssget with the same filters and is NOT limited by maxCount (it can hold every match, including entities on frozen or locked layers). matchedCount = matches in ModelSpace; selected/snapshotItems = entities collected into the snapshot that exportSelectionToFile reads by default (maxCount/offset apply to these); handlesReturned = handles handed back in this response (the byte budget applies to this list only).",
+        ["countSource"] = "modelspace",
+      };
     });
   }
 
@@ -3125,7 +3398,11 @@ public static partial class AcadCommands
       if (Array.IndexOf(bytes, (byte)0) >= 0)
         throw new JsonRpcDispatchException("CIVIL3D.FILE_TYPE_NOT_ALLOWED", $"Binary file is not readable as text: {full}");
       var text = System.Text.Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
-      var allLines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+      // 2026-11-16 P14: 空文件以前报 totalLines=1（"".Split 返回一个空串），
+      //   客户会以为里面有一行空内容。真空就是 0 行 0 字节。
+      var allLines = string.IsNullOrEmpty(text)
+        ? new List<string>()
+        : text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
       var lines = allLines.Skip(startLine).Take(maxLines).ToList();
       var joined = string.Join("\n", lines);
       var content = joined;
@@ -3190,6 +3467,11 @@ public static partial class AcadCommands
     var format = (PluginRuntime.GetOptionalString(parameters, "format") ?? "json").ToLowerInvariant();
     var delimiter = PluginRuntime.GetOptionalString(parameters, "delimiter");
     var header = PluginRuntime.GetOptionalBool(parameters, "header") ?? false;
+    // 2026-11-18 P36: 长操作进度（可选）。给了 operationId 就能从 getCivil3DHealth.operations 读到进度。
+    var operationId = PluginRuntime.GetOptionalString(parameters, "operationId");
+    // 2026-11-19 P1 修复：快照可能陈旧（selectByCriteria 命中 0 条时不刷新），
+    // 允许调用方直接给 handles，导出就完全不用猜选择集。
+    var explicitHandles = PluginRuntime.GetParameter(parameters, "handles") as JsonArray;
     if (format != "json" && format != "csv" && format != "txt")
       throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", Loc.Tk("error.formatUnsupported", ("format", format)));
     if (string.IsNullOrEmpty(delimiter)) delimiter = format == "csv" ? "," : " ";
@@ -3199,7 +3481,17 @@ public static partial class AcadCommands
       var selFile = PluginRuntime.SelectionSnapshotPath();
       var handles = new List<string>();
       string docName = "";
-      if (System.IO.File.Exists(selFile))
+      string selectionSource = "snapshot";
+      if (explicitHandles != null && explicitHandles.Count > 0)
+      {
+        selectionSource = "explicit";
+        foreach (var node in explicitHandles)
+        {
+          var h = PluginRuntime.JsonNodeToString(node);
+          if (!string.IsNullOrWhiteSpace(h)) handles.Add(h!);
+        }
+      }
+      else if (System.IO.File.Exists(selFile))
       {
         try
         {
@@ -3219,15 +3511,38 @@ public static partial class AcadCommands
         }
         catch (System.Exception ex) { PluginLog.Warn("AcadCommands", "handle list unreadable (exporting from the current selection only): " + ex.Message); }
       }
+      // 2026-11-19 P1-2：快照属于另一张图时，宁可报错也别把别的图纸的选择集当本次结果导出去
+      if (selectionSource == "snapshot" && !string.IsNullOrEmpty(docName) && !string.Equals(docName, doc.Name, StringComparison.OrdinalIgnoreCase))
+      {
+        handles.Clear();
+        selectionSource = "snapshot-other-drawing";
+      }
+      // 2026-11-19 P1-2：选择集空的时候必须说清楚，不能"写个空文件 + complete=true"
+      if (handles.Count == 0)
+      {
+        if (!string.IsNullOrWhiteSpace(operationId))
+          OperationProgress.Fail(operationId!, "empty selection (source: " + selectionSource + ")");
+        throw new JsonRpcDispatchException("CIVIL3D.EMPTY_SELECTION", Loc.Tk("error.emptySelection", ("source", selectionSource)));
+      }
       var entities = new List<Dictionary<string, object?>>();
+      // 2026-11-17 P26: 解析失败的句柄以前只写日志 —— 客户拿到 CSV 会以为"选择集全在里面"。
+      //   现在逐个记下来，导出结束如实报 exported / skipped / selectionTotal。
+      var skippedHandles = new List<string>();
+      // 2026-11-18 P36: 6 万条导出约 1 分钟，期间客户只能干等 —— 逐步上报进度。
+      if (!string.IsNullOrWhiteSpace(operationId))
+        OperationProgress.Begin(operationId!, "exportSelectionToFile", handles.Count);
+      var processedCount = 0;
       foreach (var handle in handles)
       {
+        processedCount++;
+        if (!string.IsNullOrWhiteSpace(operationId) && processedCount % 200 == 0)
+          OperationProgress.Step(operationId!, processedCount);
         try
         {
           var id = database.GetObjectId(false, new Handle(long.Parse(handle, System.Globalization.NumberStyles.HexNumber)), 0);
-          if (id.IsNull) continue;
+          if (id.IsNull) { skippedHandles.Add(handle); continue; }
           var ent = transaction.GetObject(id, OpenMode.ForRead, false) as Entity;
-          if (ent == null) continue;
+          if (ent == null) { skippedHandles.Add(handle); continue; }
           var info = new Dictionary<string, object?>
           {
             ["handle"] = handle,
@@ -3251,17 +3566,32 @@ public static partial class AcadCommands
           else if (ent is Circle ci) { info["diameter"] = ci.Diameter; }
           entities.Add(info);
         }
-        catch (System.Exception ex) { PluginLog.Warn("Acad", "failed to resolve handle (skipping this entity in the export): " + ex.Message); }
+        catch (System.Exception ex)
+        {
+          skippedHandles.Add(handle);
+          PluginLog.Warn("Acad", "failed to resolve handle (skipping this entity in the export): " + handle + ": " + ex.Message);
+        }
       }
+      var csvRowsWritten = 0;
+      var csvNoCoordEntities = 0;
       if (format == "json")
       {
-        var payload = new Dictionary<string, object?> { ["docName"] = docName, ["count"] = entities.Count, ["entities"] = entities };
+        var payload = new Dictionary<string, object?>
+        {
+          ["docName"] = docName,
+          ["selectionTotal"] = handles.Count,
+          ["count"] = entities.Count,
+          ["skippedCount"] = skippedHandles.Count,
+          ["entities"] = entities,
+        };
         FileBoundary.WriteAllTextAtomic(path, System.Text.Json.JsonSerializer.Serialize(payload), System.Text.UTF8Encoding.UTF8, overwrite: false, "json", "csv", "txt");
       }
       else
       {
         // csv/txt: 坐标表(块/文字/圆取位置点;多段线取全部顶点)--用户可直接用/导入
         var sb = new System.Text.StringBuilder();
+        csvRowsWritten = 0;
+        csvNoCoordEntities = 0;
         if (header) sb.Append("x").Append(delimiter).Append("y").Append(delimiter).Append("z").Append('\n');
         foreach (var e in entities)
         {
@@ -3273,6 +3603,7 @@ public static partial class AcadCommands
               var y = v.TryGetValue("y", out var yv) ? (yv ?? 0) : 0;
               sb.Append(x.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).Append(delimiter)
                 .Append(y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).Append(delimiter).Append('0').Append('\n');
+              csvRowsWritten++;
             }
           }
           else if (e.TryGetValue("x", out var xv) && e.TryGetValue("y", out var yv))
@@ -3281,11 +3612,67 @@ public static partial class AcadCommands
             sb.Append(CoordCsv(xv)).Append(delimiter)
               .Append(CoordCsv(yv)).Append(delimiter)
               .Append(e.TryGetValue("z", out var zv) ? CoordCsv(zv) : "0").Append('\n');
+            csvRowsWritten++;
+          }
+          else
+          {
+            // 没有任何坐标可写的实体（例如 COGO 点在 CSV 模式下取不到 x/y）——如实计数，别让它变成"成功"
+            csvNoCoordEntities++;
           }
         }
         FileBoundary.WriteAllTextAtomic(path, sb.ToString(), System.Text.UTF8Encoding.UTF8, overwrite: false, "csv", "txt", "json");
       }
-      return (object?)new Dictionary<string, object?> { ["path"] = path, ["count"] = entities.Count, ["format"] = format };
+      // 2026-11-17 P26: 返回值说清"文件里到底有多少行"——count 是导出条数，selectionTotal 是选择集条数
+      // 2026-11-19 P1 修复：CSV 模式下"实体有坐标才写行"，以前整批无坐标时文件只有表头（甚至 3 字节），
+      // 却照样回 count=实体数 + complete=true（真机：2354 个 COGO 点 → 3 字节空文件）。
+      var rowsWritten = format == "json" ? entities.Count : csvRowsWritten;
+      var noCoordinatesCount = format == "json" ? 0 : csvNoCoordEntities;
+      var result = new Dictionary<string, object?>
+      {
+        ["path"] = path,
+        ["format"] = format,
+        ["count"] = entities.Count,
+        ["rowsWritten"] = rowsWritten,
+        ["noCoordinatesCount"] = noCoordinatesCount,
+        ["selectionTotal"] = handles.Count,
+        ["selectionSource"] = selectionSource,
+        ["skippedCount"] = skippedHandles.Count,
+        ["complete"] = skippedHandles.Count == 0 && entities.Count == handles.Count && noCoordinatesCount == 0,
+      };
+      // 无坐标的实体必须给出可行动的解释，别让用户对着空文件猜
+      if (noCoordinatesCount > 0)
+      {
+        result["hint"] = "CSV export only writes entities that have coordinates (vertices or an insert/position point). "
+          + noCoordinatesCount + " of " + entities.Count + " selected entities have no exportable coordinates "
+          + "(e.g. COGO points / Civil objects). Use format=json for those, or export them with exportCogoPoints.";
+      }
+      if (!string.IsNullOrWhiteSpace(operationId))
+      {
+        if (entities.Count == 0 && skippedHandles.Count > 0)
+          OperationProgress.Fail(operationId!, "no entity could be resolved from the selection (" + skippedHandles.Count + " handles failed)");
+        else
+          // 2026-11-19：进度账本必须和返回值同一套判据 —— 审计就是发现 summary 把"2354 条 / complete"
+          //   原样记进账本，错误信息一路传到面板。CSV 无坐标实体也算未完成。
+          OperationProgress.Finish(operationId!, new Dictionary<string, object?>
+          {
+            ["path"] = path,
+            ["format"] = format,
+            ["count"] = entities.Count,
+            ["rowsWritten"] = rowsWritten,
+            ["noCoordinatesCount"] = noCoordinatesCount,
+            ["selectionTotal"] = handles.Count,
+            ["skippedCount"] = skippedHandles.Count,
+            ["complete"] = skippedHandles.Count == 0 && entities.Count == handles.Count && noCoordinatesCount == 0,
+          });
+      }
+
+      if (skippedHandles.Count > 0)
+      {
+        result["skippedHandles"] = skippedHandles.Take(20).ToList();
+        result["hint"] = skippedHandles.Count + " handle(s) could not be resolved (deleted objects / proxies) and are NOT in the file. "
+          + "complete=false means the export is a subset of the selection — check skippedHandles before treating the file as the whole selection.";
+      }
+      return (object?)result;
     });
   }
 
@@ -3303,6 +3690,9 @@ public static partial class AcadCommands
 
   public static Task<object?> GetSelectionDetailAsync(JsonObject? parameters)
   {
+    // 2026-11-17 P25: 补 offset/maxCount —— 选择集可能有几千条，以前只能一次全给然后被裁
+    var detailOffset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
+    var detailMaxCount = PluginRuntime.GetOptionalInt(parameters, "maxCount");
     return CivilExecution.ReadAsync<object?>((doc, database, transaction) =>
     {
       var selFile = PluginRuntime.SelectionSnapshotPath();
@@ -3328,8 +3718,12 @@ public static partial class AcadCommands
         }
         catch (System.Exception ex) { PluginLog.Warn("AcadCommands", "handle list unreadable (exporting from the current selection only): " + ex.Message); }
       }
+      var handlesTotal = handles.Count;
+      IEnumerable<string> selectedHandles = handles;
+      if (detailOffset > 0) selectedHandles = selectedHandles.Skip(detailOffset);
+      if (detailMaxCount.HasValue && detailMaxCount.Value > 0) selectedHandles = selectedHandles.Take(detailMaxCount.Value);
       var entities = new List<Dictionary<string, object?>>();
-      foreach (var handle in handles)
+      foreach (var handle in selectedHandles)
       {
         try
         {
@@ -3362,10 +3756,21 @@ public static partial class AcadCommands
         }
         catch (System.Exception ex) { PluginLog.Warn("Acad", "failed to resolve handle (skipping this entity in the details): " + ex.Message); }
       }
+      // 2026-11-17 P24: 大选择集同样按字节预算裁（前 N 条），并回翻页需要的字段
+      var bulkBudget = BulkResponse.ResolveBudget(parameters);
+      var (keptCount, byteLimited) = BulkResponse.Trim(entities, bulkBudget);
       return (object?)new Dictionary<string, object?>
       {
         ["docName"] = docName,
+        ["selectionTotal"] = handlesTotal,
+        ["offset"] = detailOffset,
         ["count"] = entities.Count,
+        ["returnedCount"] = keptCount,
+        ["nextOffset"] = detailOffset + keptCount,
+        ["hasMore"] = detailOffset + keptCount < handlesTotal,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = bulkBudget,
+        ["truncated"] = byteLimited,
         ["entities"] = entities,
       };
     });

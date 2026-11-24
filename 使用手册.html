@@ -139,6 +139,7 @@
         <li><a href="#ch1-2" data-sub="ch1-2"><span class="zh">1.2 安装（4 步）</span><span class="en">1.2 Install (4 steps)</span></a></li>
         <li><a href="#ch1-3" data-sub="ch1-3"><span class="zh">1.3 静默安装（企业 / 批量部署）</span><span class="en">1.3 Silent install (enterprise)</span></a></li>
         <li><a href="#ch1-4" data-sub="ch1-4"><span class="zh">1.4 升级</span><span class="en">1.4 Upgrade</span></a></li>
+      <li><a href="#ch1-4b" data-sub="ch1-4b"><span class="zh">1.4b 多版本（加装 / 单版本卸载）</span><span class="en">1.4b Multiple CAD versions</span></a></li>
         <li><a href="#ch1-5" data-sub="ch1-5"><span class="zh">1.5 卸载</span><span class="en">1.5 Uninstall</span></a></li>
       </ol>
     </li>
@@ -297,7 +298,7 @@
 
     <h3 id="ch1-2-zh">1.2 安装（4 步）</h3>
     <ol class="steps">
-      <li><b>下载</b>安装包 <code>new-acad-setup-v1.15.0.exe</code>。</li>
+      <li><b>下载</b>安装包 <code>new-acad-setup-v1.18.0.exe</code>。</li>
       <li><b>双击运行</b>，允许管理员权限。安装向导支持中文 / English。</li>
       <li><b>走完向导</b>。装完会调用 <code>install.ps1</code>：检测 AutoCAD / Civil 3D 版本、注册插件自启、引导你填 AI 配置。</li>
       <li><b>完成</b>。勾选"打开使用手册"会打开本文件；随后启动 AutoCAD 或 Civil 3D。</li>
@@ -312,9 +313,15 @@
       想手工切换（装完后想验证另一套）：管理员权限运行 <code>powershell -File tools\switch-runtime.ps1 -Runtime net8|net10</code>，
       看当前用的是哪套：<code>-Runtime status</code>。切换后重启 CAD 生效。
     </div>
+    <div class="callout tip">
+      <span class="t">本机有多个 CAD 版本时</span>
+      向导会列出本机<b>所有</b> AutoCAD / Civil 3D，并标明每个版本用哪套插件。回车 = 装到列表里所有<b>受支持</b>的版本；
+      2024 及更早的会标 <code>[不受支持]</code> 并被跳过（插件是 .NET 8/10 构建，加载不了）。只装其中几个就输入编号，如 <code>1,3</code>。
+      装完之后还可以随时加装或单版本卸载，见 <a href="#ch1-4b">1.4b</a>。
+    </div>
 
     <h3 id="ch1-3-zh">1.3 静默安装（企业 / 批量部署）</h3>
-    <p><code>new-acad-setup-v1.15.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.18.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">静默安装会跳过配置向导</span>
       向导被跳过（<code>skipifsilent</code>），所以<b>不会</b>自动检测 CAD、不会写配置。装完需要人工打开面板填 Key，或直接预置 <code>config.json</code>（字段见 <a href="#ch3">第 3 章</a>）。
@@ -327,12 +334,26 @@
       <li>升级后重启 CAD（插件 DLL 被占用时无法替换，安装器会提示）。</li>
     </ul>
 
+    <h3 id="ch1-4b-zh">1.4b 本机装了多个 CAD 版本</h3>
+    <p>安装只配了当时选中的宿主。之后想装到别的版本、或者只想让某个版本不再加载插件，不用重装，跑安装目录下的 <code>manage-hosts.bat</code>（需要管理员权限）。它会列出本机各版本和接线状态：</p>
+    <ul>
+      <li><code>a 2</code> —— 把插件接到第 2 个版本（多个用逗号：<code>a 1,3</code>）</li>
+      <li><code>r 2</code> —— 只从第 2 个版本摘掉（Hank.lsp、acad.lsp 加载行、自动加载注册）</li>
+      <li><code>q</code> —— 退出</li>
+    </ul>
+    <p>命令行等价：<code>powershell -File tools\manage-hosts.ps1 -Add 2</code> / <code>-Remove 2</code> / <code>-List</code>。</p>
+    <div class="callout tip">
+      <span class="t">加装 / 单版本卸载只动所选版本</span>
+      不改 <code>config.json</code>（Key、模型）、不动 relay 服务、不删 <code>exchange\</code>。想把某个版本连插件一起清干净，才用 1.5 的整体卸载。
+    </div>
+
     <h3 id="ch1-5-zh">1.5 卸载</h3>
     <ol class="steps">
       <li><b>先关掉 CAD</b>（插件 DLL 运行中被锁定，不关会卸不干净）。</li>
       <li>Windows「设置 → 应用 → 已安装的应用」找到 <b>new-acad</b>，卸载。</li>
       <li>或运行安装目录下的 <code>uninstall.bat</code>。</li>
     </ol>
+    <p>只想让某个 CAD 版本不再加载插件（其他版本照常用）？不用卸载整个程序，用 <code>manage-hosts.bat</code> 的 <code>r 编号</code>（见 <a href="#ch1-4b">1.4b</a>）。</p>
     <p><b>卸载会删</b>：程序目录、插件注册、自启项、运行日志、消息队列文件。</p>
     <div class="callout warn">
       <span class="t">卸载不会删（这是故意的）</span>
@@ -361,7 +382,7 @@
 
     <h3 id="ch1-2-en">1.2 Install (4 steps)</h3>
     <ol class="steps">
-      <li><b>Download</b> <code>new-acad-setup-v1.15.0.exe</code>.</li>
+      <li><b>Download</b> <code>new-acad-setup-v1.18.0.exe</code>.</li>
       <li><b>Run it</b> and allow administrator rights. The wizard speaks Chinese and English.</li>
       <li><b>Finish the wizard.</b> It runs <code>install.ps1</code>: detect AutoCAD / Civil 3D, register autoload, guide you through the AI settings.</li>
       <li><b>Done.</b> Tick "open the manual" and start AutoCAD or Civil 3D.</li>
@@ -376,9 +397,15 @@
       To flip it by hand (e.g. to test the other build): run <code>powershell -File tools\switch-runtime.ps1 -Runtime net8|net10</code> as Administrator;
       <code>-Runtime status</code> shows which one is active. Restart CAD afterwards.
     </div>
+    <div class="callout tip">
+      <span class="t">Several CAD versions on one machine</span>
+      The wizard lists <b>all</b> AutoCAD / Civil 3D installations and which build each one gets. Enter = wire <b>every supported</b> version;
+      2024 and older are marked <code>[not supported]</code> and skipped (the plugin is .NET 8/10 only). To pick a subset, type the numbers, e.g. <code>1,3</code>.
+      You can add or remove a single version later — see <a href="#ch1-4b">1.4b</a>.
+    </div>
 
     <h3 id="ch1-3-en">1.3 Silent install (enterprise)</h3>
-    <p><code>new-acad-setup-v1.15.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
+    <p><code>new-acad-setup-v1.18.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code></p>
     <div class="callout warn">
       <span class="t">Silent install skips the setup wizard</span>
       Because of <code>skipifsilent</code> it does <b>not</b> detect Civil 3D and does <b>not</b> write configuration. Fill in the key from the palette afterwards, or pre-seed <code>config.json</code> (fields in <a href="#ch3">chapter 3</a>).
@@ -391,12 +418,26 @@
       <li>Restart CAD afterwards; the installer warns if the plugin DLL is locked.</li>
     </ul>
 
+    <h3 id="ch1-4b-en">1.4b Multiple CAD versions</h3>
+    <p>The installer only wires the hosts you picked. To add another version later, or to stop one version from loading the plugin, run <code>manage-hosts.bat</code> in the install folder (as Administrator). It lists every host and its wiring state:</p>
+    <ul>
+      <li><code>a 2</code> — wire the plugin into host #2 (comma-separated for several: <code>a 1,3</code>)</li>
+      <li><code>r 2</code> — unwire host #2 only (Hank.lsp, the acad.lsp load line, autoload registry entry)</li>
+      <li><code>q</code> — quit</li>
+    </ul>
+    <p>Same thing from the command line: <code>powershell -File tools\manage-hosts.ps1 -Add 2</code> / <code>-Remove 2</code> / <code>-List</code>.</p>
+    <div class="callout tip">
+      <span class="t">Adding or removing one version touches only that version</span>
+      It never edits <code>config.json</code> (key, model), never restarts the relay, and never deletes <code>exchange\</code>. Use the full uninstall (1.5) only when you want the program itself gone.
+    </div>
+
     <h3 id="ch1-5-en">1.5 Uninstall</h3>
     <ol class="steps">
       <li><b>Close CAD first</b> (the plugin DLL is locked while it runs).</li>
       <li>Windows "Settings → Apps" → <b>new-acad</b> → Uninstall.</li>
       <li>Or run <code>uninstall.bat</code> in the install folder.</li>
     </ol>
+    <p>Want one CAD version to stop loading the plugin while keeping the rest? No full uninstall needed — run <code>manage-hosts.bat</code> and use <code>r &lt;n&gt;</code> (see <a href="#ch1-4b">1.4b</a>).</p>
     <p><b>Removed</b>: program files, plugin registration, autostart entry, runtime logs, message queue files.</p>
     <div class="callout warn">
       <span class="t">Not removed (on purpose)</span>
@@ -1497,8 +1538,8 @@
 </section>
 
 <footer>
-  <span class="zh">new-acad 使用手册 · 对应版本 v1.15.0 · 2026-11-10</span>
-  <span class="en">new-acad User Guide · for version v1.15.0 · 2026-11-10</span>
+  <span class="zh">new-acad 使用手册 · 对应版本 v1.18.0 · 2026-11-10</span>
+  <span class="en">new-acad User Guide · for version v1.18.0 · 2026-11-12</span>
 </footer>
 
 </main>

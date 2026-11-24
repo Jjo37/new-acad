@@ -19,7 +19,7 @@ public static class CivilExecution
   private static readonly object BusyLock = new();                 // busy 状态互斥（定时器/清除竞态保护）
   private static CancellationTokenSource? HostBusyTimerCts = null; // 置位时挂的恢复定时器
 
-  public static async Task<T> ExecuteCoreAsync<T>(Func<Document, Database, Transaction, T> action, bool write)
+  public static async Task<T> ExecuteCoreAsync<T>(Func<Document, Database, Transaction, T> action, bool write, bool polluteOnTimeout = true, int? timeoutOverrideSeconds = null)
   {
     return await ExecuteSerializedAsync(async () =>
     {
@@ -66,7 +66,7 @@ public static class CivilExecution
       }
 
       return result!;
-    });
+    }, polluteOnTimeout, timeoutOverrideSeconds);
   }
 
   public static async Task<T> ExecuteInCommandContextAsync<T>(Func<Task<T>> action)
@@ -112,6 +112,14 @@ public static class CivilExecution
 
   public static Task<T> ReadAsync<T>(Func<Document, Database, Transaction, T> action)
     => ExecuteCoreAsync(action, false);
+
+  /// <summary>
+  /// 2026-11-16 P7: 只读轻通道 —— 8s 超时、超时**不置 HostBusy**。
+  /// 用于"宿主可能正在后台算"的重读（曲面统计、采样等）：宁可快速失败让调用方重试，
+  /// 也不要把整个工具面锁成 HOST_BUSY。
+  /// </summary>
+  public static Task<T> ReadAsyncLight<T>(Func<Document, CivilDocument, Database, Transaction, T> action)
+    => ExecuteCoreAsync((doc, database, transaction) => action(doc, CivilSupport.RequireDocument(), database, transaction), false, polluteOnTimeout: false, timeoutOverrideSeconds: 8);
 
   public static Task<T> WriteAsync<T>(Func<Document, Database, Transaction, T> action)
     => ExecuteCoreAsync(action, true);
@@ -299,7 +307,11 @@ public static class CivilExecution
     });
   }
 
-  private static async Task<T> ExecuteSerializedAsync<T>(Func<Task<T>> action)
+  // 2026-11-16 P7: 加两个开关 —— 只读操作超时**不该**把 HostBusy 置位。
+  //   事实：一次 getSurfaceStatistics 超时（廊道曲面还在后台三角化）会 SetHostBusy，
+  //   随后所有请求全部 HOST_BUSY 最长 60s —— 客户看到的就是"软件卡死"，而它只是一次读。
+  //   读操作没有后台残留写任务，超时后重试是安全的，所以给它更短的超时 + 不污染宿主标志。
+  private static async Task<T> ExecuteSerializedAsync<T>(Func<Task<T>> action, bool polluteOnTimeout = true, int? timeoutOverrideSeconds = null)
   {
     var cancellationToken = PluginRuntime.GetCurrentRequestCancellationToken();
     PluginRuntime.QueueHostOperation();
@@ -312,7 +324,7 @@ public static class CivilExecution
     var opStarted = false;
     // 2026-08-19 方案3: job 上下文用长超时（重操作不误杀），普通请求保持 25s
     var isJob = PluginRuntime.GetCurrentRequestIsJob();
-    var timeoutSeconds = isJob ? 300 : 25;
+    var timeoutSeconds = timeoutOverrideSeconds ?? (isJob ? 300 : 25);
     const int OPERATION_TIMEOUT_SECONDS_JOB = 300;
 
     try
@@ -370,10 +382,21 @@ public static class CivilExecution
         // 2026-10-10 (批次6.1): 超时后统一交由看门狗处置——投递 ESC 打断卡住的交互命令 +
         // 周期探测命令上下文，一旦真正空闲立即解锁（不再盲等 60s）。
         linkedCts.Cancel(); // 停止延迟任务
-        var diagCmd = HandleAbandonedOperation("command", execTask);
+        if (polluteOnTimeout)
+        {
+          var diagCmd = HandleAbandonedOperation("command", execTask);
+          throw new JsonRpcDispatchException(
+            "CIVIL3D.OPERATION_TIMEOUT",
+            Loc.Tk("error.timeoutCommand", ("sec", timeoutSeconds), ("max", HOST_BUSY_MAX_MS / 1000), ("diag", diagCmd)));
+        }
+        // 只读操作：不置 HostBusy（没有后台写残留，重试安全），并明确告知可以立刻重试
+        var diagRead = CaptureHostState();
+        try { PluginLog.Warn("Exec", "[READ-TIMEOUT] op=read sec=" + timeoutSeconds + " (HostBusy NOT set, retry is safe) " + diagRead); } catch { }
         throw new JsonRpcDispatchException(
           "CIVIL3D.OPERATION_TIMEOUT",
-          Loc.Tk("error.timeoutCommand", ("sec", timeoutSeconds), ("max", HOST_BUSY_MAX_MS / 1000), ("diag", diagCmd)));
+          $"Read timed out after {timeoutSeconds}s (the host is still busy computing, e.g. corridor surface triangulation). " +
+          "This did NOT lock the host: call the same method again in a few seconds. " +
+          "Diagnostics: " + diagRead);
       }
     }
     finally
@@ -770,6 +793,87 @@ public static class CivilExecution
     }
     catch { return false; }
   }
+
+  /// <summary>
+  /// 2026-11-12 v1.16.0：把「CAD 现在能不能干活」说清楚，供 getCommandState 用。
+  /// 只读系统变量 + 看门狗快照：不持文档锁、不碰事务、**不进命令上下文**——
+  /// 因为它的用途之一就是命令上下文被卡住时还能答话。
+  /// </summary>
+  public static object GetCommandContextState(bool includeLastTimeout)
+  {
+    var command = string.Empty;
+    var activeDoc = "(none)";
+    var openDocs = 0;
+    var dialog = "(unknown)";
+    var cmdActive = -1;
+    var readable = true;
+    try
+    {
+      var doc = App.DocumentManager.MdiActiveDocument;
+      openDocs = App.DocumentManager.Count;
+      activeDoc = doc == null ? "(none)" : System.IO.Path.GetFileName(doc.Name);
+      command = Convert.ToString(App.GetSystemVariable("CMDNAMES")) ?? string.Empty;
+      cmdActive = Convert.ToInt32(App.GetSystemVariable("CMDACTIVE"));
+      dialog = DescribeWindow(FindBlockingDialog());
+    }
+    catch (Exception ex)
+    {
+      readable = false;
+      dialog = "diag failed: " + ex.Message;
+    }
+
+    string state;
+    if (!readable) state = "unknown";
+    else if (activeDoc == "(none)") state = "no-document";
+    else if (cmdActive == 0) state = dialog == "(none)" ? "idle" : "dialog";
+    else if ((cmdActive & 8) != 0) state = "dialog";          // 8 = 对话框占着命令上下文
+    else if ((cmdActive & 4) != 0) state = "script";          // 4 = 脚本正在跑
+    else if ((cmdActive & 16) != 0) state = "lisp";           // 16 = AutoLISP 正在跑
+    else if ((cmdActive & 2) != 0) state = "transparent";     // 2 = 透明命令
+    else state = "running";                                   // 1 = 普通命令
+
+    var busySinceTicks = HostBusySinceTicks;
+    var payload = new Dictionary<string, object?>
+    {
+      ["state"] = state,
+      ["command"] = command,
+      ["cmdActive"] = cmdActive == -1 ? (int?)null : cmdActive,
+      ["acceptingCommands"] = readable && activeDoc != "(none)" && cmdActive == 0
+        && !HostBusy && dialog == "(none)",
+      ["hostBusy"] = HostBusy,
+      ["hostBusySinceUnixMs"] = busySinceTicks == 0
+        ? (long?)null
+        : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - (Environment.TickCount64 - busySinceTicks),
+      ["activeDocument"] = activeDoc,
+      ["openDocuments"] = openDocs,
+      ["blockingDialog"] = dialog,
+      ["readable"] = readable,
+    };
+
+    if (includeLastTimeout)
+    {
+      HostRecoverySnapshot? snap;
+      lock (WatchdogLock) { snap = LastHostRecovery; }
+      payload["lastTimeout"] = snap == null ? null : (object)new Dictionary<string, object?>
+      {
+        ["kind"] = snap.Kind,
+        ["startedAtUnixMs"] = snap.StartedAtUnixMs,
+        ["escSent"] = snap.EscSent,
+        ["recovered"] = snap.Recovered,
+        ["recoveredAfterMs"] = snap.RecoveredAfterMs,
+        ["dialogEscapes"] = snap.DialogEscapes,
+        ["finalDiag"] = snap.FinalDiag,
+      };
+    }
+
+    return payload;
+  }
+
+  /// <summary>
+  /// 2026-11-12 v1.16.0：给 cancelCommand 用的公开入口——投递 ESC ESC（命令队列）
+  /// + 向本进程阻塞对话框直投 ESC。与看门狗用的是同一条路径，可从后台线程调用。
+  /// </summary>
+  public static void InterruptActiveCommand() => TryInterruptActiveCommand();
 
   // 供健康查询/诊断：报告 busy 状态 + 最近一次超时恢复快照。
   public static object GetHostRecoveryState()

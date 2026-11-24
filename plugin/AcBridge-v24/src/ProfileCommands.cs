@@ -87,7 +87,17 @@ public static class ProfileCommands
   {
     var alignmentName = PluginRuntime.GetRequiredString(parameters, "alignmentName");
     var profileName = PluginRuntime.GetRequiredString(parameters, "profileName");
-    var interval = PluginRuntime.GetRequiredDouble(parameters, "interval");
+    // 2026-11-16 P9: interval 与 stations 二选一 —— 以前只认 interval，
+    //   同一个"按桩号采样"的动作，alignmentSampleStations 用 stations[]、这里要 interval，
+    //   调用方（面板 AI 尤其）很容易猜错并拿到 "Missing required parameter 'interval'"。
+    var interval = PluginRuntime.GetOptionalDouble(parameters, "interval");
+    var stationsNode = PluginRuntime.GetParameter(parameters, "stations") as JsonArray;
+    if (interval == null && (stationsNode == null || stationsNode.Count == 0))
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+        "sampleProfileElevations requires either 'interval' (regular sampling) or 'stations' (explicit list of stations).");
+    var explicitStations = stationsNode != null && stationsNode.Count > 0
+      ? stationsNode.Select(n => PluginRuntime.GetRequiredDoubleFromNode(n, "stations[]")).ToList()
+      : null;
     var startStation = PluginRuntime.GetOptionalDouble(parameters, "startStation");
     var endStation = PluginRuntime.GetOptionalDouble(parameters, "endStation");
 
@@ -98,8 +108,11 @@ public static class ProfileCommands
       var from = startStation ?? profile.StartingStation;
       var to = endStation ?? profile.EndingStation;
       var samples = new List<Dictionary<string, object?>>();
+      // 2026-11-17 P22: 显式桩号超出 profile 范围时以前静默丢弃（传 4 个只回 2 个，sampleCount=2，无任何说明）
+      //   —— 调用方会以为"这些桩号就是没有高程"。现在逐个回 skippedStations + hint。
+      var skippedStations = new List<double>();
 
-      for (var station = from; station <= to; station += interval)
+      void AddSample(double station)
       {
         samples.Add(new Dictionary<string, object?>
         {
@@ -109,15 +122,46 @@ public static class ProfileCommands
         });
       }
 
+      if (explicitStations != null)
+      {
+        foreach (var station in explicitStations)
+        {
+          if (station < profile.StartingStation - 1e-6 || station > profile.EndingStation + 1e-6)
+          {
+            skippedStations.Add(station);
+            continue;
+          }
+          AddSample(station);
+        }
+      }
+      else
+      {
+        for (var station = from; station <= to; station += interval!.Value)
+          AddSample(station);
+      }
+
       return new Dictionary<string, object?>
       {
         ["alignmentName"] = alignment.Name,
         ["profileName"] = profile.Name,
         ["startStation"] = from,
         ["endStation"] = to,
+        ["mode"] = explicitStations != null ? "stations" : "interval",
         ["interval"] = interval,
+        ["sampleCount"] = samples.Count,
+        ["requestedCount"] = explicitStations != null ? explicitStations.Count : (int?)null,
+        ["profileStartStation"] = profile.StartingStation,
+        ["profileEndStation"] = profile.EndingStation,
+        ["skippedStationCount"] = skippedStations.Count,
+        ["skippedStations"] = skippedStations,
         ["samples"] = samples,
         ["units"] = CivilObjectUtils.LinearUnits(database),
+        ["hint"] = skippedStations.Count == 0
+          ? null
+          : "skippedStations are outside the profile range " + Math.Round(profile.StartingStation, 4) + ".."
+            + Math.Round(profile.EndingStation, 4) + "; returned " + samples.Count + " of "
+            + (explicitStations?.Count ?? 0) + " requested. Extend the profile (createProfileFromSurface / profileAddPvis)"
+            + " or sample inside the range instead of reading these as missing elevations.",
       };
     });
   }

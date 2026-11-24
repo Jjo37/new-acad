@@ -39,6 +39,106 @@ public static class ProfileEditCommands
     });
   }
 
+  // ─── profileAddPvis (2026-11-12, v1.16.0) ────────────────────────────────
+  //
+  // 批量加变坡点。动机：本项目 50 条竖曲线，用 profileAddPvi 逐个加 = 50 次 MCP 往返
+  // （外加 50 次 profileAddCurve），AI 侧既慢又容易被轮次/超时截断；上次的绕法是拿
+  // 12,043 段折线凑精度，代价是廊道重建变慢。这个入口让「50 个 PVI + 50 条竖曲线」一次到位。
+  //
+  // items: [{station, elevation, curveLength?}] —— 按桩号升序写入；curveLength > 0 时
+  // 用对称抛物线设竖曲线（与 profileAddCurve 同一条 API）。
+  // 参数全部先校验再进事务：任何一条不合法就整体不动图（不留半成品）。
+
+  public static Task<object?> ProfileAddPvisAsync(JsonObject? parameters)
+  {
+    var alignmentName = PluginRuntime.GetRequiredString(parameters, "alignmentName");
+    var profileName = PluginRuntime.GetRequiredString(parameters, "profileName");
+    var itemsNode = parameters?["items"] as JsonArray;
+    if (itemsNode == null || itemsNode.Count == 0)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "profileAddPvis requires a non-empty items[] array (nothing was changed).");
+    }
+
+    var items = new List<(double Station, double Elevation, double CurveLength)>();
+    for (var index = 0; index < itemsNode.Count; index++)
+    {
+      if (itemsNode[index] is not JsonObject item)
+      {
+        throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"items[{index}] is not an object (nothing was changed).");
+      }
+      var station = PluginRuntime.GetRequiredDoubleFromNode(item["station"], $"items[{index}].station");
+      var elevation = PluginRuntime.GetRequiredDoubleFromNode(item["elevation"], $"items[{index}].elevation");
+      var curveLength = 0.0;
+      if (item["curveLength"] != null)
+      {
+        curveLength = PluginRuntime.GetRequiredDoubleFromNode(item["curveLength"], $"items[{index}].curveLength");
+        if (curveLength < 0) throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"items[{index}].curveLength must be >= 0 (nothing was changed).");
+      }
+      items.Add((station, elevation, curveLength));
+    }
+
+    var ordered = items.OrderBy(x => x.Station).ToList();
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var alignment = CivilObjectUtils.FindAlignmentByName(civilDoc, transaction, alignmentName);
+      var profile = CivilObjectUtils.FindProfileByName(alignment, transaction, profileName, OpenMode.ForWrite);
+
+      var written = new List<Dictionary<string, object?>>();
+      var curves = new List<Dictionary<string, object?>>();
+
+      // 2026-11-13: 重复桩号预检。原来对已存在的 PVI 调 AddPVI 抛的是非业务异常，
+      // 客户端只收到 -32603 "unexpected error"，AI 无法判断该怎么绕（真机就是这样卡死的）。
+      foreach (var (station, _, _) in ordered)
+      {
+        var existing = FindPviNearStation(profile.PVIs, station);
+        if (existing != null && Math.Abs(existing.RawStation - station) <= 0.01)
+        {
+          throw new JsonRpcDispatchException(
+            "CIVIL3D.CONFLICT",
+            $"PVI already exists near station {station} in profile '{profile.Name}'. Delete it first (profileDeletePvi) or skip that station.");
+        }
+      }
+
+      foreach (var (station, elevation, curveLength) in ordered)
+      {
+        profile.PVIs.AddPVI(station, elevation);
+        written.Add(new Dictionary<string, object?>
+        {
+          ["station"] = station,
+          ["elevation"] = elevation,
+          ["curveLength"] = curveLength,
+        });
+      }
+
+      foreach (var (station, _, curveLength) in ordered)
+      {
+        if (curveLength <= 0) continue;
+        var pvi = FindPviNearStation(profile.PVIs, station);
+        if (pvi == null)
+        {
+          curves.Add(new Dictionary<string, object?> { ["station"] = station, ["applied"] = false, ["reason"] = "pvi-not-found-after-insert" });
+          continue;
+        }
+        profile.Entities.AddFreeSymmetricParabolaByPVIAndCurveLength(pvi, curveLength);
+        curves.Add(new Dictionary<string, object?> { ["station"] = station, ["applied"] = true, ["curveLength"] = curveLength });
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["alignmentName"] = alignment.Name,
+        ["profileName"] = profile.Name,
+        ["requested"] = ordered.Count,
+        ["pvisAdded"] = written.Count,
+        ["curvesRequested"] = ordered.Count(x => x.CurveLength > 0),
+        ["curvesApplied"] = curves.Count(x => x["applied"] is true),
+        ["items"] = written,
+        ["curves"] = curves,
+        ["success"] = true,
+      };
+    });
+  }
+
   // ─── profileDeletePvi ─────────────────────────────────────────────────────
 
   public static Task<object?> DeletePviAsync(JsonObject? parameters)

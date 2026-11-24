@@ -52,15 +52,18 @@ public static class PipeHydraulicsCommands
         var pipe = sortedPipes[i];
         double diameter = pipe.Diameter;
         double length = pipe.Length;
-        double slope = Math.Abs(pipe.Slope) / 100.0; // convert % to decimal
+        double slope = Math.Abs(pipe.Slope); // 比值（0.0411 = 4.11%），无需除 100
         double area = Math.PI * diameter * diameter / 4.0;
         double wetPerim = Math.PI * diameter;
         double hydraulicRadius = diameter / 4.0;
         double qFull = k * (1.0 / manningsN) * area * Math.Pow(hydraulicRadius, 2.0 / 3.0) * Math.Pow(slope, 0.5);
 
         // Head loss in pipe (Manning's based)
-        double headLoss = (manningsN * manningsN * length * (designFlow ?? qFull) * (designFlow ?? qFull))
-                          / (Math.Pow(hydraulicRadius, 4.0 / 3.0) * area * area);
+        // 2026-11-19 P1 修复：hL = n²·L·Q² / (k²·A²·R^(4/3)) —— 必须带 k²（英尺制 k=1.486，漏了就虚高 2.208×）。
+        // 同一根管分别用 SI 与英尺表示时，换算回来必须得出同一个水头损失（下方 verify 用 WL 独立验算过）。
+        var qForLoss = designFlow ?? qFull;
+        var headLoss = (manningsN * manningsN * length * qForLoss * qForLoss)
+                          / (k * k * Math.Pow(hydraulicRadius, 4.0 / 3.0) * area * area);
         headLoss = Math.Max(0, headLoss);
 
         var hglAtUpstream = currentHgl + headLoss;
@@ -71,10 +74,13 @@ public static class PipeHydraulicsCommands
           ["pipeName"] = pipe.Name,
           ["invertIn"] = Math.Round(pipe.InvertIn, 3),
           ["invertOut"] = Math.Round(pipe.InvertOut, 3),
+          ["invertSource"] = pipe.InvertSource,
           ["diameter"] = Math.Round(diameter, 3),
           ["length"] = Math.Round(length, 2),
-          ["slopePct"] = Math.Round(pipe.Slope, 4),
-          ["qFullCfs"] = Math.Round(qFull, 3),
+          ["slopePercent"] = Math.Round(Math.Abs(pipe.Slope) * 100.0, 4),
+          // 2026-11-17 P29: 去掉 cfs/fps 后缀 —— 米制图上值是 m3/s、m/s，名字写 Cfs/Fps 是骗人
+          ["qFull"] = Math.Round(qFull, 3),
+          ["flowUnits"] = CivilObjectUtils.FlowUnits(database),
           ["hglDownstream"] = Math.Round(currentHgl, 3),
           ["hglUpstream"] = Math.Round(hglAtUpstream, 3),
           ["headLoss"] = Math.Round(headLoss, 3),
@@ -132,7 +138,10 @@ public static class PipeHydraulicsCommands
       foreach (var pipe in pipes)
       {
         double diameter = pipe.Diameter;
-        double slope = Math.Abs(pipe.Slope) / 100.0;
+        // pipe.Slope 是比值（0.0411 = 4.11%）；以前一律 /100 当百分数 → qFull 小 10 倍、判定全错
+        double slopeRatio = Math.Abs(pipe.Slope);
+        double slopePercent = slopeRatio * 100.0;
+        double slope = slopeRatio;
         double area = Math.PI * diameter * diameter / 4.0;
         double hydraulicRadius = diameter / 4.0;
         double qFull = k * (1.0 / manningsN) * area * Math.Pow(hydraulicRadius, 2.0 / 3.0) * Math.Pow(slope, 0.5);
@@ -144,7 +153,7 @@ public static class PipeHydraulicsCommands
         double velocity = area > 0 ? actualFlow / area : 0;
 
         var pipeViolations = new List<string>();
-        if (pipe.Slope < minSlope) pipeViolations.Add($"slope {pipe.Slope:F3}% < min {minSlope}%");
+        if (slopePercent < minSlope) pipeViolations.Add($"slope {slopePercent:F2}% < min {minSlope}%");
         if (velocity < minVelocity) pipeViolations.Add($"velocity {velocity:F2} < min {minVelocity} {vUnit}");
         if (velocity > maxVelocity) pipeViolations.Add($"velocity {velocity:F2} > max {maxVelocity} {vUnit}");
         if (capacityRatio > 1.0) pipeViolations.Add($"flow {actualFlow:F2} exceeds capacity {qFull:F2} {fUnit}");
@@ -154,13 +163,17 @@ public static class PipeHydraulicsCommands
           ["pipeName"] = pipe.Name,
           ["diameter"] = Math.Round(diameter, 3),
           ["length"] = Math.Round(pipe.Length, 2),
-          ["slopePct"] = Math.Round(pipe.Slope, 4),
+          ["slope"] = Math.Round(slopeRatio, 6),
+          ["slopePercent"] = Math.Round(slopePercent, 4),
           ["invertIn"] = Math.Round(pipe.InvertIn, 3),
           ["invertOut"] = Math.Round(pipe.InvertOut, 3),
-          ["qFullCfs"] = Math.Round(qFull, 3),
-          ["designFlowCfs"] = Math.Round(actualFlow, 3),
+          ["invertSource"] = pipe.InvertSource,
+          ["qFull"] = Math.Round(qFull, 3),
+          ["designFlow"] = Math.Round(actualFlow, 3),
           ["capacityRatio"] = Math.Round(capacityRatio, 3),
-          ["velocityFps"] = Math.Round(velocity, 3),
+          ["velocity"] = Math.Round(velocity, 3),
+          ["flowUnits"] = fUnit,
+          ["velocityUnits"] = vUnit,
           ["froudeNumber"] = Math.Round(froudeNumber, 3),
           ["status"] = pipeViolations.Count > 0 ? "FAIL" : "OK",
           ["violations"] = pipeViolations,
@@ -235,12 +248,34 @@ public static class PipeHydraulicsCommands
         });
       }
 
+      // 2026-11-17 P28: 真机同一结构，getStructure 说连了 1 根管，这里返回 0 根（GetConnectedPipeIds 反射拿不到）——
+      //   静默空比报错更坏。改用 getStructure 用的那条 API（ConnectedPipesCount + 索引器）兜底，并标来源。
+      var connectedPipesSource = connectedPipes.Count > 0 ? "connected-pipe-ids" : "none";
+      if (connectedPipes.Count == 0 && structure is Autodesk.Civil.DatabaseServices.Structure typedStructure)
+      {
+        try
+        {
+          var structureData = PipeNetworkCommands.ToStructureData(typedStructure, transaction);
+          if (structureData["connectedPipes"] is List<string> names)
+          {
+            foreach (var pipeName in names)
+              connectedPipes.Add(new Dictionary<string, object?> { ["name"] = pipeName });
+          }
+          if (connectedPipes.Count > 0) connectedPipesSource = "structure-api";
+        }
+        catch (Exception ex)
+        {
+          PluginLog.Warn("PipeHydraulics", "structure connected-pipe fallback failed: " + ex.Message);
+        }
+      }
+
       var location = GetPointProperty(structure, "Location", "Position", "CenterPoint");
 
       return new Dictionary<string, object?>
       {
         ["networkName"] = networkName,
         ["structureName"] = structureName,
+        ["connectedPipesSource"] = connectedPipesSource,
         ["type"] = GetAnyString(structure, "PartType", "StructureType", "PartDescription") ?? structure.GetType().Name,
         ["x"] = Math.Round(location?.X ?? 0.0, 3),
         ["y"] = Math.Round(location?.Y ?? 0.0, 3),
@@ -256,7 +291,7 @@ public static class PipeHydraulicsCommands
 
   // ─── Private helpers ─────────────────────────────────────────────────────────
 
-  private sealed record PipeInfo(string Name, double Diameter, double Length, double Slope, double InvertIn, double InvertOut);
+  private sealed record PipeInfo(string Name, double Diameter, double Length, double Slope, double InvertIn, double InvertOut, string InvertSource);
   private sealed record StructureInfo(string Name, double RimElevation, double SumpElevation, List<string> ConnectedPipes);
 
   private static DBObject FindPipeNetworkByName(object civilDoc, Transaction transaction, string name)
@@ -302,12 +337,19 @@ public static class PipeHydraulicsCommands
       var pipe = CivilObjectUtils.GetRequiredObject<DBObject>(transaction, objectId, OpenMode.ForRead);
       var startPt = GetPointProperty(pipe, "StartPoint", "PointAtStart");
       var endPt = GetPointProperty(pipe, "EndPoint", "PointAtEnd");
-      var invertIn = GetAnyDouble(pipe, "StartInvertElevation", "InvertIn", "StartInnerElevation") ?? startPt?.Z ?? 0.0;
-      var invertOut = GetAnyDouble(pipe, "EndInvertElevation", "InvertOut", "EndInnerElevation") ?? endPt?.Z ?? 0.0;
-      var length = GetAnyDouble(pipe, "Length3D", "Length2D", "Length") ?? 0.0;
-      var slope = GetAnyDouble(pipe, "Slope", "FlowSlope") ?? (length > 0 ? (invertIn - invertOut) / length * 100 : 0);
       var diameter = GetAnyDouble(pipe, "InnerDiameterOrWidth", "InnerDiameter", "Diameter") ?? 1.0;
-      results.Add(new PipeInfo(CivilObjectUtils.GetName(pipe) ?? objectId.Handle.ToString(), diameter, length, slope, invertIn, invertOut));
+      // 2026-11-17 P28: Civil 3D 的 Pipe API 不暴露管底高程（invert）。以前直接拿"中心线 Z"当 invert，
+      //   静默差一个半径（1.5 直径就错 0.75），HGL / 满管判定全跟着偏。现在：能读到就标 api，
+      //   读不到就按 中心线 − 内径/2 推导，并在返回里标 invertSource=centerline-derived。
+      var invertInApi = GetAnyDouble(pipe, "StartInvertElevation", "InvertIn", "StartInnerElevation");
+      var invertOutApi = GetAnyDouble(pipe, "EndInvertElevation", "InvertOut", "EndInnerElevation");
+      var invertSource = invertInApi.HasValue && invertOutApi.HasValue ? "api" : "centerline-derived";
+      var invertIn = invertInApi ?? ((startPt?.Z ?? 0.0) - diameter / 2.0);
+      var invertOut = invertOutApi ?? ((endPt?.Z ?? 0.0) - diameter / 2.0);
+      var length = GetAnyDouble(pipe, "Length3D", "Length2D", "Length") ?? 0.0;
+      // 2026-11-17 P28: Slope 是**比值**（0.0411 = 4.11%），不是百分数。以前 /100 当百分数用 → 满管流量小 10 倍。
+      var slope = GetAnyDouble(pipe, "Slope", "FlowSlope") ?? (length > 0 ? (invertIn - invertOut) / length : 0);
+      results.Add(new PipeInfo(CivilObjectUtils.GetName(pipe) ?? objectId.Handle.ToString(), diameter, length, slope, invertIn, invertOut, invertSource));
     }
     return results;
   }

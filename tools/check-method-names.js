@@ -90,7 +90,8 @@ const invisible = [...registered].filter((n) => !advertised.has(n));
 // 断链：注册臂目标 Class.Method（无 Class. 前缀视为同类 CommandDispatcher）
 const targetBroken = [];
 for (const [name, target] of arms) {
-  const m = target.match(/(?:^|[(<])\s*([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\(/) || target.match(/^([A-Za-z_]\w*)\s*\(\s*\)/);
+  // 2026-11-14: 同类直调现在可能带参数（ListMethodsAsync(parameters)），旧的 /^(\w+)\(\)/ 只认无参调用会误报断链
+  const m = target.match(/(?:^|[(<])\s*([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\(/) || target.match(/^([A-Za-z_]\w*)\s*\(/);
   let cls, meth;
   if (m && m[2]) { cls = m[1]; meth = m[2]; }
   else if (m && m[1]) { cls = 'CommandDispatcher'; meth = m[1]; }

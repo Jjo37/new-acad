@@ -154,17 +154,52 @@ function pluginDllPath() {
 
 function writeEvidence(extra) {
   if (!EVIDENCE) return;
+  // 2026-11-23 P35: 证据升级成宿主矩阵 cell（v2）——带宿主产品/年份/运行时/插件提交，
+  // 门禁（tools/host-matrix.js）按这些字段判断「这一格本版验过没有」。
+  const M = require('./host-matrix');
   const dll = pluginDllPath();
   let sha = '';
   try { sha = crypto.createHash('sha256').update(fs.readFileSync(dll)).digest('hex'); } catch { sha = ''; }
+  const hostRaw = (extra && extra.hostProduct) || '';
+  const product = M.productFromHealth({ hostProduct: hostRaw, civilAvailable: extra && extra.civilAvailable !== undefined ? extra.civilAvailable : null });
+  // 2026-11-24: hostProduct 经常只有产品名（纯 AutoCAD 就回 "AutoCAD"），年份得从 ACADVER 取。
+  // health.civil3dVersion = (getvar "ACADVER")，如 "26.0s (LMS Tech)" -> 2027。取不到才退回产品串。
+  const yearsByAcadver = M.yearsFromAcadver(extra && extra.acadver);
+  const years = yearsByAcadver.length ? yearsByAcadver : M.yearsFromProduct(hostRaw);
+  let cellId = '';
+  try {
+    const contract = M.loadContract(path.join(__dirname, '..'));
+    // 同产品有多条年份条目：必须按年份挑，否则 2027 的机器会记到 autocad-2025 名下。
+    const host = contract.hosts.find((h) => h.product === product && (!years.length || (Array.isArray(h.years) && h.years.some((y) => years.includes(y)))))
+      || contract.hosts.find((h) => h.product === product);
+    if (host) cellId = host.id;
+  } catch { /* 契约读不到就留空，门禁会点名 */ }
+  const failedChecks = results.filter((r) => r.ok === false).length;
   const payload = Object.assign({
-    schema: 'new-acad.host-evidence.v1',
+    schema: M.SCHEMA_CELL,
+    id: cellId,
+    product,
+    productRaw: hostRaw,
+    years,
+    runtime: (extra && extra.runtime) || '',
+    // 装好的包里没有 .git → 退回 buildStamp 里的完整提交号（否则异机产出的 cell 永远不认）
+    // 提交号优先级：包内 tools/plugin-commit.txt（打包时写入）→ git（dev 仓）→ buildStamp
+    commit: (() => {
+      try {
+        const f = path.join(__dirname, 'plugin-commit.txt');
+        if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').trim();
+      } catch { }
+      return M.pluginCommit(path.join(__dirname, '..')) || M.commitFromBuildStamp(extra && extra.buildStamp);
+    })(),
+    hostVersion: (extra && extra.buildStamp) || '',
     generatedAt: new Date().toISOString(),
     machine: os.hostname(),
     os: os.platform() + ' ' + os.release(),
     pluginDll: dll,
     pluginDllSha256: sha,
-    checks: results
+    source: 'smoke-plain-acad.js',
+    result: failedChecks === 0 ? 'pass' : 'fail',
+    checks: results,
   }, extra || {});
   try {
     fs.mkdirSync(path.dirname(path.resolve(EVIDENCE)), { recursive: true });
@@ -188,6 +223,8 @@ function finish() {
     buildStamp: lastHealth ? lastHealth.buildStamp : null,
     pluginVersion: lastHealth ? lastHealth.pluginVersion : null,
     hostProduct: lastHealth ? lastHealth.hostProduct : null,
+    acadver: lastHealth ? lastHealth.civil3dVersion : null,
+    runtime: lastHealth ? (lastHealth.runtime || '') : '',
     palette: lastHealth ? (lastHealth.palette || null) : null,
     note: isPlainHost === false ? 'ran on a Civil 3D host — NOT valid evidence for plain AutoCAD' : undefined
   });

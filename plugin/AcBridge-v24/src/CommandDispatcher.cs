@@ -4,6 +4,8 @@ namespace Civil3DMcpPlugin;
 
 public static class CommandDispatcher
 {
+  // listMethods 响应体的描述字节预算（ResultSummarizer 阈值 64KB，留 8KB 给名字/信封字段）
+  private const int DescriptionByteBudget = 56000;
   public static Task<object?> DispatchAsync(string method, JsonObject? parameters, CancellationToken cancellationToken)
   {
     // 2026-10-15: 请求级单位覆盖（灵活）—— params.units 非空则强制该单位系统（auto/空=按图纸探测）
@@ -16,6 +18,9 @@ public static class CommandDispatcher
   return method switch
   {
       "getCivil3DHealth" => DrawingCommands.GetCivil3DHealthAsync(),
+      // 2026-11-12 v1.16.0: 命令上下文可观测 + 可中断（AI 在 CAD 里盲飞的解药）
+      "getCommandState" => CommandControlCommands.GetCommandStateAsync(parameters),
+      "cancelCommand" => CommandControlCommands.CancelCommandAsync(parameters),
       "createCircle" => DrawingCommands.CreateCircleAsync(parameters),
       "createEllipse" => DrawingCommands.CreateEllipseAsync(parameters),
       "getDrawingInfo" => DrawingCommands.GetDrawingInfoAsync(),
@@ -36,6 +41,7 @@ public static class CommandDispatcher
       "newDrawing" => DrawingCommands.NewDrawingAsync(parameters),
       "saveDrawing" => DrawingCommands.SaveDrawingAsync(parameters),
       "openDrawing" => DrawingCommands.OpenDrawingAsync(parameters),
+      "auditFonts" => FontAudit.AuditFontsAsync(parameters),   // 2026-11-23 P34: 字体体检（缺 SHX 会靠替代字体显示）
       "closeDrawing" => DrawingCommands.CloseDrawingAsync(parameters),   // 2026-11-03: 静默关图（有路径需 force）   // 2026-08-13: 打开已有图纸（半自动化工作流）
       "undoDrawing" => DrawingCommands.UndoDrawingAsync(parameters),
       "journalList" => UndoJournalCommands.JournalListAsync(parameters),
@@ -94,7 +100,7 @@ public static class CommandDispatcher
       "getSurfaceElevation" => SurfaceCommands.GetSurfaceElevationAsync(parameters),
       "getSurfaceElevationsAlong" => SurfaceCommands.GetSurfaceElevationsAlongAsync(parameters),
       "getSurfaceStatistics" => SurfaceCommands.GetSurfaceStatisticsAsync(parameters),
-      "listAssemblies" => AssemblyCreationCommands.ListAssembliesAsync(),
+      "listAssemblies" => AssemblyCreationCommands.ListAssembliesAsync(parameters),
       "listStockSubassemblies" => AssemblyCreationCommands.ListStockSubassembliesAsync(parameters),
       "importSACSubassembly" => AssemblyCreationCommands.ImportSACSubassemblyAsync(parameters),
       "createCustomSubassembly" => AssemblyCreationCommands.CreateCustomSubassemblyAsync(parameters),
@@ -102,12 +108,16 @@ public static class CommandDispatcher
       "getAssembly" => AssemblyCreationCommands.GetAssemblyAsync(parameters),
     "getSubassemblyGeometry" => AssemblyCreationCommands.GetSubassemblyGeometryAsync(parameters),
       "verifyAssemblyGeometry" => AssemblyCreationCommands.VerifyAssemblyGeometryAsync(parameters),
+      "setSubassemblyParameter" => AssemblyCreationCommands.SetSubassemblyParameterAsync(parameters),
       "createSurface" => SurfaceCommands.CreateSurfaceAsync(parameters),
       "deleteSurface" => SurfaceCommands.DeleteSurfaceAsync(parameters),
       "addSurfacePoints" => SurfaceCommands.AddSurfacePointsAsync(parameters),
       "addSurfacePointsFromFile" => SurfaceCommands.AddSurfacePointsFromFileAsync(parameters),  // 2026-08-07: 文件通道(参数化: delimiter/hasHeader/列序)
       "addSurfaceBreakline" => SurfaceCommands.AddSurfaceBreaklineAsync(parameters),
       "addSurfaceBoundary" => SurfaceCommands.AddSurfaceBoundaryAsync(parameters),
+      // 2026-11-12 v1.16.0: 2D 多段线按对象高程进曲面（等价 C3D 原生 AddContours）
+      "addSurfaceContours" => SurfaceCommands.AddSurfaceContoursAsync(parameters),
+      "elevatePolylines" => SurfaceCommands.ElevatePolylinesAsync(parameters),
       "extractSurfaceContours" => SurfaceCommands.ExtractSurfaceContoursAsync(parameters),
       "computeSurfaceVolume" => SurfaceCommands.ComputeSurfaceVolumeAsync(parameters),
       "computeMassHaul" => MassHaulCommands.ComputeMassHaulAsync(parameters),
@@ -160,6 +170,7 @@ public static class CommandDispatcher
       "rebuildCorridor" => CorridorCommands.RebuildCorridorAsync(parameters),
       "getCorridorSurfaces" => CorridorCommands.GetCorridorSurfacesAsync(parameters),
       "getCorridorCoverage" => CorridorCommands.GetCorridorCoverageAsync(parameters),
+      "extractCorridorFeatureLines" => CorridorCommands.ExtractCorridorFeatureLinesAsync(parameters),
       "getCorridorFeatureLines" => CorridorCommands.GetCorridorFeatureLinesAsync(parameters),
       "computeCorridorVolumes" => CorridorCommands.ComputeCorridorVolumesAsync(parameters),
       "getCorridorTargetMappings" => CorridorEditingCommands.GetCorridorTargetMappingsAsync(parameters),
@@ -228,6 +239,7 @@ public static class CommandDispatcher
       "updatePointGroup" => PointGroupCommands.UpdatePointGroupAsync(parameters),
       "deletePointGroup" => PointGroupCommands.DeletePointGroupAsync(parameters),
       "deletePipeNetwork" => PipeNetworkCommands.DeletePipeNetworkAsync(parameters),
+      "deleteNetworkParts" => PipeNetworkCommands.DeleteNetworkPartsAsync(parameters),
       "deleteParcel" => ParcelEditingCommands.DeleteParcelAsync(parameters),
       "exportCogoPoints" => PointGroupCommands.ExportCogoPointsAsync(parameters),
       "transformCogoPoints" => PointGroupCommands.TransformCogoPointsAsync(parameters),
@@ -256,6 +268,8 @@ public static class CommandDispatcher
       "alignmentWidenTransition" => AlignmentEditCommands.WidenTransitionAsync(parameters),
       // Profile editing
       "profileAddPvi" => ProfileEditCommands.AddPviAsync(parameters),
+      // 2026-11-12 v1.16.0: 批量 PVI（+ 可选竖曲线），替代 50 次单点调用
+      "profileAddPvis" => ProfileEditCommands.ProfileAddPvisAsync(parameters),
       "profileDeletePvi" => ProfileEditCommands.DeletePviAsync(parameters),
       "profileAddCurve" => ProfileEditCommands.AddCurveAsync(parameters),
       "profileSetGrade" => ProfileEditCommands.SetGradeAsync(parameters),
@@ -375,6 +389,7 @@ public static class CommandDispatcher
       "getEntitiesByLayer" => AcadCommands.GetEntitiesByLayerAsync(parameters),
       "getBlocksByLayer" => AcadCommands.GetBlocksByLayerAsync(parameters),   // 2026-08-19: 批量读块属性(高程常存于属性/块内文字)
       "getEntitiesByBlock" => AcadCommands.GetEntitiesByBlockAsync(parameters),
+      "getBlockDefinitionGeometry" => AcadCommands.GetBlockDefinitionGeometryAsync(parameters),   // 2026-11-15: 读块定义内几何（标准图详图在块里）
       "getSelectionDetail" => AcadCommands.GetSelectionDetailAsync(parameters),
       "selectEntities" => AcadCommands.SelectEntitiesAsync(parameters),              // 2026-08-08: 程序化选中
       "getDrawingOverview" => AcadCommands.GetDrawingOverviewAsync(parameters),      // 2026-08-08: 图纸概况
@@ -470,7 +485,7 @@ public static class CommandDispatcher
       "deleteLayer" => AcadCommands.DeleteLayerAsync(parameters),
       "renameSurface" => SurfaceCommands.RenameSurfaceAsync(parameters),
       "assignMaterial" => AcadCommands.AssignMaterialAsync(parameters),
-      "listMethods" => ListMethodsAsync(),
+      "listMethods" => ListMethodsAsync(parameters),
       _ => throw new JsonRpcDispatchException("CIVIL3D.METHOD_NOT_FOUND", $"Plugin method '{method}' is not implemented yet."),
     };
   }
@@ -519,7 +534,7 @@ public static class CommandDispatcher
   /// 列出所有可用方法（构建期生成的 MethodNames.g.cs，AI 先查清单再调用，避免猜方法名）。
   /// 不用反射：纯 AutoCAD 宿主下 Assembly.GetTypes() 会整体抛异常（见下方注释）。
   /// </summary>
-  private static Task<object?> ListMethodsAsync()
+  private static Task<object?> ListMethodsAsync(JsonObject? parameters)
   {
     // 2026-10-27 v1.11.0-fix2: 清单改为构建期生成（MethodNames.g.cs，来源 = dispatcher switch）。
     // 旧实现反射扫所有类型的 public static Task<object?> *Async：纯 AutoCAD 宿主下有少数类型
@@ -545,6 +560,8 @@ public static class CommandDispatcher
       ["addStructureToNetwork"] = "添加检查井/结构物到管网 {networkName, x, y, partName, rimElevation?, sumpDepth?}",
       ["addSurfaceBoundary"] = "添加曲面边界 {name, points:[{x,y}], boundaryType?}——points 为边界折线顶点",
       ["addSurfaceBreakline"] = "添加断裂线 {name, points:[{x,y,z}], description?, breaklineType?}",
+      ["addSurfaceContours"] = "把多段线按**对象高程**加成曲面等高线（C3D 原生 AddContours）{name, handles?:[], layer?, skipZeroElevation?, description?, maxCount?}——等高线是 AcDb2dPolyline、顶点 Z 全 0 时用这个，别逐点灌 addSurfacePoints",
+      ["elevatePolylines"] = "把 2D 多段线按对象高程转成真 3D 多段线 {handles?:[], layer?, deleteSource?, targetLayer?, maxCount?} → {created:[{sourceHandle,handle,vertexCount,z}], skipped:[]}——addSurfaceContours 的降级路径；横断面断面线同样适用",
       ["addSurfacePoints"] = "向曲面添加高程点 {name, points:[{x,y,z}], description?}——points 必填数组",
       ["addSurfacePointsFromFile"] = "文件通道批量加曲面点 {name, filePath, delimiter?, hasHeader?, xCol?, yCol?, zCol?, skipRows?}——大量点用",
       ["addSurfaceWatershed"] = "添加汇水区分析 {name, depthThreshold?, mergeAdjacentWatersheds?}",
@@ -555,7 +572,7 @@ public static class CommandDispatcher
       ["alignmentAddCurve"] = "路线添加缓和曲线段 {alignmentName, passThroughX, passThroughY, radius}",
       ["alignmentAddSpiral"] = "路线添加螺旋线 {alignmentName, startX, startY, startRadius, endRadius, length, spiralType?}",
       ["alignmentAddTangent"] = "路线添加直线段 {alignmentName, startX, startY, endX, endY}",
-      ["alignmentDeleteEntity"] = "删除路线子图元 {handle}",
+      ["alignmentDeleteEntity"] = "删除路线子图元（按序号）{alignmentName, entityIndex}",
       ["alignmentGetStationOffset"] = "路线某点的桩号+偏移 {alignmentName, x, y}",
       ["alignmentOffsetCreate"] = "偏移路线 {alignmentName, offsetName, offset, layer?, style?, labelSet?}",
       ["alignmentPointToStation"] = "坐标转桩号 {name, x, y}——将坐标点换算为路线桩号+偏移",
@@ -564,7 +581,7 @@ public static class CommandDispatcher
       ["alignmentSetStationEquation"] = "设置桩号方程 {alignmentName, rawStation, nominalStation}",
       ["alignmentStationToPoint"] = "桩号转坐标 {name, station, offset?}",
       ["alignmentWidenTransition"] = "路线加宽过渡段 {alignmentName, side, startStation, endStation, startOffset, endOffset, offsetName?}",
-      ["analyzePipeNetworkHydraulics"] = "管网水力分析 {networkName, designFlow?, manningsN?, minCoverDepth?, minVelocity?, maxVelocity?, minSlope?}",
+      ["analyzePipeNetworkHydraulics"] = "管网水力分析 {networkName, designFlow?, manningsN?, minCoverDepth?, minVelocity?, maxVelocity?, minSlope?} → 逐管 {slope(比值), slopePercent(百分数), invertIn/invertOut, invertSource(api|centerline-derived), qFullCfs, velocityFps, capacityRatio, status, violations}；阈值一律按百分数（minSlope 默认 0.5）。C3D API 不暴露管底高程，invertSource=centerline-derived 表示 invert = 中心线 − 内径/2",
       ["analyzeSurfaceDirections"] = "曲面坡向分析 {name, numRanges?}",
       ["analyzeSurfaceElevation"] = "曲面高程分析 {name, ranges:[], numRanges?}",
       ["analyzeSurfaceSlope"] = "曲面坡度分析 {name, ranges:[], numRanges?}",
@@ -580,7 +597,7 @@ public static class CommandDispatcher
       ["calculateDetentionBasinSize"] = "计算调蓄池尺寸 {inflow, outflow, stormDuration?, method?, sideSlope?, bottomWidth?, freeboardDepth?}",
       ["calculateDetentionStageStorage"] = "计算调蓄池水位-容积 {surfaceName, bottomElevation, topElevation, elevationIncrement?, outletType?, outletDiameter?, weirLength?, dischargeCoefficient?}",
       ["calculateMaterialCostEstimate"] = "材料造价估算 {corridorName?, baseSurface?, designSurface?, alignmentName?, contingencyPercent?, mobilizationPercent?, outputPath?}",
-      ["calculatePipeNetworkHgl"] = "计算管网水压线（HGL） {networkName, tailwaterElevation?, designFlow?, manningsN?}",
+      ["calculatePipeNetworkHgl"] = "计算管网水压线（HGL） {networkName, tailwaterElevation?, designFlow?, manningsN?} → {nodes[{pipeName, invertIn, invertOut, invertSource, diameter, length, slopePercent, qFullCfs, hglDownstream, hglUpstream, headLoss, surcharged, status}]}",
       ["calculateSightDistance"] = "计算视距 {alignmentName?, designSpeed, speedUnits?, sightDistanceType?, grade?, perceptionReactionTime?, frictionCoefficient?, profileName?, checkStation?}——停车视距/超车视距计算",
       ["calculateSlopeGeometry"] = "边坡几何计算 {alignmentName?, profileName?, surfaceName?, cutSlopeRatio?, fillSlopeRatio?, benchWidth?, benchHeightInterval?, stationStart?, stationEnd?, stationInterval?, roadwayWidth?}",
       ["calculateSurfaceVolume"] = "计算曲面体积（两曲面间） {baseSurface, comparisonSurface, method?, gridStep?}（method: auto|tin_volume|grid；廊道曲面参与时必须用 grid）",
@@ -588,7 +605,7 @@ public static class CommandDispatcher
       ["calculateTimeOfConcentration"] = "计算汇流时间 {method, flowLength_ft?, elevationDifference_ft?, manningsN?, rainfall2yr24hr_in?, slope_ftPerFt?, hydraulicRadius_ft?, runoffCoefficient?, slope_percent?, curveNumber?, surfaceType?}——必需项随 method 变：kirpich 要 flowLength_ft+elevationDifference_ft；tr55_sheet/tr55_shallow/tr55_channel 要 manningsN+rainfall2yr24hr_in（channel 另需 hydraulicRadius_ft）；nrcs_lag 要 runoffCoefficient+rainfall2yr24hr_in；faa 要 slope_percent+rainfall2yr24hr_in。先用 listTcMethods 查每个方法的必需参数",
       ["cancelJob"] = "取消后台任务 {jobId}",
       ["chamferEntities"] = "倒角（几何自研，同步返回；直线-直线）{distance1, distance2, handle1, handle2}——修剪两线并以直线连接",
-      ["checkPipeNetworkInterference"] = "管网碰撞检查 {networkName, targetType, targetName}",
+      ["checkPipeNetworkInterference"] = "管网碰撞检查 {networkName, targetType: surface|pipe_network, targetName} → {interferences[], totalConflicts, samplesPerPipe, outsideSurfaceSamples}——按每管 9 点采样：曲面=管顶高出地面（覆盖为负）；管网=中心线间距小于两半径之和",
       ["checkSlopeStability"] = "边坡稳定性检查 {}",
       ["checkStoppingDistance"] = "停车视距检查 {alignmentName, profileName, designSpeed, stationStart?, stationEnd?, stationInterval?}",
       ["checkSuperelevationDesign"] = "超高设计检查 {alignmentName, designSpeed, maxSuperelevation?, checkAttainmentLength?, checkRunoffLength?}",
@@ -676,6 +693,7 @@ public static class CommandDispatcher
       ["deletePointGroup"] = "删除点组 {name}——删除指定点组",
       ["deleteParcel"] = "删除地块 {site, parcel}",
       ["deletePipeNetwork"] = "删除重力管网 {name}",
+      ["deleteNetworkParts"] = "删除管网中的单个井/管 {networkName, pipeNames?:[], structureNames?:[], deleteConnectedPipes?=true} → {deletedPipes, deletedStructures, deletedPartCount, skipped, remainingPipeCount, remainingStructureCount, verified}——删结构默认连带删相连管道（否则管子悬空），并在 deletedPipes 里如实列出；整网删除用 deletePipeNetwork",
 
       ["deletePressureNetwork"] = "删除压力管网 {name}",
       ["deleteProfile"] = "删除纵断面 {alignmentName, profileName}——删除路线下的纵断面",
@@ -705,7 +723,7 @@ public static class CommandDispatcher
       ["exportPayItems"] = "导出支付项（pay items） {outputPath, corridorName?, baseSurface?, designSurface?, alignmentName?, includeEarthwork?, includeCorridorMaterials?, includePipeLengths?, includeStructureCounts?}",
       ["exportPressureNetwork"] = "导出压力管网 {networkName}",
       ["exportSectionData"] = "导出横断面数据（CSV）{sampleLineGroupName, outputPath, alignmentName, includeElevations?, includeMaterials?, stationStart?, stationEnd?}",
-      ["exportSelectionToFile"] = "导出选中集到文件 {path, format:\"csv\"|\"json\", delimiter?, header?}：用户要坐标文件→csv(x,y,z 每行)，AI 自用/跨图→json——⚠️ 文件已存在则拒绝覆盖(换新路径)",
+      ["exportSelectionToFile"] = "导出选中集到文件 {path, format:\"csv\"|\"json\", delimiter?, header?}：用户要坐标文件→csv(x,y,z 每行)，AI 自用/跨图→json——⚠️ 文件已存在则拒绝覆盖(换新路径)；返回 count/selectionTotal/skippedCount/complete——complete=false 说明有句柄解析不了（看 skippedHandles），文件里不含它们",
       ["exportSheetSet"] = "导出图纸集 {sheetSetName, outputPath}——导出图纸集数据/清单",
       ["exportStm"] = "导出 STM（雨污模型）文件 {filePath?}（命令投递：ExportSSA 弹交互对话框，无同步结果）",
       ["extendEntity"] = "【已弃用】延伸图元（已停投命令，不再入队；请改用 extendEntityGeo，同步返回真实结果）",
@@ -726,10 +744,13 @@ public static class CommandDispatcher
       ["getCatchmentGroup"] = "读取汇水区组 {groupName}",
       ["getCatchmentProperties"] = "读取汇水区属性 {catchmentName}",
       ["getCivil3DHealth"] = "检查插件/图纸状态（在线、卡顿、文档信息）",
+      ["getCommandState"] = "读命令上下文状态 {} → {state:idle|running|transparent|script|lisp|dialog|no-document, command, cmdActive, acceptingCommands, hostBusy, activeDocument, blockingDialog, lastTimeout}——不确定 CAD 是空闲/在跑命令/卡在提示或对话框时先调它",
+      ["cancelCommand"] = "打断当前交互命令 {} → 命令队列投 ESC ESC + 向本进程阻塞对话框直投 ESC，返回 before/after 状态；只中止等待中的输入，不改图纸",
       ["getCogoPoint"] = "读取 Cogo 点 {pointNumber}",
       ["getCoordinateSystemInfo"] = "读取当前坐标系信息",
       ["getCorridor"] = "读取廊道信息 {name}",
-      ["getCorridorFeatureLines"] = "读取廊道特征线 {name}",
+      ["getCorridorFeatureLines"] = "读取廊道要素线 {name, includePoints?, codes?, stationStart?, stationEnd?, maxPoints?} - includePoints=true 返回每个码的逐点 {station, offset, elevation}; 要素线是精确几何, 量算以它为准; availableCodes 给出可用码名; 预算按各码点数比例分配(不会只喂饱前几个码), 返回 returnedPointCount/omittedPointCount/truncated/truncatedCodes 且逐码给 pointsAvailable/pointsReturned/pointsOmitted; maxPoints<=0 表示不限; 另按字节预算收缩(maxResponseBytes, 默认 summarizer 阈值 64KB 的 70%; 不给 fullResult:true 时硬顶到阈值 90%), 计数只描述实际返回的内容, 回显 responseBytes/responseByteBudget",
+  ["extractCorridorFeatureLines"] = "把廊道要素线落地为真实 3D 多段线 {name? | corridors?[] | allCorridors?, codes?, targetLayer?, stationStart?, stationEnd?, maxLines?, merge?, mergeTolerance?} -> {created:[{code, handle, vertexCount, stationStart, stationEnd}], perCode:[{code, polylines, vertices, stationStart, stationEnd}], unresolvedPoints, skipped, availableCodes}; merge=true 把同码相邻段合并成连续多段线",
       ["getCorridorCoverage"] = "读取廊道设计覆盖范围（要素线左右外沿 offset，按桩号）{name, stationStart?, stationEnd?}——断面法算量窗口用",
       ["getCorridorSurfaces"] = "读取廊道曲面 {name}",
       ["getCorridorTargetMappings"] = "读取廊道目标映射 {corridorName, regionIndex?, baselineIndex?}",
@@ -748,11 +769,12 @@ public static class CommandDispatcher
       ["writeTextFile"] = "写文件到用户指定路径 {path, content?}：用户明确要求生成到某处=授权写（如\"笔记生成到 D盘文件夹\"）；【只新建不覆盖】已有文件(换名或用户删旧)、敏感路径/可执行扩展名禁写、2MB 限制",
       ["getDrawingOverview"] = "图纸总览：单位/图层+数量/块+数量/类型分布/选择集数，涉及图中对象或模糊指令先调 {}",
       ["getDrawingSettings"] = "读取图纸设置（单位、精度等）",
-      ["getEntitiesByBlock"] = "按块名列举 ModelSpace 块参照 {blockName, maxCount?}——含插入点坐标",
-      ["getEntitiesByLayer"] = "按图层枚举 ModelSpace 实体 {layer, maxCount?, offset?, minZ?, maxZ?}——含坐标，分页取全量；minZ/maxZ 服务端 z 范围过滤（找异常点/筛选，不用拉全量被截断）",
-      ["getBlocksByLayer"] = "按图层批量读块引用及属性 {layer, maxCount?, offset?, blockName?, minZ?, maxZ?}——返回每个块的 handle/blockName/坐标/rotation/attributes(tag+text)/块定义内文字。**读高程点/属性数据用它**（getBlockInfo 一次只能读 1 个，大量点必须用本方法分页批量取）",
+      ["getEntitiesByBlock"] = "按块名列举 ModelSpace 块参照 {blockName, maxCount?, offset?}——含插入点坐标；分页读同时回 nextOffset/hasMore/byteLimited（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
+    ["getBlockDefinitionGeometry"] = "读块定义内部图元几何 {blockName, maxCount?, offset?}——返回块内每个图元的完整几何（直线 start/end、多段线 vertices 含 bulge、圆弧/圆/填充/标注），含 basePoint/isDynamicBlock。**标准图详图、图签类块内容用它**（getEntitiesByBlock 只给块参照，块内一条线都拿不到）；嵌套块参照按 blockName 递归再取一层；分页：offset 跳过的已读图元数；分页读同时回 nextOffset/hasMore/byteLimited（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
+      ["getEntitiesByLayer"] = "按图层枚举 ModelSpace 实体 {layer, maxCount?, offset?, minZ?, maxZ?}——含坐标，分页取全量；minZ/maxZ 服务端 z 范围过滤（找异常点/筛选，不用拉全量被截断）；分页读同时回 nextOffset/hasMore/byteLimited（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
+      ["getBlocksByLayer"] = "按图层批量读块引用及属性 {layer, maxCount?, offset?, blockName?, minZ?, maxZ?}——返回每个块的 handle/blockName/坐标/rotation/attributes(tag+text)/块定义内文字。**读高程点/属性数据用它**（getBlockInfo 一次只能读 1 个，大量点必须用本方法分页批量取）；分页读同时回 nextOffset/hasMore/byteLimited（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
       ["getEntityInfo"] = "读单个图元属性（全类型覆盖：文字/多段线/样条/螺旋线/椭圆/圆/弧/直线/点/构造线/射线/区域/曲面/网格/2D实体/3D实体/面/Body/块引用/各类标注/多重引线/引线/表格/属性/公差/形/填充/图像/擦除/三种参照/MLine/OLE/代理对象）{handle}——通用属性含 linetype/lineweight/lineweightMm/transparency/visible/linetypeScale/extents/hasXData；未内置的类型自动反射兜底（readerSource=reflection）。可选 includeVertices=false 去掉大数组",
-      ["getEntitiesInfo"] = "批量读图元属性 {handles?:[字符串], maxCount?:数字, includeVertices?:布尔}——不给 handles 读当前选择集；默认 50 条、上限 500；返回 {source, requested, count, truncated, maxCount, items[], failed[]}；items 里每项字段同 getEntityInfo",
+      ["getEntitiesInfo"] = "批量读图元属性 {handles?:[字符串], maxCount?:数字, includeVertices?:布尔}——不给 handles 读当前选择集；默认 50 条、上限 500；返回 {source, requested, count, truncated, maxCount, items[], failed[]}；items 里每项字段同 getEntityInfo；分页读同时回 nextOffset/hasMore/byteLimited（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
       ["getCivilObjectInfo"] = "读任意对象属性 {handle?}——不给 handle 读当前选中的一个；Civil 3D 对象（Alignment/Surface/Profile/Corridor/ProfileView/SectionView/SampleLineGroup/ViewFrame/MatchLine/MassHaul/PointGroup/SurveyNetwork/管网…）走 C3D 属性+集合计数+几何摘要（alignment 逐段、surface 边界/特征线、profile PVI、采样线顶点、corridor 区域），AutoCAD 图元自动转 getEntityInfo 读法",
       ["getCivilObjectsInfo"] = "批量读任意对象属性 {handles?:[字符串], maxCount?:数字}——不给 handles 读当前选择集；默认 50、上限 500；返回结构与 getEntitiesInfo 相同",
       ["getFeatureLine"] = "读取特征线 {name}——获取特征线几何与属性",
@@ -765,7 +787,7 @@ public static class CommandDispatcher
       ["getParcel"] = "读取地块信息 {siteName, parcelName}",
       ["getPipe"] = "读取管道信息 {networkName, pipeName}",
       ["getPipeNetwork"] = "读取管网信息 {name}",
-      ["getPipeStructureProperties"] = "读取管/井属性 {networkName, structureName}",
+      ["getPipeStructureProperties"] = "读取管/井属性 {networkName, structureName} → {type, x, y, rimElevation, sumpElevation, sumpDepth, totalDepth, barrelCount, connectedPipes[], connectedPipesSource(connected-pipe-ids|structure-api|none)}",
       ["getPressureFittingProperties"] = "读取压力管件属性 {networkName, fittingName}",
       ["getPressureNetworkInfo"] = "读取压力管网信息 {name}",
       ["getPressurePipeProperties"] = "读取压力管道属性 {networkName, pipeName}",
@@ -773,9 +795,9 @@ public static class CommandDispatcher
       ["getProfileElevation"] = "读取纵断面高程（同 profileGetElevation） {alignmentName, profileName, station}",
       ["getProjectContext"] = "读取项目上下文信息 {selectedObjectLimit?}",
       ["getSectionData"] = "读取横断面数据 {alignmentName, sampleLineGroupName, station}",
-      ["getSelectedCivilObjectsInfo"] = "读取选中 Civil 3D 对象的详细信息 {limit?}",
+      ["getSelectedCivilObjectsInfo"] = "读取选中 Civil 3D 对象的详细信息 {limit?=100, details?}——默认返回数组（超过 limit 静默截断）；传 details:true 返回 {selectionTotal, returned, truncated, limit, objects}，能看到一共有多少条、被截掉多少",
       ["getSelection"] = "读当前选中集（handles+类型）；先确认是否有选中再动手",
-      ["getSelectionDetail"] = "选中集完整几何快照（handle/位置/顶点/文字）——跨图纸重建或分析选中内容用 {}",
+      ["getSelectionDetail"] = "选中集完整几何快照 {offset?, maxCount?}（handle/位置/顶点/文字）——跨图纸重建或分析选中内容用；返回 selectionTotal/returnedCount/nextOffset/hasMore/byteLimited，大选择集可分页（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
       ["getSheetProperties"] = "读取图纸属性 {sheetSetName, sheetName}",
       ["getSheetSetInfo"] = "读取图纸集信息 {name}",
       ["getStructure"] = "读取结构物信息 {networkName, structureName}",
@@ -804,7 +826,8 @@ public static class CommandDispatcher
       ["listAlignments"] = "查询路线列表",
       ["listAssemblies"] = "查询装配列表",
       ["listStockSubassemblies"] = "列出 C3D 标准子装配（stock subassembly）类名目录 {category?}——createSubassembly 的 subassemblyType 从这里查；道路结构层常用 BasicLane/LaneSuperelevationAOR/ShoulderExtendAll/DaylightStandard",
-      ["importSACSubassembly"] = "导入 SAC 自定义部件 .pkt 文件 {subassemblyName, pktFilePath, insertX?, insertY?, assemblyName?}——用 Subassembly Composer 做的自定义部件（如花岗岩平石/侧石/边石）导入后像标准部件一样加进装配；assemblyName 可选：导入后自动挂到指定装配",
+      ["setSubassemblyParameter"] = "改已导入子部件的参数 {assemblyName, subassemblyName?, parameters:{名称:值}}——参数化 SAC 部件（如 UDitch-param）导入后用它改尺寸，不用重新生成 XAML；参数名先用 getAssembly 读 subassemblies[].parameters 确认；写入后会自动回读，返回 applied(申请/前值/实值/集合) 与改后 parameters",
+    ["importSACSubassembly"] = "导入 SAC 自定义部件 .pkt 文件 {subassemblyName, pktFilePath, insertX?, insertY?, assemblyName?}——用 Subassembly Composer 做的自定义部件（如花岗岩平石/侧石/边石）导入后像标准部件一样加进装配；assemblyName 可选：导入后自动挂到指定装配",
       ["createCustomSubassembly"] = "编程创建自定义子装配 {subassemblyName, points: [{offset,elevation,code?}], links: [{pointIndices:[], code?}], shapes: [{linkIndices:[], code?}], assemblyName?, side?, insertX?, insertY?}——无 .pkt 文件时直接定义断面几何（平石/侧石/边石等）；内部翻译成 SAC XAML 打包导入，几何真生成（probeGeometry 可验证）；返回 handle/pktFilePath",
       ["buildSACSubassembly"] = "AI 生成 SAC 部件 {subassemblyName, xamlContent, categoryName?, description?, atcContent?, paramsXml?, outputPath?}——xamlContent 是 SAC 工作流 XAML（SAC 活动语法），插件自动生成 cfg/emd/pvd 模板并打包成 .pkt，返回 pktFilePath 后接 importSACSubassembly 导入",
       ["listCatchmentGroups"] = "查询汇水区组列表",
@@ -825,9 +848,9 @@ public static class CommandDispatcher
       ["listParcelSites"] = "查询地块场地（site）列表",
       ["listParcels"] = "查询地块列表 {siteName}",
       ["listPipeNetworks"] = "查询管网列表",
-      ["listPipePartsCatalog"] = "列出管道部件目录 {partsList?}",
+      ["listPipePartsCatalog"] = "列出管道部件目录 {partsList?} → {partsLists[{name,handle,parts[]}], partsListsCount, partsUnavailable?}——按 handle 去重；partsUnavailable=true 表示反射读不到部件族（parts[] 空是这个原因，不是列表本身为空）",
       ["listPointGroups"] = "查询点组列表",
-      ["listPressureNetworks"] = "查询压力管网列表",
+      ["listPressureNetworks"] = "查询压力管网列表 → 返回 networks[] / count / hint（无参数）——压力管网是独立子系统，和重力管网（listPipeNetworks）不是一回事；这里为空不代表重力管网为空",
       ["listProfiles"] = "查询纵断面列表 {alignmentName}",
       ["listSampleLineGroups"] = "查询采样线组列表 {alignmentName}",
       ["listSectionViews"] = "查询横断面图列表 {alignmentName?, sampleLineGroupName?}",
@@ -840,7 +863,8 @@ public static class CommandDispatcher
       ["listSurveyFigures"] = "查询测量图形列表 {databaseName?}",
       ["listSurveyObservations"] = "查询测量观测记录 {databaseName, networkName?, observationType?}",
       ["listTcMethods"] = "列出汇流时间计算方法",
-      ["listTexts"] = "读取图纸全部文字 {layer?, maxCount?, offset?}——layer 子串过滤+分页",
+      ["listTexts"] = "读取图纸全部文字 {layer?, maxCount?, offset?}——layer 子串过滤+分页；分页读同时回 nextOffset/hasMore/byteLimited（响应按字节预算收缩：maxResponseBytes，默认 64KB 摘要阈值的 70%）",
+      ["listTexts"] = "读取图纸全部文字 {layer?, maxCount?, offset?, pattern?, bbox?}——layer 子串过滤+分页；**返回 position{x,y,z} 与 rotation**；pattern 正则过滤内容，bbox:{x1,y1,x2,y2} 区域过滤（按变坡点归类标注就靠它）",
       ["loftSolid"] = "放样成实体 {crossSections:[handle], guides?:[handle], path?:handle, keepProfiles?, ruled?, closed?, draftStart?, draftEnd?, thickness?, bothSides?}——crossSections 至少 2 个闭合曲线（polyline/circle/ellipse/闭合 spline），thickness 默认 1；⚠️薄壳实体非实心（LoftedSurface+Thicken 链路），实心需 LOFT 命令兜底；同步返回 solidHandle",
       ["createNurbsSurface"] = "创建 NURBS 自由曲面 {uCount, vCount, points:[[x,y,z]], uDegree?, vDegree?, weights?:[], layer?}——points 必须正好 uCount*vCount 个、按 u 方向逐行排列；uCount 必须大于 uDegree（可缺省为 3，同理 vCount/uDegree/vDegree）；返回 handle",
       ["editNurbsControlPoints"] = "编辑NURBS曲面控制点 {handle, points?:[[u,v,x,y,z]绝对], moves?:[[u,v,dx,dy,dz]相对]}",
@@ -854,14 +878,16 @@ public static class CommandDispatcher
       ["moveEntities"] = "批量移动 {handles:[], dx, dy, dz?}",
       ["moveEntity"] = "移动单个图元 {handle, dx, dy}",
       ["closeDrawing"] = "关掉一张图纸 {name?, force?}——不弹保存对话框；没有文件路径的临时图直接关，有路径的正经图纸默认拒绝，force=true 才先存盘再关",
-      ["newDrawing"] = "新建图纸 {templatePath?}——创建新图纸（可选模板）；在 UI 线程(Idle)执行，需 AutoCAD 空闲",
-      ["openDrawing"] = "打开已有图纸 {path, readOnly?}——切换到指定 dwg（当前图有未保存修改会先自动保存）；半自动化多图工作流用",
+      ["newDrawing"] = "新建图纸 {templatePath?, auditFonts?, fontFallback?}——可带模板；模板字体也先体检（缺 SHX 回 fontPreflight）；在 UI 线程(Idle)执行",
+      ["openDrawing"] = "打开已有图纸 {path, readOnly?, auditFonts?, fontFallback?}——切换 dwg（当前图先自动保存）；打开前后体检字体，缺 SHX 时回 fontAudit{missing[], hint}",
+      ["auditFonts"] = "字体体检 {path?, deep?}——列出本机找不到的 SHX/TrueType（角色、影响字数、是否含中文、建议替代）；不给 path 查当前图纸；只读",
       ["offsetEntity"] = "偏移图元 {handle, distance, layer?}",
       ["openStormSanitaryAnalysis"] = "打开风暴/雨污分析模块 {}（命令投递：打开模块，无同步结果）",
       ["overkillEntities"] = "【已弃用】清理重复图元（已停投命令，不再入队；请改用 overkillGeo，同步返回真实结果）",
       ["planProductionPublishWorkflow"] = "图纸生产发布向导（多步）{outputPath, sheetSetName?, plotStyleTable?, paperSize?, layoutNames?:[]}",
-      ["profileAddCurve"] = "纵断面添加竖曲线 {alignmentName, passThroughX, passThroughY, radius}",
+      ["profileAddCurve"] = "纵断面在已有变坡点处添加竖曲线 {alignmentName, profileName, pviStation, length, curveType?}。曲线长度参数叫 length（不是 radius），也没有 passThroughX/passThroughY",
       ["profileAddPvi"] = "纵断面添加 PVI（变坡点） {alignmentName, profileName, station, elevation}",
+      ["profileAddPvis"] = "批量加纵断面变坡点 {alignmentName, profileName, items:[{station, elevation, curveLength?}]}——按桩号升序写入；curveLength>0 用对称抛物线设竖曲线；任一条非法则整体不动图",
       ["profileCheckKValues"] = "纵断面竖曲线 K 值检查 {alignmentName, profileName, designSpeed}",
       ["profileDeletePvi"] = "纵断面删除 PVI {alignmentName, profileName, station}",
       ["profileGetElevation"] = "读取纵断面某桩号高程 {alignmentName, profileName, station}",
@@ -876,7 +902,7 @@ public static class CommandDispatcher
       ["qcCheckCorridor"] = "廊道质检 {name}——检查廊道构建/代码集",
       ["qcCheckDrawingStandards"] = "图纸标准检查 {layerPrefix?, checkLineweights?, checkColors?}",
       ["qcCheckLabels"] = "标签质检——检查图纸标签样式/标准符合性 {objectType?, checkMissing?, checkStyleViolations?}",
-      ["qcCheckPipeNetwork"] = "管网质检 {name, minCover?, maxSlope?, minSlope?, minVelocity?, maxVelocity?}——检查管网连接/坡度/部件",
+      ["qcCheckPipeNetwork"] = "管网质检 {name, minCover?, maxSlope?, minSlope?, minVelocity?, maxVelocity?}——检查管网连接/坡度/部件；坡度阈值按百分数；返回 checksRun + thresholds；没给阈值时 totalViolations=0 只代表「连接完整性检查通过」，看 hint 或改用 analyzePipeNetworkHydraulics",
       ["qcCheckProfile"] = "纵断面质检 {alignmentName, profileName, maxGrade?, minKValue?}——检查纵断设计标准",
       ["qcCheckSurface"] = "曲面质检 {name, spikeThreshold?, flatTriangleThreshold?}——检查曲面数据/边界/标准",
       ["qcFixAndVerifyWorkflow"] = "质检修复+验证向导（多步）",
@@ -888,9 +914,9 @@ public static class CommandDispatcher
       ["qtyExportToCsv"] = "导出工程量 CSV {outputPath, filterNames:[], includeAlignments?, includeSurfaces?, includePipeNetworks?, includeParcelAreas?, includePointGroups?}",
       ["qtyMaterialListGet"] = "获取材料清单 {corridorName}",
       ["qtyParcelAreas"] = "计算地块面积 {parcelNames:[], siteName?}",
-      ["qtyPipeNetworkLengths"] = "统计管网长度 {name, groupBySize?, groupByMaterial?}",
+      ["qtyPipeNetworkLengths"] = "统计管网长度 {name, groupBySize?, groupByMaterial?} → {totalLength, pipeCount, breakdown[{key,length,count}], units, diameterUnit}——分组键按图纸单位（米制 mm / 英制 in，如「Ø450mm」/「Ø18.0in」）",
       ["qtyPointCountByGroup"] = "统计点组内点数 {groupNames:[]}",
-      ["qtyPressureNetworkLengths"] = "统计压力管网长度 {name, groupBySize?, groupByMaterial?}",
+      ["qtyPressureNetworkLengths"] = "统计压力管网长度 {name, groupBySize?, groupByMaterial?} → {totalLength, pipeCount, breakdown[], units, diameterUnit}——分组键按图纸单位（米制 mm / 英制 in）",
       ["qtySurfaceVolume"] = "计算曲面体积（工程量） {baseSurface, comparisonSurface, corridorName?}",
       ["rebuildCorridor"] = "重建廊道 {name}",
       ["redoDrawing"] = "重做被撤销的操作 {steps?}（命令投递：入队异步执行、无同步结果）",
@@ -910,7 +936,7 @@ public static class CommandDispatcher
       ["runLisp"] = "投递 LISP 表达式执行（操作类脚本，无返回值通道；查询类用专用方法） {lisp}",
       ["runoffDetentionWorkflow"] = "径流调蓄向导（多步）{drainageArea, areaUnits, runoffCoefficient, rainfallIntensity, intensityUnits, allowableOutflow, stormDuration?, detentionMethod?, sideSlope?, bottomWidth?, freeboardDepth?, basinSurfaceName?, bottomElevation?, topElevation?, elevationIncrement?, outletType?, outletDiameter?, weirLength?, dischargeCoefficient?}",
       ["runoffPipeWorkflow"] = "径流管道向导（多步）{networkName, drainageArea, areaUnits, runoffCoefficient, rainfallIntensity, intensityUnits, designFlowMultiplier?, tailwaterElevation?, manningsN?, minCoverDepth?, minVelocity?, maxVelocity?, minSlope?}",
-      ["sampleProfileElevations"] = "采样纵断面高程 {alignmentName, profileName, interval, startStation?, endStation?}",
+      ["sampleProfileElevations"] = "采样纵断面高程 {alignmentName, profileName, interval?, stations?, startStation?, endStation?} - 超出 profile 范围的桩号不再静默丢弃, 回 skippedStations + skippedStationCount + hint",
       ["sampleSurfaceElevations"] = "采样曲面高程（沿路线/多点） {name, method, gridSpacing, boundary:[], points:[], numSamples?}",
       ["saveDrawing"] = "保存当前图纸 {saveAs?}",
       ["saveSelection"] = "捕获当前 CAD 选择集写入快照（面板发送时自动调用） {}",
@@ -918,7 +944,7 @@ public static class CommandDispatcher
       ["scaleEntity"] = "缩放单个图元 {handle, factor, cx?, cy?}",
       ["scaleText"] = "缩放文字 {handles:[], scaleFactor}",
       ["sectionPlane"] = "创建截面平面（真 API Section，同步返回）{points:[[x,y,z]], verticalDir?, viewDir?}——points 至少 3 个（也接受 [{x,y,z}] 对象形式），verticalDir/viewDir 为三维向量 [x,y,z]（默认 [0,1,0] / [0,0,1]）",
-      ["selectByCriteria"] = "按条件选中 {layer?|layers?:[多图层数组/逗号分隔]|type?|types?:[多类型数组/逗号分隔]|blockName?|color?}，真正设置 CAD 选择集并同步快照（选择集经 LISP 投递；集内容可用 getSelectedCivilObjectsInfo 回读）",
+      ["selectByCriteria"] = "按条件选中 {layer?|layers?:[多图层数组/逗号分隔]|type?|types?:[多类型数组/逗号分隔]|blockName?|color?|maxCount?|offset?}，真正设置 CAD 选择集并同步快照（选择集经 LISP 投递；集内容可用 getSelectedCivilObjectsInfo 回读）；**offset 分页取全量**：一次 maxCount 默认 5000，超过就用 offset 接着取（offset 跳的是「匹配项」不是模型空间前 N 个）；matchedCount=模型空间精确匹配总数，handlesReturned=本次响应给了多少个 handle（maxCount 与字节预算只管返回列表），看 handlesTruncated/handlesOmitted/nextOffset",
       ["selectEntities"] = "按条件选中图元（参数同 selectByCriteria） {}（选择集经 LISP 投递；集内容可用 getSelectedCivilObjectsInfo 回读）",
       ["setCatchmentProperties"] = "设置汇水区属性 {catchmentName, runoffCoefficient?, manningsCoefficient?, curveNumber?, description?, newName?}",
       ["setCorridorTargetMappings"] = "设置廊道目标映射 {corridorName, targets:[], regionIndex?, baselineIndex?}",
@@ -966,11 +992,68 @@ public static class CommandDispatcher
       ["watershedRunoffWorkflow"] = "流域径流向导（多步）{surfaceName, runoffCoefficient, rainfallIntensity, intensityUnits, outletX?, outletY?, findLowPointSampleSpacing?, gridSpacing?, searchRadius?, catchmentSampleSpacing?, maxDistance?, runoffAreaUnits?}",
       ["writeBlock"] = "写块到文件（SaveAs 覆盖被 xref 锁定文件会失败，换新路径） {handle, filePath}",
     };
-    return Task.FromResult<object?>(new Dictionary<string, object?>
+    // 2026-11-14: filter 真正生效。此前签名是 ListMethodsAsync()，对外却宣传"支持 filter 参数过滤"，
+    //   任何客户端传 filter 都会被静默忽略（实测 filter=superelev 仍回 435 条）。现在按 名称+描述 双字段做 AND 匹配，
+    //   并支持 limit/offset 分页；不带 filter 时行为与旧版完全一致（count/methods/descriptions 三个键不变）。
+    var filter = PluginRuntime.GetOptionalString(parameters, "filter");
+    var limit = PluginRuntime.GetOptionalInt(parameters, "limit") ?? 0;
+    var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
+    var total = sorted.Count;
+    if (!string.IsNullOrWhiteSpace(filter))
+    {
+      var terms = filter.Split(new[] { ' ', ',', '，', '|' }, StringSplitOptions.RemoveEmptyEntries)
+        .Select(t => t.Trim().ToLowerInvariant()).Where(t => t.Length > 0).ToArray();
+      sorted = sorted.Where(n =>
+      {
+        var nl = n.ToLowerInvariant();
+        var dl = descriptions.TryGetValue(n, out var d) ? (d ?? string.Empty).ToLowerInvariant() : string.Empty;
+        return terms.All(t => nl.Contains(t) || dl.Contains(t));
+      }).ToList();
+    }
+    if (offset > 0) sorted = sorted.Skip(offset).ToList();
+    if (limit > 0 && sorted.Count > limit) sorted = sorted.Take(limit).ToList();
+    var descriptionsOut = new Dictionary<string, string>();
+    foreach (var n in sorted) { if (descriptions.TryGetValue(n, out var dd)) descriptionsOut[n] = dd; }
+
+    // 2026-11-23 P34: ResultSummarizer 在 64KB 会把整个清单换成摘要 —— AI 就"看不见"方法清单了
+    //   （2026-11-17 踩过一次：描述加长一点就整包被换）。描述只会越写越长，所以在出口自己按字节
+    //   预算裁：超预算就把每条描述截短并如实标明；要某条完整描述用 listMethods{filter:"方法名"} 单查
+    //   （filter 同时匹配方法名和描述文本）。
+    long Measure() => JsonRpcProtocol.EstimateBytes(new Dictionary<string, object?>
     {
       ["count"] = sorted.Count,
       ["methods"] = sorted,
-      ["descriptions"] = descriptions,
+      ["descriptions"] = descriptionsOut,
+    });
+    var approxBytes = Measure();
+    var descriptionsTruncated = false;
+    if (approxBytes > DescriptionByteBudget)
+    {
+      var cap = 240;
+      while (approxBytes > DescriptionByteBudget && cap >= 60)
+      {
+        var trimmed = new Dictionary<string, string>(descriptionsOut.Count);
+        foreach (var kv in descriptionsOut)
+          trimmed[kv.Key] = kv.Value.Length > cap ? kv.Value.Substring(0, cap) + "…" : kv.Value;
+        descriptionsOut = trimmed;
+        approxBytes = Measure();
+        descriptionsTruncated = true;
+        cap -= 40;
+      }
+    }
+    return Task.FromResult<object?>(new Dictionary<string, object?>
+    {
+      ["count"] = sorted.Count,
+      ["total"] = total,
+      ["offset"] = offset,
+      ["filter"] = filter ?? string.Empty,
+      ["methods"] = sorted,
+      ["descriptions"] = descriptionsOut,
+      ["descriptionsTruncated"] = descriptionsTruncated,
+      ["descriptionsByteEstimate"] = approxBytes,
+      ["descriptionsNote"] = descriptionsTruncated
+        ? "Descriptions are truncated to keep this response under the 64KB summarizer threshold. Ask listMethods{filter:'<methodName>'} for the full text of one method."
+        : null,
       // 2026-10-27 v1.11.0-fix2: 纯 AutoCAD 宿主下明确告知能力边界，避免 AI 反复试 Civil 3D 方法
       ["civilAvailable"] = CivilSupport.Available,
       ["hostNote"] = CivilSupport.Available ? null : CivilSupport.NotInstalledMessage,

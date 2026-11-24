@@ -79,7 +79,8 @@ public static class ResultSummarizer
       ["originalBytes"] = bytes,
       ["thresholdBytes"] = threshold,
       ["truncations"] = truncations,
-      ["note"] = "The result is too large and was truncated along its original structure (prefix preserved); use fullAvailableVia for the full payload",
+      // 2026-11-17 P23: 说明里必须点出"计数已经跟着改了" —— 否则调用方会以为 count 还是裁剪前的数。
+      ["note"] = "The result is too large and was truncated along its original structure (prefix preserved). Counters that referred to the returned arrays (count/returned/returnedCount) were updated to what you actually received - see truncations[].countersAdjusted; totals such as total/requested are unchanged. Use fullAvailableVia for the full payload",
       ["fullAvailableVia"] = FullVia(method, parameters),
     };
     root["_summarized"] = JsonSerializer.SerializeToNode(summary);
@@ -101,10 +102,18 @@ public static class ResultSummarizer
     return new Outcome(root, root.ToJsonString(), true);
   }
 
-  /// <summary>找当前最占体积的数组（深度 ≤ 4），保留前缀一半（至少 1 个元素）</summary>
+  /// <summary>
+  /// 找当前最占体积的数组（深度 ≤ 4），保留前缀一半（至少 1 个元素）。
+  /// 2026-11-17 P23：**裁剪后必须把同级的计数/截断标记一起改对**。
+  ///   真机事故：getEntitiesByLayer 说 count=1808、truncated=false，实际只有 452 条 —— 数组被本类剪了，
+  ///   方法自己写的计数不知道。现在裁剪时同步：与 originalCount 相等的计数键改成 keptCount、truncated 置 true、
+  ///   并补一个 returnedCount 明确"这次真的给了几条"。
+  /// </summary>
   private static bool ShrinkLargestArray(JsonNode node, List<object?> truncations)
   {
     JsonArray? biggest = null;
+    JsonObject? biggestParent = null;
+    string biggestKey = string.Empty;
     long biggestBytes = 0;
     string biggestPath = string.Empty;
 
@@ -118,11 +127,22 @@ public static class ResultSummarizer
           if (kv.Value is JsonArray arr)
           {
             var b = Encoding.UTF8.GetByteCount(arr.ToJsonString());
-            if (arr.Count > 1 && b > biggestBytes) { biggest = arr; biggestBytes = b; biggestPath = path + "/" + kv.Key; }
+            if (arr.Count > 1 && b > biggestBytes)
+            {
+              biggest = arr;
+              biggestParent = obj;
+              biggestKey = kv.Key;
+              biggestBytes = b;
+              biggestPath = path + "/" + kv.Key;
+            }
             Walk(arr, path + "/" + kv.Key, depth + 1);
           }
           else Walk(kv.Value, path + "/" + kv.Key, depth + 1);
         }
+      }
+      else if (current is JsonArray outer)
+      {
+        for (var i = 0; i < outer.Count; i++) Walk(outer[i], path + "/" + i, depth + 1);
       }
     }
     Walk(node, "", 0);
@@ -131,13 +151,80 @@ public static class ResultSummarizer
     var original = biggest.Count;
     var keep = Math.Max(1, original / 2);
     while (biggest.Count > keep) biggest.RemoveAt(biggest.Count - 1);
+    var adjusted = biggestParent == null ? new List<string>() : RepairCounters(biggestParent, biggestKey, original, keep);
     truncations.Add(new Dictionary<string, object?>
     {
       ["path"] = biggestPath,
       ["originalCount"] = original,
       ["keptCount"] = keep,
+      ["countersAdjusted"] = adjusted,
     });
     return true;
+  }
+
+  /// <summary>
+  /// 被裁剪数组的同级计数修正：只动"值与裁剪前条数相等"的计数键（等价于"本次返回条数"），
+  /// 不动 total/requested 这类"匹配总数"，避免把真实总量改小。返回被改过的键名。
+  /// </summary>
+  private static List<string> RepairCounters(JsonObject parent, string arrayKey, int originalCount, int keptCount)
+  {
+    var adjusted = new List<string>();
+    foreach (var key in parent.Select(kv => kv.Key).ToList())
+    {
+      if (string.Equals(key, arrayKey, StringComparison.Ordinal)) continue;
+      var node = parent[key];
+      if (node is not JsonValue value) continue;
+      if (string.Equals(key, "truncated", StringComparison.OrdinalIgnoreCase))
+      {
+        if (value.TryGetValue<bool>(out var flag) && !flag)
+        {
+          parent[key] = true;
+          adjusted.Add(key);
+        }
+        continue;
+      }
+      if (!IsCountLikeKey(key)) continue;
+      if (!TryReadInt(value, out var number)) continue;
+      if (number != originalCount) continue;
+      parent[key] = keptCount;
+      adjusted.Add(key);
+    }
+    if (!parent.ContainsKey("returnedCount")) parent["returnedCount"] = keptCount;
+    else parent["returnedCount"] = keptCount;
+    return adjusted;
+  }
+
+  private static bool IsCountLikeKey(string key)
+  {
+    switch (key.ToLowerInvariant())
+    {
+      case "count":
+      case "returned":
+      case "returnedcount":
+      case "entitiesreturned":
+      case "itemcount":
+      case "items":
+      case "matched":
+      case "matchedcount":
+      case "samplecount":
+      case "textscount":
+      case "featurelines":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private static bool TryReadInt(JsonValue value, out int number)
+  {
+    number = 0;
+    if (value.TryGetValue<int>(out number)) return true;
+    if (value.TryGetValue<double>(out var asDouble))
+    {
+      number = (int)asDouble;
+      return Math.Abs(asDouble - number) < 1e-9;
+    }
+    return false;
   }
 
   /// <summary>找最长的字符串，砍一半（至少留 200 字符）</summary>

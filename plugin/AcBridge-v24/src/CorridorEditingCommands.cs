@@ -26,7 +26,7 @@ public static class CorridorEditingCommands
 
   public static Task<object?> GetCorridorTargetMappingsAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = GetCorridorName(parameters);
     var regionIndex = PluginRuntime.GetOptionalInt(parameters, "regionIndex");
     var baselineIndex = PluginRuntime.GetOptionalInt(parameters, "baselineIndex") ?? 0;
 
@@ -68,7 +68,7 @@ public static class CorridorEditingCommands
 
   public static Task<object?> SetCorridorTargetMappingsAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = GetCorridorName(parameters);
     var regionIndex = PluginRuntime.GetOptionalInt(parameters, "regionIndex") ?? 0;
     var baselineIndex = PluginRuntime.GetOptionalInt(parameters, "baselineIndex") ?? 0;
     var targetsNode = PluginRuntime.GetParameter(parameters, "targets") as JsonArray
@@ -123,9 +123,39 @@ public static class CorridorEditingCommands
   // addCorridorRegion
   // -------------------------------------------------------------------------
 
+  // 2026-11-16 P6: corridorName / name 两个名字都收。
+  //   面板 AI 和人都容易只记得一个（我自己就踩过：addCorridorSurface 用 name、addCorridorRegion 要 corridorName，
+  //   报 "Missing required parameter 'corridorName'" 时根本看不出是同一个东西）。
+  internal static string GetCorridorName(JsonObject? parameters)
+  {
+    var v = PluginRuntime.GetOptionalString(parameters, "corridorName")
+      ?? PluginRuntime.GetOptionalString(parameters, "name");
+    if (string.IsNullOrWhiteSpace(v))
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+        "This method requires the corridor name: pass 'corridorName' (or its alias 'name').");
+    return v;
+  }
+
+  // 2026-11-16: 廊道断面采样频率。以前 frequency/frequencyAtCurves 是死参数（读了不用），
+  //   廊道只在几何点建断面 —— 弯道处断面间距可达数十米 → 廊道呈折线、曲面面积系统性虚高。
+  //   真实 API: BaselineRegion.AppliedAssemblySetting.FrequencyAlongTangents/FrequencyAlongCurves。
+  private static void ApplyRegionFrequency(BaselineRegion region, double frequency, double frequencyAtCurves)
+  {
+    var applied = region.AppliedAssemblySetting;
+    if (applied == null) return;
+    if (frequency > 0)
+    {
+      applied.FrequencyAlongTangents = frequency;
+      applied.FrequencyAlongCurves = frequencyAtCurves > 0 ? frequencyAtCurves : frequency;
+      applied.FrequencyAlongSpirals = frequencyAtCurves > 0 ? frequencyAtCurves : frequency;
+    }
+    applied.AppliedAtHorizontalGeometryPoints = true;
+    applied.AppliedAtProfileGeometryPoints = true;
+  }
+
   public static Task<object?> AddCorridorRegionAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = GetCorridorName(parameters);
     var baselineIndex = PluginRuntime.GetOptionalInt(parameters, "baselineIndex") ?? 0;
     var assemblyName = PluginRuntime.GetRequiredString(parameters, "assemblyName");
     var startStation = PluginRuntime.GetRequiredDouble(parameters, "startStation");
@@ -167,6 +197,34 @@ public static class CorridorEditingCommands
       {
         newRegion = baseline.BaselineRegions.Add(regionName, assemblyId);
       }
+      // 2026-11-16 fix: frequency params were dead —— frequency / frequencyAtCurves /
+      //   frequencyAtKneePoints 只读不用，廊道只在几何点建断面（弯道处可达数十米一个），
+      //   结果是廊道呈折线、廊道曲面面积系统性虚高（实测 200 m 段 +13%，点数 143/242 与频率无关）。
+      //   真实 API（api-inspect 确认）: BaselineRegion.AppliedAssemblySetting.
+      //     FrequencyAlongTangents / FrequencyAlongCurves / FrequencyAlongSpirals。
+      double? appliedTangent = null, appliedCurve = null;
+      try
+      {
+        var applied = newRegion.AppliedAssemblySetting;
+        if (applied != null)
+        {
+          if (frequency > 0)
+          {
+            applied.FrequencyAlongTangents = frequency;
+            applied.FrequencyAlongCurves = frequencyAtCurves > 0 ? frequencyAtCurves : frequency;
+            applied.FrequencyAlongSpirals = frequencyAtCurves > 0 ? frequencyAtCurves : frequency;
+          }
+          applied.AppliedAtHorizontalGeometryPoints = true;
+          applied.AppliedAtProfileGeometryPoints = true;
+          appliedTangent = applied.FrequencyAlongTangents;
+          appliedCurve = applied.FrequencyAlongCurves;
+        }
+      }
+      catch (System.Exception ex)
+      {
+        throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+          $"Region '{regionName}' was created but its sampling frequency could not be applied: {ex.Message}");
+      }
       var newRegionIndex = baseline.BaselineRegions.IndexOf(newRegion);
       var actualStart = newRegion.StartStation;
       var actualEnd = newRegion.EndStation;
@@ -183,6 +241,8 @@ public static class CorridorEditingCommands
         ["assemblyName"] = assemblyName,
         ["startStation"] = actualStart,
         ["endStation"] = actualEnd,
+        ["frequencyAlongTangents"] = appliedTangent,
+        ["frequencyAlongCurves"] = appliedCurve,
         ["message"] = $"Region '{regionName}' added to corridor '{corridorName}' at stations {actualStart:F3}–{actualEnd:F3}.",
       };
     });
@@ -199,7 +259,7 @@ public static class CorridorEditingCommands
   // Corridor.StyleId 可写；Corridor.Rebuild() 存在
   public static Task<object?> CreateCorridorAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = GetCorridorName(parameters);
     var alignmentName = PluginRuntime.GetRequiredString(parameters, "alignmentName");
     var assemblyName = PluginRuntime.GetRequiredString(parameters, "assemblyName");
     var baselineName = PluginRuntime.GetOptionalString(parameters, "baselineName") ?? "Baseline-1";
@@ -209,6 +269,9 @@ public static class CorridorEditingCommands
     var profileName = PluginRuntime.GetOptionalString(parameters, "profileName");
     var surfaceName = PluginRuntime.GetOptionalString(parameters, "surfaceName");
     var styleName = PluginRuntime.GetOptionalString(parameters, "style");
+    // 2026-11-16: 断面采样频率（默认 10 m；以前廊道一律只在几何点建断面 → 折线）
+    var frequency = PluginRuntime.GetOptionalDouble(parameters, "frequency") ?? 10.0;
+    var frequencyAtCurves = PluginRuntime.GetOptionalDouble(parameters, "frequencyAtCurves") ?? frequency;
 
     // 2026-09-28 D3: 走再生护栏（App.Idle 路径，见 CivilExecution.RegeneratingOperations）
     return CivilExecution.WriteViaIdleAsync<object?>((doc, civilDoc, database, transaction) =>
@@ -218,8 +281,8 @@ public static class CorridorEditingCommands
       {
         var c = CivilObjectUtils.GetRequiredObject<Corridor>(transaction, cid, OpenMode.ForRead);
         if (string.Equals(c.Name, corridorName, StringComparison.OrdinalIgnoreCase))
-          throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
-            $"Corridor '{corridorName}' already exists.");
+          throw new JsonRpcDispatchException("CIVIL3D.CONFLICT",
+            $"Corridor '{corridorName}' already exists. Use another name, or delete the existing corridor first.");
       }
 
       // 找路线
@@ -253,6 +316,34 @@ public static class CorridorEditingCommands
       {
         corridorId = civilDoc.CorridorCollection.Add(
           corridorName, baselineName, alignment.ObjectId, profileId, regionName, assemblyId);
+        // 2026-11-16 fix: clamp region —— 上面这个重载没有桩号参数，region 会默认覆盖整条路线。
+        //   调用方传了 startStation/endStation 就必须真生效：实测传 0–200 却建成 0–8919.89，
+        //   8.9 km 弯道一次成型的廊道曲面 TIN 会跨接，area2d 虚高 46 倍（3.97e6 vs 85.6e3）。
+        var clampCorridor = CivilObjectUtils.GetRequiredObject<Corridor>(transaction, corridorId, OpenMode.ForWrite);
+        if (clampCorridor.Baselines.Count > 0 && clampCorridor.Baselines[0].BaselineRegions.Count > 0)
+        {
+          var clampRegion = clampCorridor.Baselines[0].BaselineRegions[0];
+          var wantedStart = Math.Min(startStation.Value, endStation.Value);
+          var wantedEnd = Math.Max(startStation.Value, endStation.Value);
+          try
+          {
+            clampRegion.StartStation = wantedStart;
+            clampRegion.EndStation = wantedEnd;
+          }
+          catch (System.Exception ex)
+          {
+            throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+              $"Corridor '{corridorName}' was created but its region could not be limited to {wantedStart}–{wantedEnd}: {ex.Message}");
+          }
+          var gotStart = clampRegion.StartStation;
+          var gotEnd = clampRegion.EndStation;
+          if (Math.Abs(gotStart - wantedStart) > 1e-6 || Math.Abs(gotEnd - wantedEnd) > 1e-6)
+            throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+              $"Corridor '{corridorName}' region did not take the requested station range (asked {wantedStart}–{wantedEnd}, got {gotStart}–{gotEnd}).");
+          startStation = wantedStart;
+          endStation = wantedEnd;
+        }
+        ApplyRegionFrequency(clampCorridor.Baselines[0].BaselineRegions[0], frequency, frequencyAtCurves);
       }
       else if (!profileId.IsNull)
       {
@@ -269,7 +360,8 @@ public static class CorridorEditingCommands
         corridorId = civilDoc.CorridorCollection.Add(corridorName);
         var corridor = CivilObjectUtils.GetRequiredObject<Corridor>(transaction, corridorId, OpenMode.ForWrite);
         var baseline = corridor.Baselines.Add(baselineName, alignment.ObjectId, ObjectId.Null);
-        baseline.BaselineRegions.Add(regionName, assemblyId, startStation.Value, endStation.Value);
+        var addedRegion = baseline.BaselineRegions.Add(regionName, assemblyId, startStation.Value, endStation.Value);
+        ApplyRegionFrequency(addedRegion, frequency, frequencyAtCurves);
         corridor.Rebuild();
         return BuildCorridorResult(civilDoc, transaction, corridor, corridorName, alignmentName,
           assemblyName, profileName, surfaceName, styleName, startStation, endStation, regionName);
@@ -279,7 +371,8 @@ public static class CorridorEditingCommands
         corridorId = civilDoc.CorridorCollection.Add(corridorName);
         var corridor = CivilObjectUtils.GetRequiredObject<Corridor>(transaction, corridorId, OpenMode.ForWrite);
         var baseline = corridor.Baselines.Add(baselineName, alignment.ObjectId, ObjectId.Null);
-        baseline.BaselineRegions.Add(regionName, assemblyId);
+        var addedRegion2 = baseline.BaselineRegions.Add(regionName, assemblyId);
+        ApplyRegionFrequency(addedRegion2, frequency, frequencyAtCurves);
         corridor.Rebuild();
         return BuildCorridorResult(civilDoc, transaction, corridor, corridorName, alignmentName,
           assemblyName, profileName, surfaceName, styleName, startStation, endStation, regionName);
@@ -334,6 +427,14 @@ public static class CorridorEditingCommands
     var asBreak = PluginRuntime.GetOptionalBool(parameters, "asBreakLine") ?? true;
     // 2026-09-21: 是否等曲面真正生成完成再报完成（默认 true）。false = 旧"秒回"行为，用于 A/B 对比。
     var waitForBuild = PluginRuntime.GetOptionalBool(parameters, "waitForBuild") ?? true;
+    // 2026-11-16 P2: purpose 决定"自动收全部码"该不该发生。
+    //   实测同一条 200 m 廊道：全码 10 个 → area2d +12.66%；只挂 Surface → -15.59%。
+    //   全码曲面是把路面、各层底、沟壁全三角化到一起，面积没有物理意义。
+    //   display（默认）= 可视化，全码；quantity = 量算，必须显式给 codes，否则拒绝。
+    var purpose = (PluginRuntime.GetOptionalString(parameters, "purpose") ?? "display").Trim().ToLowerInvariant();
+    if (purpose != "display" && purpose != "quantity")
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+        $"addCorridorSurface purpose must be 'display' or 'quantity', got '{purpose}'.");
 
     var codes = new List<string>();
     if (codesNode != null)
@@ -345,6 +446,13 @@ public static class CorridorEditingCommands
       }
     }
     bool auto = codes.Count == 0;
+    if (auto && purpose == "quantity")
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+        "addCorridorSurface with purpose=quantity requires an explicit 'codes' list " +
+        "(auto-collecting every link code mounts overlapping faces and makes area2d meaningless). " +
+        "Typical finish surface: codes=[\"Surface\",\"DitchTop\"]; pavement layers: codes=[\"L1Bot\",\"L2Bot\",\"L3Bot\",\"L4Bot\"].");
+    }
 
     var requestId = PluginRuntime.GetCurrentRequestId();
     var job = JobRegistry.Create(
@@ -395,24 +503,46 @@ public static class CorridorEditingCommands
                 var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
+                  // 2026-11-15: 只取 index 0 实测拿到空集合（廊道刚建好时首个 applied assembly 的 Links 还没填），
+                  //   改成试探前几个桩号位置的 applied assembly，任一非空即可收集到链接码。
+                  int scannedAa = 0;
                   foreach (Autodesk.Civil.DatabaseServices.Baseline b in corridor.Baselines)
                   {
-                    var aa = b.GetAppliedAssemblyAtIndex(0);
-                    if (aa == null) continue;
-                    foreach (var lk in aa.Links)
+                    for (int ai = 0; ai < 4; ai++)
                     {
-                      foreach (var cd in lk.CorridorCodes)
+                      Autodesk.Civil.DatabaseServices.AppliedAssembly? aa = null;
+                      try { aa = b.GetAppliedAssemblyAtIndex(ai); }
+                      catch (System.Exception) { break; }   // index past the end -> next baseline
+                      if (aa == null) continue;
+                      scannedAa++;
+                      try
                       {
-                        var t = cd?.ToString();
-                        if (!string.IsNullOrWhiteSpace(t)) set.Add(t!);
+                        foreach (var lk in aa.Links)
+                        {
+                          foreach (var cd in lk.CorridorCodes)
+                          {
+                            var t = cd?.ToString();
+                            if (!string.IsNullOrWhiteSpace(t)) set.Add(t!);
+                          }
+                        }
                       }
+                      catch (System.Exception) { /* this index's links are not materialised yet */ }
                     }
                   }
+                  try { PluginLog.Info("Corridor", "addCorridorSurface auto-collect scanned applied assemblies=" + scannedAa + " distinctCodes=" + set.Count); } catch { }
                 }
                 catch (System.Exception ex) { PluginLog.Warn("Corridor", "failed to auto-collect corridor link codes (they may not be attachable): " + ex.Message); }
                 linkCodes = set.ToList();
               }
 
+              // 2026-11-15: 廊道还没建过（applied assemblies=0）时自动收集必然拿到空集合，
+              //   以前会安静地建出一个永远没有三角形的空曲面 —— 这里改成明确报错，叫调用方先 rebuildCorridor。
+              if (auto && linkCodes.Count == 0)
+              {
+                throw new JsonRpcDispatchException(
+                  "CIVIL3D.INVALID_INPUT",
+                  $"Corridor '{corridorName}' has no applied assemblies yet (0 scanned), so link codes cannot be collected. Call rebuildCorridor \"{corridorName}\" first, then addCorridorSurface again (or pass 'codes' explicitly).");
+              }
               try { PluginLog.Info("Corridor", "addCorridorSurface " + "step3: codes=" + string.Join(",", linkCodes)); } catch { }
               var added = new List<string>();
               foreach (var code in linkCodes)
@@ -445,7 +575,9 @@ public static class CorridorEditingCommands
                 ["corridorName"] = corridor.Name,
                 ["surfaceName"] = csName,
                 ["surfaceId"] = sid,
+                ["purpose"] = purpose,
                 ["addedLinkCodes"] = added,
+                ["quantitySafe"] = !auto,
                 ["surfaceLinkCodes"] = surfaceCodes,
                 ["isBuild"] = isBuild,
                 ["autoCollected"] = auto,
@@ -458,37 +590,14 @@ public static class CorridorEditingCommands
             // 2026-09-21 / 2026-09-28 D3: commit 返回后 C3D 仍会异步再生曲面；统一走再生护栏等待。
             bool buildReady = false;
             long waitedMs = 0;
+            // 2026-11-15: 不再在本 job 里轮询等待再生。
+            //   实测：commit 后 C3D 在 UI 线程自己重建廊道，期间 App.Idle 不触发；
+            //   原轮询走 ReadViaIdleAsync，每次都要等满 20s 再抛 OPERATION_TIMEOUT，
+            //   把宿主拖进 HOST_BUSY（随后 getSurfaceStatistics / saveDrawing 全失败）。
+            //   现在只如实上报 pendingRegeneration，由调用方显式 rebuildCorridor 之后再验证。
             if (waitForBuild)
             {
-              var regenerated = await CivilExecution.WaitForRegenerationAsync(async () =>
-              {
-                try
-                {
-                  return await CivilExecution.ReadViaIdleAsync((doc, civilDoc, database, transaction) =>
-                  {
-                    var corridor = CivilObjectUtils.FindCorridorByName(civilDoc, transaction, corridorName, OpenMode.ForRead);
-                    foreach (Autodesk.Civil.DatabaseServices.CorridorSurface c in corridor.CorridorSurfaces)
-                    {
-                      if (!string.Equals(c.Name, surfaceName, StringComparison.OrdinalIgnoreCase)) continue;
-                      if (c.SurfaceId.IsNull) return false;
-                      var surf = transaction.GetObject(c.SurfaceId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Surface;
-                      if (surf is Autodesk.Civil.DatabaseServices.TinSurface tin)
-                      {
-                        return tin.GetTinProperties().NumberOfTriangles > 0;
-                      }
-                      return surf != null;
-                    }
-                    return false;
-                  });
-                }
-                catch (Exception ex)
-                {
-                  try { PluginLog.Info("Corridor", "addCorridorSurface wait poll: " + ex.GetType().Name + " " + ex.Message); } catch { }
-                  return false;
-                }
-              });
-              buildReady = regenerated.ready;
-              waitedMs = regenerated.waitedMs;
+              try { PluginLog.Info("Corridor", "addCorridorSurface: waitForBuild requested, but polling is disabled (host would go HOST_BUSY); call rebuildCorridor instead."); } catch { }
             }
             try { PluginLog.Info("Corridor", "addCorridorSurface buildReady=" + buildReady + " waitedMs=" + waitedMs); } catch { }
             if (result is Dictionary<string, object?> rd)
@@ -569,7 +678,7 @@ public static class CorridorEditingCommands
 
   public static Task<object?> DeleteCorridorRegionAsync(JsonObject? parameters)
   {
-    var corridorName = PluginRuntime.GetRequiredString(parameters, "corridorName");
+    var corridorName = GetCorridorName(parameters);
     var baselineIndex = PluginRuntime.GetOptionalInt(parameters, "baselineIndex") ?? 0;
     var regionIndex = PluginRuntime.GetRequiredInt(parameters, "regionIndex");
 

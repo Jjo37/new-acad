@@ -26,11 +26,13 @@ const { moduleIdOf, assertionsFromSteps } = require('./trust-model.js');
 const ROOT = process.env.WORKFLOW_STORE_ROOT || path.join(__dirname, '..');   // test hook: point the store at a temp dir
 const KEEP_PER_SCOPE = 200;
 
+// 2026-11-14: 命名规则统一到 project-scope.js —— 原先这里 slice(0,64) 且替换 '.'，
+// 把 100 字符的项目名切成 "...TO LOLO"，工作流记录因此落到与 agent-work 不同的幽灵目录。
+const { sanitizeProjectName } = require('./project-scope');
 function sanitizeProject(name) {
   const s = String(name || '').trim();
   if (!s) return '';
-  const cleaned = s.replace(/[\\/:*?"<>|.]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
-  return cleaned || '';
+  return sanitizeProjectName(s) === 'unnamed' ? '' : sanitizeProjectName(s);
 }
 
 function scopeDir(project) {
@@ -120,7 +122,7 @@ function roleOf(method) {
   return 'act';
 }
 
-// calls[] entries come from llm-agent: { method, params, blocked?, ok?, errCode?, ms?, bytes? }
+// calls[] entries come from llm-agent: { method, params, blocked?, ok?, errCode?, errMsg?, ms?, bytes? }
 function toSteps(calls) {
   const steps = [];
   let i = 0;
@@ -144,6 +146,8 @@ function toSteps(calls) {
       bytes: typeof c.bytes === 'number' ? c.bytes : null,
       ok: c.ok !== false,
       errCode: c.errCode || '',
+      // 2026-11-14: 记录错误原文（≤300 字）。原来只有 errCode，事后复盘看不出“到底哪个参数错了”，只能重跑。
+      errMsg: c.ok === false ? String(c.errMsg || '').slice(0, 300) : '',
       fp: c.fp || '',            // 结果指纹（回放时对比）
       handlesOut: Array.isArray(c.handlesOut) ? c.handlesOut.slice(0, 8) : [],   // P2.3: 本步产出的句柄
       role: roleOf(c.method),

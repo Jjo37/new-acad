@@ -100,6 +100,9 @@ public static class PointGroupCommands
     var groupName = PluginRuntime.GetOptionalString(parameters, "groupName");
     var numbersNode = PluginRuntime.GetParameter(parameters, "pointNumbers") as JsonArray;
     var delimiter = PluginRuntime.GetOptionalString(parameters, "delimiter") ?? ",";
+    // 2026-11-18 P32: 2405 个点的 pnezd 就 ~50KB，6 万点的项目图上直接吐几 MB ——
+    // 超 64KB 会被 ResultSummarizer 砍成一半且形状不定。这里按字节预算只吐前 N 行，并自证截断。
+    var byteBudget = BulkResponse.ResolveBudget(parameters);
 
     return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
     {
@@ -119,11 +122,15 @@ public static class PointGroupCommands
 
       var sb = new StringBuilder();
       var exportedCount = 0;
+      var bytes = 0;
+      var truncated = false;
+      var selectedCount = 0;
 
       foreach (ObjectId objectId in civilDoc.CogoPoints)
       {
         var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, OpenMode.ForRead);
         if (allowedNumbers != null && !allowedNumbers.Contains(point.PointNumber)) continue;
+        selectedCount++;
 
         var line = format switch
         {
@@ -135,17 +142,27 @@ public static class PointGroupCommands
           _ => throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"Unsupported export format: {format}"),
         };
 
-        sb.AppendLine(line);
+        var lineWithBreak = line + "\n";
+        var size = System.Text.Encoding.UTF8.GetByteCount(lineWithBreak);
+        if (exportedCount > 0 && bytes + size > byteBudget) { truncated = true; break; }
+        sb.Append(lineWithBreak);
+        bytes += size;
         exportedCount++;
       }
 
-      return new Dictionary<string, object?>
+      var payload = new Dictionary<string, object?>
       {
         ["format"] = format,
+        ["selectedCount"] = selectedCount,
         ["exportedCount"] = exportedCount,
+        ["truncated"] = truncated,
+        ["responseByteBudget"] = byteBudget,
         ["data"] = sb.ToString(),
         ["units"] = CivilObjectUtils.LinearUnits(database),
       };
+      if (truncated)
+        payload["hint"] = "Response hit the byte budget - only the first exportedCount of selectedCount points are in data. Narrow with pointNumbers / groupName, or raise maxResponseBytes (fullResult:true lifts the 90% cap).";
+      return payload;
     });
   }
 

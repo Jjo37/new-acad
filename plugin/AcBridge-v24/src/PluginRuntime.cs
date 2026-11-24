@@ -61,6 +61,45 @@ public static class PluginRuntime
     return DefaultPort;
   }
 
+  /// <summary>
+  /// 缺字体时是否自动把映射写进 AutoCAD 自己的 acad.fmp（2026-11-23 P34.1）。
+  /// 优先级 = 环境变量 CIVIL3D_AUTO_FONT_MAPPING（0/1/true/false）→ config.json autoFontMapping → 默认 true。
+  /// 关掉后仍然体检并如实回报缺失字体，只是不再改用户机器上的 acad.fmp。
+  /// 刻意不缓存：只在 openDrawing/newDrawing 用，一次开图读一次文件不值一提，换来改配置立即生效。
+  /// </summary>
+  public static bool AutoFontMapping => ResolveAutoFontMapping();
+
+  private static bool ResolveAutoFontMapping()
+  {
+    var env = Environment.GetEnvironmentVariable("CIVIL3D_AUTO_FONT_MAPPING");
+    if (!string.IsNullOrWhiteSpace(env))
+    {
+      var v = env!.Trim().ToLowerInvariant();
+      if (v is "0" or "false" or "off" or "no") return false;
+      if (v is "1" or "true" or "on" or "yes") return true;
+    }
+    try
+    {
+      var root = ProjectRoot();
+      if (!string.IsNullOrEmpty(root))
+      {
+        var cfgPath = Path.Combine(root, "config.json");
+        if (File.Exists(cfgPath))
+        {
+          var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(cfgPath));
+          if (json is System.Text.Json.Nodes.JsonObject jo && jo["autoFontMapping"] != null)
+          {
+            var raw = (JsonNodeToString(jo["autoFontMapping"]) ?? "").Trim().ToLowerInvariant();
+            if (raw is "0" or "false" or "off" or "no") return false;
+            if (raw is "1" or "true" or "on" or "yes") return true;
+          }
+        }
+      }
+    }
+    catch (System.Exception ex) { PluginLog.Warn("Runtime", "failed to read autoFontMapping from config.json (defaulting to on): " + ex.Message); }
+    return true;
+  }
+
   public const int DefaultRelayPort = 19876;
 
   /// <summary>旧版安装残留提示（空串表示无）。2026-09-14 商店版冲突防护。</summary>
@@ -554,7 +593,11 @@ public static class PluginRuntime
     {
       PluginLog.Error("Dispatch", $"<- {method} [{CurrentRequestId.Value ?? "no-id"}] unhandled failure durationMs={timer.ElapsedMilliseconds} category={ex.GetType().Name}", ex);
       OperationTrace.Record(method, parameters, "fatal", "CIVIL3D.INTERNAL_ERROR", ex.GetType().Name + ": " + ex.Message, timer.ElapsedMilliseconds);
-      return JsonRpcProtocol.SerializeError(id, -32603, "CIVIL3D.INTERNAL_ERROR", "The Civil 3D plugin encountered an unexpected error.");
+      // 2026-11-13: 死因不能全吞 —— 只回 "unexpected error" 时，AI 无法区分「参数不对/对象不存在/插件崩了」。
+      // 仍标 INTERNAL_ERROR（不伪装成业务错误），但附带异常类型+消息（截断 300 字符）。
+      var detail = ex.GetType().Name + ": " + ex.Message;
+      if (detail.Length > 300) detail = detail.Substring(0, 300) + "...";
+      return JsonRpcProtocol.SerializeError(id, -32603, "CIVIL3D.INTERNAL_ERROR", "The Civil 3D plugin encountered an unexpected error. Detail: " + detail);
     }
     finally
     {

@@ -59,7 +59,13 @@ const CAD_CALL_TOOL = {
  */
 function cadCall(method, params = {}, timeoutMs = 30000, signal) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: params || {} });
+    // 2026-11-14: listMethods 的检索/分页在 relay 本地完成（见 formatMethodList）。
+    //   不把 filter/limit/offset 转发给插件——插件先截断会让本地条数失真，方法缓存也会被写成子集。
+    let sendParams = params || {};
+    if (method === 'listMethods' && sendParams && (sendParams.filter || sendParams.limit || sendParams.offset)) {
+      sendParams = {};
+    }
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: sendParams });
     const req = http.request({
       host: '127.0.0.1',
       port: RELAY_PORT,
@@ -115,15 +121,63 @@ const METHOD_GROUPS = [
   { key: '图纸集/标注/样式', re: /sheet|label|dim|style/i },
   { key: '其他', re: /.*/ }
 ];
-function formatMethodList(list, filter, descriptions) {
-  const desc = (m) => (descriptions && descriptions[m]) ? ' — ' + descriptions[m] : '';
-  if (filter) {
-    const f = String(filter).toLowerCase();
-    const hit = list.filter(m => m.toLowerCase().includes(f));
-    if (hit.length === 0) {
-      return '未找到包含 "' + filter + '" 的方法（全部 ' + list.length + ' 个）。该功能可能不存在：直接报 [MISSING] 或换关键词再查，禁止猜方法名。';
+// 2026-11-14: filter 升级 —— 原来只拿方法名做 substring，**中文与描述完全搜不到**：
+//   AI 搜 "超高" → 0 命中 → 得出"插件不支持超高"的假结论（实际有 setSuperelevation）。
+//   现行为：名称 + 描述（中文/参数契约）双字段 AND 匹配；支持 limit/offset 分页；0 命中给最接近的候选。
+const SEARCH_PAGE = 25;
+function bigrams(s) {
+  const m = new Map();
+  for (let i = 0; i < s.length - 1; i++) { const g = s.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); }
+  return m;
+}
+function diceCoefficient(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
+  const ga = bigrams(a); const gb = bigrams(b);
+  let inter = 0; let total = 0;
+  for (const [g, n] of ga) { total += n; if (gb.has(g)) inter += Math.min(n, gb.get(g)); }
+  for (const [, n] of gb) total += n;
+  return total ? (2 * inter) / total : 0;
+}
+function suggestMethods(list, terms, n) {
+  const wanted = n || 3;
+  const scored = [];
+  for (const m of list) {
+    const ml = m.toLowerCase();
+    let best = 0;
+    for (const t of terms) {
+      if (!t) continue;
+      if (ml.includes(t)) { best = 1; break; }
+      best = Math.max(best, diceCoefficient(t, ml));
     }
-    return '找到 ' + hit.length + ' 个匹配 "' + filter + '" 的方法：\n' + hit.map(m => m + desc(m)).join('\n');
+    if (best >= 0.34) scored.push([m, best]);
+  }
+  scored.sort((a, b) => b[1] - a[1]);
+  return scored.slice(0, wanted).map((x) => x[0]);
+}
+function formatMethodList(list, filter, descriptions, opts) {
+  const desc = (m) => (descriptions && descriptions[m]) ? ' — ' + descriptions[m] : '';
+  const limit = Math.max(1, Number((opts && opts.limit) || SEARCH_PAGE));
+  const offset = Math.max(0, Number((opts && opts.offset) || 0));
+  if (filter) {
+    const terms = String(filter).toLowerCase().split(/[\s,\uFF0C|]+/).filter(Boolean);
+    const hit = list.filter((m) => {
+      const nl = m.toLowerCase();
+      const dl = (descriptions && descriptions[m] ? descriptions[m] : '').toLowerCase();
+      return terms.every((t) => nl.includes(t) || dl.includes(t));
+    });
+    if (hit.length === 0) {
+      const near = suggestMethods(list, terms, 3);
+      return '未找到匹配 "' + filter + '" 的方法（全部 ' + list.length + ' 个）。'
+        + (near.length ? '最接近：' + near.join(', ') + '（换关键词再查）。' : '')
+        + '若确认不存在：直接报 [MISSING]，禁止猜方法名或声称"插件不支持"。';
+    }
+    const page = hit.slice(offset, offset + limit);
+    const more = offset + page.length < hit.length
+      ? '（第 ' + (offset + 1) + '–' + (offset + page.length) + ' 条，共 ' + hit.length + ' 条；继续查用 offset=' + (offset + page.length) + '）'
+      : '';
+    return '找到 ' + hit.length + ' 个匹配 "' + filter + '" 的方法' + more + '：\n' + page.map((m) => m + desc(m)).join('\n');
   }
   // 分组摘要（每个方法归入第一个匹配组，避免重复）
   const groups = {};
@@ -134,11 +188,20 @@ function formatMethodList(list, filter, descriptions) {
   }
   const lines = Object.entries(groups).map(([k, v]) => '【' + k + '】' + v.length + '个: ' + v.slice(0, 8).map(m => m + desc(m)).join(', ') + (v.length > 8 ? ' …' : ''));
   return '方法总数: ' + list.length + '，按功能分组：\n' + lines.join('\n') +
-    '\n\n精确查找方法名：调 listMethods 带 filter 参数（如 params={"filter":"surface"}），禁止猜方法名';
+    '\n\n精确查找方法名/能力：调 listMethods 带 filter 参数（如 params={"filter":"超高"}，支持中文与描述关键词、可用空格做 AND；' +
+    '要看到更多用 limit/offset 分页），禁止猜方法名';
 }
 
 // 2026-08-07 Phase0: 结果截断+摘要, 防止大 JSON 撑爆上下文导致 LLM 变慢/超时
 const FORMAT_MAX = 2000;   // 单结果最大注入字符
+// 2026-11-14: 批量读类方法**不在本地截断**——2000 字符截断会把「批量读」变成「读了 4 个」，
+//   实测：getEntitiesInfo 一次约 2960 字符即被截，43k 条线要 1 万次调用。
+//   改为交回全文，由上层 spillIfLarge 落盘给句柄，AI 再用 queryFile / calc 在本地聚合。
+const BULK_READ_METHODS = new Set([
+  'getEntitiesInfo', 'getCivilObjectsInfo', 'getSelectionDetail',
+  'getEntitiesByLayer', 'getBlocksByLayer', 'listTexts', 'getEntitiesByBlock',
+]);
+const BULK_HARD_CAP = 8 * 1024 * 1024;   // 兜底 8MB，防单次结果把内存/文件撑爆
 function formatResult(resp, method, params) {
   if (!resp) return '（无响应）';
   if (resp.error) return '插件返回错误: ' + JSON.stringify(resp.error);
@@ -148,12 +211,26 @@ function formatResult(resp, method, params) {
     const list = Array.isArray(r) ? r : (r.methods || []);
     const descriptions = (!Array.isArray(r) && r.descriptions) ? r.descriptions : null;  // 2026-08-08: 高频方法描述
     if (list && list.length) {
-      methodsCache = list;
-      methodsCacheTime = Date.now();
-      return formatMethodList(list, params && params.filter, descriptions);
+      // 2026-11-14: 只有拿到完整清单（未带 filter）时才更新缓存，避免缓存被写成子集
+      if (!(params && (params.filter || params.limit || params.offset))) {
+        methodsCache = list;
+        methodsCacheTime = Date.now();
+      }
+      return formatMethodList(list, params && params.filter, descriptions, { limit: params && params.limit, offset: params && params.offset });
     }
   }
   const text = JSON.stringify(r);
+  // 2026-11-14: 插件摘要降级是**静默砍数组**（实测 106 条线只回 53 条）。仍在摘要状态时必须显眼报出来。
+  const summarizedNote = (r && !Array.isArray(r) && r._summarized)
+    ? '\n\n⚠️ 【结果被插件摘要降级】原始结果超过阈值，数组已被截短（上面是残缺数据，不要当成全量）。'
+      + '补一句 params.fullResult=true（或 maxResultBytes:0）重新调用可拿全量；大结果会自动落盘给你路径，再用 calc/queryFile 聚合。'
+    : '';
+  if (BULK_READ_METHODS.has(method)) {
+    if (text.length > BULK_HARD_CAP) {
+      return text.slice(0, BULK_HARD_CAP) + '\n...（结果 ' + text.length + ' 字符，超过 8MB 硬上限已截断；请用 maxCount/offset 分批，或改用文件通道 exportSelectionToFile）';
+    }
+    return text + summarizedNote;
+  }
   if (text.length <= FORMAT_MAX) return text;
   // 列表类: 报条数 + 截断样例
   if (Array.isArray(r)) {

@@ -8,6 +8,7 @@
 
 'use strict';
 
+const { sanitizeProjectName } = require('./project-scope');   // 2026-11-14: 项目目录命名单一真相
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -28,6 +29,9 @@ const LIMIT_DEFAULTS = {
   spillBytes: 8000,                  // 工具结果外溢阈值（字符）
   spillPreview: 1200,                // 外溢预览字符数
   ctxMaxBytes: 250000,               // 上下文硬上限（llm-agent 工具循环）
+  // 2026-11-13: queryFile 走「程序内聚合」，不往上下文灌原文 —— 它不该受 readMaxBytes(5MB) 约束。
+  // 真机：7.7MB / 20 万行测量 CSV，连 wc（只数行数）都被拒，AI 只能反复绕。
+  queryMaxBytes: 64 * 1024 * 1024,   // queryFile / convertPoints 的原始文件上限
   historyKeep: 24,                   // 对话历史滚动窗口（条）
 };
 function loadRawConfig() {
@@ -76,13 +80,40 @@ function getAgentWorkDir() {
   } catch (e) { console.error('[CFG] 读取 config.json 项目字段失败（回落全局工作区）: ' + e.message); }   // 2026-10-10 B7: 不再静默
   let dir;
   if (project) {
-    const safe = String(project).replace(/[\\/:*?"<>|]/g, '_').trim() || 'unnamed';
+    const safe = sanitizeProjectName(project);
     dir = path.join(projectRoot, 'exchange', 'projects', safe, 'agent-work');
   } else {
     dir = path.join(projectRoot, 'exchange', 'agent-work');
   }
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+// 2026-11-13: 可写边界上移到「项目文件夹」整层（原来是 agent-work 子目录）。
+// 全局模式（未声明项目）保持原行为：仍只有 agent-work，不外扩。
+function getProjectDir() {
+  const projectRoot = path.resolve(__dirname, '..');
+  let project = '';
+  try {
+    const cfgPath = path.join(projectRoot, 'config.json');
+    if (fs.existsSync(cfgPath)) {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      if (cfg && typeof cfg.project === 'string') project = cfg.project.trim();
+    }
+  } catch (_) { /* 配置读不到就按全局处理 */ }
+  if (project) {
+    const safe = sanitizeProjectName(project);
+    return path.join(projectRoot, 'exchange', 'projects', safe);
+  }
+  return path.join(projectRoot, 'exchange', 'agent-work');
+}
+
+// 项目系统文件：AI 可读不可改（plan/checkpoint/历史/聊天记录是运行时状态，被改=续接错乱）
+const PROTECTED_NAMES = new Set(['plan.json', 'checkpoint.json', 'llm-history.json', 'history-before-clear.json']);
+function isProtectedProjectFile(p) {
+  const base = path.basename(p).toLowerCase();
+  if (PROTECTED_NAMES.has(base)) return true;
+  return /^panel-chat-.*\.jsonl$/.test(base);
 }
 
 function isWithin(dir, target) {
@@ -106,10 +137,13 @@ function resolveReadPath(rawPath, needExisting) {
 // 写/删: 仅限 AI 工作区（物理隔离，用户文件不可动）
 function resolveWritePath(rawPath) {
   const p = path.resolve(rawPath);
-  const work = getAgentWorkDir();
+  const work = getProjectDir();
   if (!isWithin(work, p)) {
-    throw new Error('安全红线: 只允许在 AI 工作区 {{WORKDIR}} 内创建/修改/删除文件，不能操作其他位置: ' + p +
+    throw new Error('安全红线: 只允许在项目文件夹 ' + work + ' 内创建/修改/删除文件，不能操作其他位置: ' + p +
       '（用户文件请走插件导出通道，或让用户指定保存位置）');
+  }
+  if (isProtectedProjectFile(p)) {
+    throw new Error('安全红线: ' + path.basename(p) + ' 是插件的运行时状态文件，AI 只能读不能改');
   }
   return p;
 }
@@ -181,7 +215,8 @@ function queryFile(args) {
   const p = resolveReadPath(rawPath, true);
   if (fs.statSync(p).isDirectory()) throw new Error('这是目录，不是文件: ' + p);
   const stat = fs.statSync(p);
-  if (stat.size > getLimits().readMaxBytes) throw new Error('文件过大（>' + (getLimits().readMaxBytes / 1024 / 1024) + 'MB），拒绝读取');
+  const qMax = getLimits().queryMaxBytes || getLimits().readMaxBytes;
+  if (stat.size > qMax) throw new Error('文件过大（>' + (qMax / 1024 / 1024) + 'MB），拒绝读取（可先用 grep 定位、或按行号分段）');
   const raw = fs.readFileSync(p, 'utf8');
   const lines = raw === '' ? [] : raw.split('\n');
   const cap = Math.min(Math.max(parseInt(args.maxChars, 10) || getLimits().readMaxChars, 1), getLimits().readMaxCharsCap);
@@ -345,6 +380,101 @@ function deleteFile(args) {
   if (!fs.existsSync(p)) throw new Error('文件不存在: ' + p);
   fs.unlinkSync(p);
   return { path: p, deleted: true };
+}
+
+// ---------- mkdir / copyFile / moveFile（2026-11-13：工作区内整理文件） ----------
+function mkdir(args) {
+  const raw = String(args.path || '').trim();
+  if (!raw) throw new Error('参数 path 必填');
+  const p = resolveWritePath(raw);
+  const existed = fs.existsSync(p);
+  fs.mkdirSync(p, { recursive: true });
+  return { path: p, created: !existed };
+}
+
+function copyFile(args) {
+  const srcRaw = String(args.source || '').trim();
+  const dstRaw = String(args.target || '').trim();
+  if (!srcRaw || !dstRaw) throw new Error('参数 source / target 必填');
+  const src = resolveReadPath(srcRaw, true);
+  if (fs.statSync(src).isDirectory()) throw new Error('source 是目录，copyFile 只复制文件: ' + src);
+  const dst = resolveWritePath(dstRaw);
+  const ext = path.extname(dst).toLowerCase();
+  if (BLOCKED_EXT.has(ext)) throw new Error('安全红线: 不允许写入 ' + ext + ' 类型文件（可执行/脚本文件禁写）');
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.copyFileSync(src, dst);
+  return { source: src, target: dst, bytes: fs.statSync(dst).size };
+}
+
+function moveFile(args) {
+  const srcRaw = String(args.source || '').trim();
+  const dstRaw = String(args.target || '').trim();
+  if (!srcRaw || !dstRaw) throw new Error('参数 source / target 必填');
+  // 源也必须在项目内 —— 否则等于把系统/用户文件搬走（copyFile 允许从任意可读位置拷入，move 不允许搬出）
+  const src = resolveWritePath(srcRaw);
+  if (!fs.existsSync(src)) throw new Error('文件不存在: ' + src);
+  if (fs.statSync(src).isDirectory()) throw new Error('source 是目录，moveFile 只移动文件: ' + src);
+  const dst = resolveWritePath(dstRaw);
+  const ext = path.extname(dst).toLowerCase();
+  if (BLOCKED_EXT.has(ext)) throw new Error('安全红线: 不允许写入 ' + ext + ' 类型文件（可执行/脚本文件禁写）');
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  try { fs.renameSync(src, dst); } catch (_) { fs.copyFileSync(src, dst); fs.unlinkSync(src); }   // 跨卷 rename 会失败
+  return { source: src, target: dst, bytes: fs.statSync(dst).size };
+}
+
+// ---------- convertPoints（2026-11-13：测量点格式互转） ----------
+// 支持的源格式（逗号/空格/Tab 分隔都行）：PNEZD / PENZ / NEZ / ENZ / XYZ / PXYZ
+// 输出统一 CSV：point,northing,easting,elevation,description
+const POINT_FORMATS = {
+  PNEZD: ['point', 'northing', 'easting', 'elevation', 'description'],
+  PENZ: ['point', 'easting', 'northing', 'elevation'],
+  PXYZ: ['point', 'easting', 'northing', 'elevation'],
+  NEZ: ['northing', 'easting', 'elevation'],
+  ENZ: ['easting', 'northing', 'elevation'],
+  XYZ: ['easting', 'northing', 'elevation'],
+};
+function convertPoints(args) {
+  const srcRaw = String(args.source || '').trim();
+  if (!srcRaw) throw new Error('参数 source 必填');
+  const fmt = String(args.format || 'PNEZD').toUpperCase();
+  const cols = POINT_FORMATS[fmt];
+  if (!cols) throw new Error('不支持的 format: ' + fmt + '（可用 ' + Object.keys(POINT_FORMATS).join('/') + '）');
+  const src = resolveReadPath(srcRaw, true);
+  const st = fs.statSync(src);
+  const qMax = getLimits().queryMaxBytes || getLimits().readMaxBytes;
+  if (st.size > qMax) throw new Error('文件过大（>' + (qMax / 1024 / 1024) + 'MB）');
+  const outRaw = String(args.output || '').trim() || path.join(getProjectDir(), 'points-' + fmt.toLowerCase() + '.csv');
+  const dst = resolveWritePath(outRaw);
+  const swap = args.swapXY === true;
+  const scale = Number.isFinite(Number(args.unitScale)) && Number(args.unitScale) > 0 ? Number(args.unitScale) : 1;
+  const lines = fs.readFileSync(src, 'utf8').split(/\r?\n/).filter((l) => l.trim() !== '');
+  const out = ['point,northing,easting,elevation,description'];
+  let skipped = 0;
+  const first = lines[0] ? lines[0] : '';
+  const startIdx = /[A-Za-z]/.test(first) && !/^\s*-?\d/.test(first) ? 1 : 0;   // 首行像表头就跳过
+  for (let i = startIdx; i < lines.length; i++) {
+    const parts = lines[i].trim().split(/[,\t ]+/).filter(Boolean);
+    if (parts.length < cols.length) { skipped++; continue; }
+    const rec = {};
+    for (let k = 0; k < cols.length; k++) rec[cols[k]] = parts[k];
+    let n = Number(rec.northing), e = Number(rec.easting), z = Number(rec.elevation);
+    if (!Number.isFinite(n) || !Number.isFinite(e)) { skipped++; continue; }
+    if (swap) { const t = n; n = e; e = t; }
+    n = n * scale; e = e * scale;
+    if (Number.isFinite(z)) z = z * scale;
+    out.push([rec.point || (i - startIdx + 1), n, e, Number.isFinite(z) ? z : '', rec.description || ''].join(','));
+  }
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.writeFileSync(dst, out.join('\n'), 'utf8');
+  return {
+    source: src,
+    output: dst,
+    format: fmt,
+    written: out.length - 1,
+    skipped,
+    swapXY: swap,
+    sample: out.slice(1, 4),
+  };
 }
 
 // ---------- traceImage（2026-09-22 新增：位图 → CAD 矢量线条） ----------
@@ -721,7 +851,67 @@ const FILE_TOOLS = [
         required: ['image']
       }
     }
-  }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mkdir',
+      description: '在项目文件夹内创建目录（递归）。只能建在 {{WORKDIR}} 的上级项目目录里，不能建到项目外。',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: '目录绝对路径（必须在项目文件夹内）' } },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'copyFile',
+      description: '复制文件：source 可以是任意可读位置（用户给的图/表都能拷进来），target 必须落在项目文件夹内。适合把用户散落的资料收进项目、或做备份副本。',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: '源文件绝对路径（任意可读位置）' },
+          target: { type: 'string', description: '目标绝对路径（必须在项目文件夹内）' }
+        },
+        required: ['source', 'target']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'moveFile',
+      description: '移动/改名文件（等价重命名）。source 和 target 都必须在项目文件夹内 —— 不能把项目外的文件搬进来（那用 copyFile），也不能把项目文件搬出去。',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: '源文件绝对路径（必须在项目文件夹内）' },
+          target: { type: 'string', description: '目标绝对路径（必须在项目文件夹内）' }
+        },
+        required: ['source', 'target']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'convertPoints',
+      description: '测量点文件格式互转（大文件也不怕，程序内解析不灌上下文）。format 指源格式：PNEZD(点号,北,东,高程,描述) / PENZ(点号,东,北,高程) / NEZ / ENZ / XYZ。输出统一 CSV：point,northing,easting,elevation,description。分隔符逗号/空格/Tab 都认，首行像表头会自动跳过。',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: '源点文件绝对路径' },
+          format: { type: 'string', description: '源格式 PNEZD|PENZ|NEZ|ENZ|XYZ|PXYZ（默认 PNEZD）' },
+          output: { type: 'string', description: '输出 CSV 绝对路径（默认放项目文件夹 points-<fmt>.csv）' },
+          swapXY: { type: 'boolean', description: 'true=交换南北/东西（坐标系弄反时用）' },
+          unitScale: { type: 'number', description: '坐标缩放系数（如 英尺→米 填 0.3048），默认 1' }
+        },
+        required: ['source', 'format']
+      }
+    }
+  },
 ];
 
 // 2026-08-19: 工作区路径动态化——工具描述里 {{WORKDIR}} 占位符在调用时替换为真实工作区（项目模式 = projects/<名>/agent-work）
@@ -738,4 +928,4 @@ function getFileTools() {
   });
 }
 
-module.exports = { readFile, writeFile, deleteFile, listDir, readImage, traceImage, queryFile, FILE_TOOLS, getFileTools, getAgentWorkDir, getLimits };
+module.exports = { readFile, writeFile, deleteFile, listDir, readImage, traceImage, queryFile, mkdir, copyFile, moveFile, convertPoints, FILE_TOOLS, getFileTools, getAgentWorkDir, getProjectDir, getLimits };

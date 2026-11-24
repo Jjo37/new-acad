@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  new-acad 閳?Autodesk Autoloader bundle manifest
+  new-acad - Autodesk Autoloader bundle manifest
   Install location (user scope; C:\ProgramData is obsolete since 2026):
     %APPDATA%\Autodesk\ApplicationPlugins\new-acad.bundle\
   Layout: see tools/build-bundle.ps1
@@ -10,14 +10,14 @@
   ProductCode / UpgradeCode must never change after submission.
 -->
 <ApplicationPackage
-    SchemaVersion="1.15.0"
+    SchemaVersion="1.0"
     AutodeskProduct="AutoCAD"
     Name="new-acad"
-    Description="In-app AI assistant for AutoCAD / Civil 3D 閳?talk to the drawing in plain language."
-    AppVersion="1.15.0"
+    Description="In-app AI assistant for AutoCAD / Civil 3D - talk to the drawing in plain language."
+    AppVersion="1.18.0"
     ProductCode="{6DA652EC-AE9F-492F-8204-0CECB76A2D2C}"
     UpgradeCode="{F641A245-0C7B-4D6A-8C6F-6373E79B4B18}"
-    Version="1.15.0"
+    Version="1.18.0"
     Author="Jjo"
     HelpFile="Contents\Help\index.html"
     AppNameSpace="new-acad"
@@ -45,7 +45,7 @@
 
     <ComponentEntry
         AppName="new-acad"
-        Version="1.15.0"
+        Version="1.18.0"
         ModuleName="Contents\Windows\Civil3DMcpPlugin.dll"
         AppDescription="AI assistant palette and CAD bridge for AutoCAD / Civil 3D"
         LoadOnAutoCADStartup="True"

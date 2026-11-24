@@ -39,6 +39,11 @@ try {
 }
 
 const hosts = Array.isArray(cfg.hosts) ? cfg.hosts : [];
+
+// 2026-11-23 P35: waived（带 waivedOn + note）也算"覆盖"，但它是「明确不验」的板上钉钉记录，
+// 会在输出里作为 warning 列出；静默降级仍由 tools/host-matrix.js 拦住。
+const allowed = (h) => h.status === 'verified' ||
+  (h.status === 'waived' && String(h.waivedOn || '').trim() && String(h.note || '').trim());
 const sources = Array.isArray(cfg.sources) ? cfg.sources : [];
 const negations = Array.isArray(cfg.negations) ? cfg.negations : [];
 
@@ -83,10 +88,15 @@ for (const rel of sources) {
       if (!products.size) continue;
 
       for (const product of products) {
-        const covering = hosts.filter((h) => h.product === product && h.status === 'verified' && years.every((y) => h.years.includes(y)));
+        // 2026-11-23 P35: waived（带 waivedOn + note）也算覆盖 —— 但它是「明确不验」的板上钉钉记录，
+// 会作为 warning 报出来，发布说明里必须如实写；静默降级仍然被 host-matrix 拦住。
+// 2026-11-23 P35: 契约按年拆开，所以覆盖判定是「每个声称的年份都要有某个条目（verified/waived）覆盖」，
+// 不再要求同一条目横跨多年。
+const uncovered = years.filter((y) => !hosts.some((h) => h.product === product && allowed(h) && h.years.includes(y)));
+const covering = uncovered.length ? [] : years.map((y) => hosts.filter((h) => h.product === product && allowed(h) && h.years.includes(y)));
         const where = rel + ':' + (i + 1);
         if (!covering.length) {
-          errors.push(`unsupported claim at ${where}: ${product} ${years.join('/')} has no verified host entry`);
+          errors.push(`unsupported claim at ${where}: ${product} ${uncovered.join('/')} has no verified/waived host entry`);
         } else {
           notes.push(`${where}: ${product} ${years.join('/')} -> ${covering.map((h) => h.id).join(',')}`);
         }
@@ -103,7 +113,7 @@ for (const rel of sources) {
       if (/Civil 3D/i.test(clause)) products.add('Civil 3D');
       if (/AutoCAD/i.test(clause)) products.add('AutoCAD');
       for (const product of products) {
-        const verified = hosts.filter((h) => h.product === product && h.status === 'verified' && years.every((y) => h.years.includes(y)));
+        const verified = hosts.filter((h) => h.product === product && allowed(h) && years.some((y) => h.years.includes(y)));
         if (verified.length) {
           errors.push(`contradiction at ${rel}:${i + 1}: the text denies ${product} ${years.join('/')} but ${verified.map((h) => h.id).join(',')} is verified`);
         }
@@ -116,7 +126,7 @@ for (const rel of sources) {
     for (const clause of line.split(CLAUSE_SPLIT)) {
       if (!/(单独|纯)\s*AutoCAD|standalone\s*AutoCAD|AutoCAD\s*单独/i.test(clause)) continue;
       if (!isNegated(clause)) continue;
-      const verifiedPlain = hosts.filter((h) => h.product === 'AutoCAD' && h.status === 'verified');
+      const verifiedPlain = hosts.filter((h) => h.product === 'AutoCAD' && allowed(h));
       if (verifiedPlain.length) {
         errors.push(`contradiction at ${rel}:${i + 1}: the text denies plain AutoCAD support but ${verifiedPlain.map((h) => h.id).join(',')} is verified`);
       }

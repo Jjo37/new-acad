@@ -7,7 +7,7 @@
 [中文](README.md) | **English**
 
 This is not "yet another pile of CAD tools for an AI". It is **an agent that understands Civil 3D engineering practice, living inside CAD**.
-The built-in agent exposes **exactly 2 tools** to the model (call the plugin, call MCP) — **none of the 430 CAD methods are handed to the model directly**. A layer of engineering judgement decides **which channel** a task should take.
+The built-in agent exposes **exactly 2 tools** to the model (call the plugin, call MCP) — **none of the 440 CAD methods are handed to the model directly**. A layer of engineering judgement decides **which channel** a task should take.
 
 | Layer | What it is | Why it matters |
 |---|---|---|
@@ -47,7 +47,7 @@ new-acad is made of three parts:
 | **Entities** | Inspect selection, read properties, filter by layer / block / type / elevation range; change color and layer, move, rotate, scale, copy, mirror, delete; batch endpoints take an array of handles and process N objects in one call |
 | **Drafting** | Lines, circles, arcs, polylines, rectangles, text, dimensions, hatches |
 | **3D** | Primitives (box / cylinder / sphere / cone / wedge / torus); extrude, revolve, sweep, loft (real API chain); NURBS surface creation & control-point editing, surface thickening; boolean union / subtract (intersection emulated via double subtraction), interference check; volume and mass properties |
-| **Civil 3D domains** | **Surfaces** (create, bulk point import via the file channel); **alignments** (styles, label sets, station lookup); **profiles / profile views** (styles and band sets); **assemblies & subassemblies** (including AI-generated SAC subassemblies: write XAML → pack `.pkt` → import); **corridors** (one-shot creation, region editing, corridor surfaces); **grading / pipe networks / parcels / catchments / intersections / data shortcuts**; quantity take-off and cost estimation |
+| **Civil 3D domains** | **Surfaces** (create, bulk point import via the file channel); **alignments** (styles, label sets, station lookup); **profiles / profile views** (styles and band sets); **assemblies & subassemblies** (including AI-generated SAC subassemblies: write XAML → pack `.pkt` → import); **corridors** (one-shot creation, region editing, corridor surfaces); **grading / pipe networks / catchments / intersections / data shortcuts**; **parcels** (list, area/perimeter, report export, rename and restyle; **creating or deleting a parcel must be done in the Civil 3D UI**); quantity take-off and cost estimation |
 | **Layers / blocks / xrefs** | Create, rename, read/write properties, wblock, attach xrefs |
 | **File channel** | Read `docx` / `xlsx` / `pptx` / `zip` plus legacy `doc` / `xls` (built-in OLE2 / BIFF8 parsing — **no Office, no extra dependencies**); list directories; write inside a sandboxed workspace; open / create / save drawings (semi-automated multi-drawing workflow) |
 | **Selection** | The selection is snapshotted automatically when you send a command, and tagged with the drawing name — switching drawings never picks up a stale selection |
@@ -186,7 +186,7 @@ new-acad/
 - **14 methods fall back to the command channel** (managed-API gaps): of these, **10 dispatch a command and return "queued" with no synchronous result** (`renderScene`/`undoDrawing`/`redoDrawing`/data shortcuts/SSA), **3 can be verified** (`setVisualStyle`/`selectByCriteria`/`selectEntities`), and `runLisp` returns nothing by design; a 25 s timeout guard applies. `trimEntity`/`extendEntity`/`overkillEntities` no longer dispatch anything (use their `*Geo` versions)
 - The plugin DLL is locked while Civil 3D runs — close it before rebuilding
 - The palette receives replies over **SSE push** (`/replies/stream`) — not polling. Status and task progress are pushed in real time too (the 10 s `/status` poll is only a fallback for dropped connections)
-- A few Civil 3D features (grading group editing, parcel line editing) are not wrapped by the managed API and are therefore unreachable for the AI — see `ONBOARDING.md`
+- A few Civil 3D features are not wrapped by the managed API; the AI replies with an explicit `NOT_SUPPORTED` plus UI guidance: **grading group editing**, **parcel lot-line sliding (area adjustment)**, **parcel creation**, **parcel deletion**. Do not retry with different parameters — follow the guidance and do it in the UI (reading parcels, area/perimeter, reports, rename and restyle all work) — see `ONBOARDING.md`
 - Grading optimisation is positioned as a **preliminary design-surface generator**: minimum drainage slope is expressed as a platform tilt, retaining walls/steps are declared via `walls`; multi-tier walls, utility conflicts and similar constraints still need human review
 - Corridor regeneration is inherently slow (30 s – 10 min of internal regeneration); other requests queue briefly meanwhile (`HOST_BUSY`, recovers automatically)
 

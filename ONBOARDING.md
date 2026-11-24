@@ -18,9 +18,10 @@ new-acad = 让 AI 直接操作 AutoCAD / Civil 3D。
 ## 2. 调插件的铁律
 
 - **必须走 /tcp 桥**：`POST http://127.0.0.1:19876/tcp`（JSON-RPC）。**禁止**直接 HTTP 打 8080（会把队列卡死）；**禁止**用 `executeCommand` 传交互命令（白名单拦截）。
-- **先 `listMethods` 拿真实方法名**，别猜。
+- **先 `listMethods` 拿真实方法名**，别猜。任务级说法（"统计地块面积并出报告"/"大图层导出坐标表"）先调 **`findRecipes`**：它按意图返回内置配方（有序步骤 + 已知坑）和本项目跑通过的历史记录，步骤里的 `method` 可直接喂给 `cadCall`。
 - 优先级：TCP 方法（快、无审批）> MCP 工具（`POST :3000/execute`，C3D 专业域）> `executeCommand`（万能但无参数校验）。
 - **批量优先**：复数对象→批量方法（handles 数组）；>500 条→文件通道（`addSurfacePointsFromFile` 等）；禁止逐个调用烧轮次。
+- **碰到 `CIVIL3D.NOT_SUPPORTED` 不要换参数硬试**：地块创建/删除、地块线滑移（调整面积）、放坡组编辑在 Civil 3D 托管 API 里没有入口，方法会回 `NOT_SUPPORTED` 并在消息里给出界面操作指路。照消息把界面步骤告诉用户即可；地块的读取、面积/周长、报告、改名与换样式仍然可用。
 
 ## 3. 出问题
 

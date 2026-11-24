@@ -33,6 +33,7 @@ $files = @(
   'plugin/AcBridge-v24/net10/Civil3DMcpPlugin.deps.json',
   'plugin/AcBridge-v24/net10/Civil3DMcpPlugin.runtimeconfig.json',
   'tools/switch-runtime.ps1',
+  'tools/verify-install-hosts.ps1',
   # 2026-10-14 M6 PdfPig 依赖（readPdf 需要，必须随插件目录同步）
   'plugin/AcBridge-v24/UglyToad.PdfPig.dll',
   'plugin/AcBridge-v24/UglyToad.PdfPig.Core.dll',
@@ -46,6 +47,12 @@ $files = @(
   'server/time-policy.js',   # 2026-10-28: one storage format for time (relay + store require it)
   'server/judgement.js',   # 2026-10-28: outcome judgement single entry (workflow-store require)
   'server/workflow-store.js',
+  'server/project-scope.js',
+  'server/block-policy.js',
+  'server/project-memory.js',
+  'server/calc-sandbox.js',
+  'server/calc-runner.js',
+  'server/recipe-index.js',   # 2026-11-18 v1.18 findRecipes (llm-agent require)
   'server/workflow-replay.js','server/workflow-assisted.js','server/workflow-slots.js','server/workflow-describe.js','server/llm-agent.js','server/compact.js','server/model-params.js','server/responses-adapter.js','server/method-contracts.js','server/cad-tools.js',
 'server/trust-model.js',   # 2026-11-02: trust model + tier rules (relay + workflow-store require)
   'server/file-tools.js','server/trace-image.js','server/relay-launcher.js','server/sacred-mcp.js',
@@ -80,6 +87,7 @@ $files = @(
   ,'tools/audit-host-modes.js'
   ,'tools/check-supported-hosts.js'
   ,'tools/smoke-plain-acad.js'
+  ,'tools/host-matrix.js'   # 2026-11-23 P35: smoke-plain-acad needs it to build evidence cells
   ,'tools/run-host-probe.ps1'
   ,'tools/ensure-drawing.js'
   ,'tools/set-release-body.js'

@@ -50,10 +50,12 @@ Copy-Item $pcSrc (Join-Path $bundle 'PackageContents.xml') -Force
 $pcVer = try { ([System.IO.File]::ReadAllText((Join-Path $Root "package.json"), [System.Text.Encoding]::UTF8) | ConvertFrom-Json).version } catch { "0.0.0" }
 if ($pcVer) {
   $pcPath = Join-Path $bundle "PackageContents.xml"
-  $pcTxt = Get-Content $pcPath -Raw
-  $pcTxt = $pcTxt -replace 'AppVersion="[^"]*"', "AppVersion=`"$pcVer`""
-  $pcTxt = $pcTxt -replace '\bVersion="[^"]*"', "Version=`"$pcVer`""
-  Set-Content -Path $pcPath -Value $pcTxt -Encoding UTF8
+  # 2026-11-11: 用 .NET UTF8 读写（PS5.1 的 Get-Content/Set-Content 会把 UTF-8 中文读成 GBK 再写成 BOM+乱码）
+# 且只改 AppVersion 与缩进行首的 Version=，绝不碰 <?xml version=?> 和 SchemaVersion（曾把 SchemaVersion 改成 1.15.0 导致 Autoloader 拒载）
+$pcTxt = [System.IO.File]::ReadAllText($pcPath, [System.Text.Encoding]::UTF8)
+$pcTxt = [regex]::Replace($pcTxt, 'AppVersion="[^"]*"', 'AppVersion="' + $pcVer + '"')
+$pcTxt = [regex]::Replace($pcTxt, '(?m)^(\s+)Version="[^"]*"', '${1}Version="' + $pcVer + '"')
+[System.IO.File]::WriteAllText($pcPath, $pcTxt, (New-Object System.Text.UTF8Encoding $false))
   Write-Host "[5/5] PackageContents.xml version -> $pcVer"
 }
 $storeReadme = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\bundle\INSTALL-README.txt'

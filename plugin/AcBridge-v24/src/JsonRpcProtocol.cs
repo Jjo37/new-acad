@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -5,6 +6,13 @@ namespace Civil3DMcpPlugin;
 
 internal static class JsonRpcProtocol
 {
+  /// <summary>用与线路完全相同的序列化选项估算字节数（响应预算判断用）。</summary>
+  internal static long EstimateBytes(object? value)
+  {
+    try { return JsonSerializer.SerializeToUtf8Bytes(value, SerializerOptions).LongLength; }
+    catch (System.Exception) { return 0; }
+  }
+
   public static string SerializeResult(JsonNode? id, object? result)
   {
     var response = new JsonObject
@@ -73,5 +81,9 @@ internal static class JsonRpcProtocol
   {
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     WriteIndented = false,
+    // 2026-11-23 P34: 默认编码器把中文写成 \uXXXX（6 字节/字），中文响应白白膨胀 6 倍 ——
+    //   listMethods 就因此撞上 64KB 摘要阈值，整个方法清单被换成摘要（AI 直接"看不见"方法）。
+    //   走的是 UTF-8 线路（node/relay 都按 utf8 解码），原样输出中文是合法 JSON。
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
   };
 }

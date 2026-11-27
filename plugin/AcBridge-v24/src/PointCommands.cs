@@ -1,0 +1,433 @@
+using System.Text.Json.Nodes;
+using Autodesk.AutoCAD.Geometry;
+using Autodesk.Civil.DatabaseServices;
+
+namespace Civil3DMcpPlugin;
+
+public static class PointCommands
+{
+  public static Task<object?> ListCogoPointsAsync(JsonObject? parameters)
+  {
+    var groupName = PluginRuntime.GetOptionalString(parameters, "groupName");
+    // 2026-08-12 性能修复: 默认 limit 1000(旧 int.MaxValue——几万点全量物化必超时); 大图纸明确传 limit
+    var limit = PluginRuntime.GetOptionalInt(parameters, "limit") ?? 1000;
+    var offset = PluginRuntime.GetOptionalInt(parameters, "offset") ?? 0;
+    if (offset < 0) offset = 0;
+    if (limit <= 0) limit = 1000;
+
+    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      HashSet<uint>? allowedNumbers = null;
+      if (!string.IsNullOrWhiteSpace(groupName))
+      {
+        // 2026-11-18 P32: 组名拼错时只回 "was not found"，客户 AI 只能猜下一个名字。
+        // helper 里现在会把可用组名一起报出来。
+        allowedNumbers = TryGetPointNumbersForGroup(civilDoc, transaction, groupName!);
+      }
+
+      // 2026-08-12 性能修复: 轻量枚举(只读 PointNumber, 不打开全属性) → 排序分页 → 只对页内点 ToPointData
+      // 旧实现: 全量打开所有 CogoPoint 对象 + ToList 物化 → 4.3万图元图纸(几千点)超 25s 超时
+      var allEntries = EnumeratePointNumbers(civilDoc, transaction)
+        .Where(e => allowedNumbers == null || allowedNumbers.Contains(e.Number))
+        .OrderBy(e => e.Number)
+        .ToList();
+
+      var built = allEntries.Skip(offset).Take(limit)
+        .Select(e => CivilObjectUtils.ToPointData(
+          CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, e.Id, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead)))
+        .ToList();
+
+      // 2026-11-18 P32: 默认 limit=1000 的返回体约 60KB，旧实现没有任何预算 ——
+      // 真机实测 points 数组被 ResultSummarizer 砍到 500 条，而 totalCount/returnedCount 还是原来的数，
+      // 调用方既不知道被裁，也算不出下一页。这里自己按字节裁（只裁尾巴）并回自证字段。
+      var byteBudget = BulkResponse.ResolveBudget(parameters);
+      var kept = BulkResponse.Fit(built, byteBudget, 2048);
+      var page = kept >= built.Count ? built : built.Take(kept).ToList();
+      var byteLimited = kept < built.Count;
+
+      return new Dictionary<string, object?>
+      {
+        ["totalCount"] = allEntries.Count,
+        ["returnedCount"] = page.Count,
+        ["points"] = page,
+        ["units"] = CivilObjectUtils.LinearUnits(database),
+        // 2026-11-18 P32: 回显"到底有没有按参数过滤" + 机械翻页指针（P24 教训：别让调用方猜下一页）
+        ["groupName"] = string.IsNullOrWhiteSpace(groupName) ? null : groupName,
+        ["filterApplied"] = allowedNumbers != null,
+        ["offset"] = offset,
+        ["limit"] = limit,
+        ["nextOffset"] = offset + page.Count,
+        ["hasMore"] = (offset + page.Count) < allEntries.Count,
+        ["byteLimited"] = byteLimited,
+        ["responseByteBudget"] = byteBudget,
+      };
+    });
+  }
+
+  public static Task<object?> GetCogoPointAsync(JsonObject? parameters)
+  {
+    var pointNumber = (uint)PluginRuntime.GetRequiredInt(parameters, "pointNumber");
+    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var point = FindPointByNumber(civilDoc, transaction, pointNumber, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+      return CivilObjectUtils.ToPointData(point);
+    });
+  }
+
+    public static Task<object?> CreateCogoPointsAsync(JsonObject? parameters)
+  {
+    var pointsNode = PluginRuntime.GetParameter(parameters, "points") as JsonArray;
+    if (pointsNode == null || pointsNode.Count == 0)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "createCogoPoints requires a non-empty 'points' array.");
+    }
+
+    var startNumber = PluginRuntime.GetOptionalInt(parameters, "startNumber");
+    if (startNumber.HasValue && startNumber.Value < 1)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "startNumber must be >= 1 (COGO point numbers start at 1).");
+    }
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var createdNumbers = new List<uint>();
+      var collection = civilDoc.CogoPoints;
+
+      // 2026-11-09: 旧实现直接把 PointNumber 赋成 startNumber+index。撞号时 Civil 3D 抛
+      // ArgumentException("PointNumber is existing.")，一路冒到顶层变成 INTERNAL_ERROR ——
+      // 调用方只看到「插件崩了」，看不出是编号冲突。现在先扫已用编号：冲突就顺延到第一段
+      // 放得下的空闲号，并把「要的号 / 实际用的号」都回给调用方。
+      uint? appliedStart = null;
+      var renumbered = false;
+      if (startNumber.HasValue)
+      {
+        var used = new HashSet<uint>(EnumeratePointNumbers(civilDoc, transaction).Select(e => e.Number));
+        appliedStart = AllocatePointNumbers(used, (uint)startNumber.Value, pointsNode.Count, out renumbered);
+      }
+
+      for (var index = 0; index < pointsNode.Count; index++)
+      {
+        if (pointsNode[index] is not JsonObject pointNode)
+        {
+          continue;
+        }
+
+        var x = PluginRuntime.GetRequiredDoubleFromNode(pointNode["x"], $"points[{index}].x");
+        var y = PluginRuntime.GetRequiredDoubleFromNode(pointNode["y"], $"points[{index}].y");
+        var z = PluginRuntime.GetRequiredDoubleFromNode(pointNode["z"], $"points[{index}].z");
+        var description = PluginRuntime.JsonNodeToString(pointNode["description"]) ?? string.Empty;
+
+        var objectId = collection.Add(new Point3d(x, y, z), description, true);
+        var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForWrite);
+
+        if (appliedStart.HasValue)
+        {
+          var target = appliedStart.Value + (uint)index;
+          // A freshly added point already carries the next free number. Assigning that same
+          // value again makes Civil 3D raise "PointNumber is existing." -- skip when equal.
+          if (point.PointNumber != target)
+          try
+          {
+            point.PointNumber = target;
+          }
+          catch (System.ArgumentException ex)
+          {
+            throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+              $"Cannot assign COGO point number {target}: {ex.Message} (requested start {startNumber}, applied start {appliedStart}).");
+          }
+        }
+
+        createdNumbers.Add(point.PointNumber);
+      }
+
+      var result = new Dictionary<string, object?>
+      {
+        ["created"] = createdNumbers.Count,
+        ["pointNumbers"] = createdNumbers,
+      };
+      if (startNumber.HasValue)
+      {
+        result["requestedStart"] = startNumber.Value;
+        result["appliedStart"] = appliedStart;
+        result["renumbered"] = renumbered;
+      }
+      return result;
+    });
+  }
+
+  /// <summary>
+  /// First start (&gt;= desired) with `count` consecutive numbers that are all unused.
+  /// Keeps the caller's intent when possible and reports whether it had to move.
+  /// </summary>
+  private static uint AllocatePointNumbers(HashSet<uint> used, uint desiredStart, int count, out bool renumbered)
+  {
+    renumbered = false;
+    var candidate = desiredStart == 0 ? 1u : desiredStart;
+    while (true)
+    {
+      var collisionAt = -1;
+      for (var i = 0; i < count; i++)
+      {
+        if (used.Contains(candidate + (uint)i)) { collisionAt = i; break; }
+      }
+      if (collisionAt < 0)
+      {
+        renumbered = candidate != desiredStart;
+        return candidate;
+      }
+      candidate = candidate + (uint)collisionAt + 1;
+    }
+  }
+
+  // 2026-08-07 框架: 文件通道——从文件导入 Cogo 点（AI 只需传路径+格式，数据不走 LLM 上下文）
+  public static Task<object?> ImportCogoPointsFromFileAsync(JsonObject? parameters)
+  {
+    var format = PluginRuntime.GetRequiredString(parameters, "format");
+    var filePath = PluginRuntime.GetRequiredString(parameters, "filePath");
+    // 2026-08-12: 套 FileBoundary（全盘已放开, 补防穿越/规范化护栏; 旧实现裸读无检查）
+    filePath = FileBoundary.ResolveImportPath(filePath, "csv", "txt", "pnezd", "penz", "xyz", "xyzd");
+    var data = string.Join("\n", System.IO.File.ReadAllLines(filePath));   // 读文件 → 复用现有解析器
+    var targetSurface = PluginRuntime.GetOptionalString(parameters, "targetSurface");
+    if (!string.IsNullOrWhiteSpace(targetSurface))
+    {
+      throw new JsonRpcDispatchException(
+        "CIVIL3D.API_ERROR",
+        "Importing COGO points directly into a target surface is not implemented. No points were imported.");
+    }
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var createdNumbers = new List<uint>();
+      foreach (var parsed in ParsePointImport(data, format))
+      {
+        var objectId = civilDoc.CogoPoints.Add(new Point3d(parsed.X, parsed.Y, parsed.Z), parsed.Description, true);
+        var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+        createdNumbers.Add(point.PointNumber);
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["imported"] = createdNumbers.Count,
+        ["pointNumbers"] = createdNumbers,
+        ["targetSurface"] = null,
+        ["source"] = filePath,
+      };
+    });
+  }
+
+  public static Task<object?> ImportCogoPointsAsync(JsonObject? parameters)
+  {
+    var format = PluginRuntime.GetRequiredString(parameters, "format");
+    var data = PluginRuntime.GetRequiredString(parameters, "data");
+    var targetSurface = PluginRuntime.GetOptionalString(parameters, "targetSurface");
+    if (!string.IsNullOrWhiteSpace(targetSurface))
+    {
+      throw new JsonRpcDispatchException(
+        "CIVIL3D.API_ERROR",
+        "Importing COGO points directly into a target surface is not implemented. No points were imported.");
+    }
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var createdNumbers = new List<uint>();
+      foreach (var parsed in ParsePointImport(data, format))
+      {
+        var objectId = civilDoc.CogoPoints.Add(new Point3d(parsed.X, parsed.Y, parsed.Z), parsed.Description, true);
+        var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+        createdNumbers.Add(point.PointNumber);
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["imported"] = createdNumbers.Count,
+        ["pointNumbers"] = createdNumbers,
+        ["targetSurface"] = null,
+      };
+    });
+  }
+
+  public static Task<object?> EditCogoPointAsync(JsonObject? parameters)
+  {
+    var pointNumber = (uint)PluginRuntime.GetRequiredInt(parameters, "pointNumber");
+    var newNumber = PluginRuntime.GetOptionalInt(parameters, "newNumber");
+    var description = PluginRuntime.GetOptionalString(parameters, "description");
+    var elevation = PluginRuntime.GetOptionalDouble(parameters, "elevation");
+    if (!newNumber.HasValue && description == null && !elevation.HasValue)
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "editCogoPoint requires at least one of: newNumber/description/elevation");
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var point = FindPointByNumber(civilDoc, transaction, pointNumber, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForWrite);
+      var applied = new List<string>();
+      if (newNumber.HasValue) { point.PointNumber = (uint)newNumber.Value; applied.Add("newNumber"); }
+      if (description != null) { point.RawDescription = description; applied.Add("description"); }
+      if (elevation.HasValue) { point.Elevation = elevation.Value; applied.Add("elevation"); }
+      return new Dictionary<string, object?>
+      {
+        ["pointNumber"] = pointNumber,
+        ["applied"] = applied,
+        ["updated"] = CivilObjectUtils.ToPointData(point),
+      };
+    });
+  }
+
+  public static Task<object?> DeleteCogoPointsAsync(JsonObject? parameters)
+  {
+    var numbersNode = PluginRuntime.GetParameter(parameters, "pointNumbers") as JsonArray;
+    if (numbersNode == null || numbersNode.Count == 0)
+    {
+      throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", "deleteCogoPoints requires 'pointNumbers'.");
+    }
+
+    var pointNumbers = numbersNode.Select(node => (uint)PluginRuntime.GetRequiredIntFromNode(node, "pointNumbers[]")).Where(n => n > 0).ToList();
+
+    return CivilExecution.WriteAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var deleted = new List<uint>();
+      foreach (var pointNumber in pointNumbers)
+      {
+        var point = FindPointByNumber(civilDoc, transaction, pointNumber, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForWrite);
+        point.Erase();
+        deleted.Add(pointNumber);
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["deleted"] = deleted.Count,
+        ["pointNumbers"] = deleted,
+      };
+    });
+  }
+
+  public static Task<object?> ListPointGroupsAsync()
+  {
+    return CivilExecution.ReadAsync<object?>((doc, civilDoc, database, transaction) =>
+    {
+      var groups = new List<Dictionary<string, object?>>();
+      foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.PointGroups)
+      {
+        var group = CivilObjectUtils.GetRequiredObject<PointGroup>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+        var query = group.GetQuery() as StandardPointGroupQuery;
+        groups.Add(new Dictionary<string, object?>
+        {
+          ["name"] = group.Name,
+          ["description"] = group.Description,
+          ["pointCount"] = group.PointsCount,
+          ["includePattern"] = query?.IncludeNumbers,
+          ["excludePattern"] = query?.ExcludeNumbers,
+        });
+      }
+
+      return new Dictionary<string, object?>
+      {
+        ["groups"] = groups,
+      };
+    });
+  }
+
+
+  // 2026-08-12: 轻量枚举——只读 PointNumber(排序/过滤需要), 不打开全属性。分页前用, 避免全量物化超时
+  private static IEnumerable<(Autodesk.AutoCAD.DatabaseServices.ObjectId Id, uint Number)> EnumeratePointNumbers(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Autodesk.AutoCAD.DatabaseServices.Transaction transaction)
+  {
+    foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.CogoPoints)
+    {
+      var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+      yield return (objectId, point.PointNumber);
+    }
+  }
+
+  private static CogoPoint FindPointByNumber(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Autodesk.AutoCAD.DatabaseServices.Transaction transaction, uint pointNumber, Autodesk.AutoCAD.DatabaseServices.OpenMode openMode)
+  {
+    foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.CogoPoints)
+    {
+      var point = CivilObjectUtils.GetRequiredObject<CogoPoint>(transaction, objectId, openMode);
+      if (point.PointNumber == pointNumber)
+      {
+        return point;
+      }
+    }
+
+    throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND", $"COGO point '{pointNumber}' was not found.");
+  }
+
+  /// <summary>组名列表（找不到组时列给人看，避免"猜名字"）。</summary>
+  private static string AvailablePointGroupNames(
+    Autodesk.Civil.ApplicationServices.CivilDocument civilDoc,
+    Autodesk.AutoCAD.DatabaseServices.Transaction transaction)
+  {
+    var names = new List<string>();
+    foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.PointGroups)
+    {
+      var group = CivilObjectUtils.GetRequiredObject<PointGroup>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+      if (!string.IsNullOrWhiteSpace(group.Name)) names.Add(group.Name);
+    }
+    if (names.Count == 0) return "(none)";
+    return string.Join(", ", names.Take(10)) + (names.Count > 10 ? ", ..." : "");
+  }
+
+  private static HashSet<uint>? TryGetPointNumbersForGroup(Autodesk.Civil.ApplicationServices.CivilDocument civilDoc, Autodesk.AutoCAD.DatabaseServices.Transaction transaction, string groupName)
+  {
+    foreach (Autodesk.AutoCAD.DatabaseServices.ObjectId objectId in civilDoc.PointGroups)
+    {
+      var group = CivilObjectUtils.GetRequiredObject<PointGroup>(transaction, objectId, Autodesk.AutoCAD.DatabaseServices.OpenMode.ForRead);
+      if (!string.Equals(group.Name, groupName, StringComparison.OrdinalIgnoreCase))
+      {
+        continue;
+      }
+
+      return new HashSet<uint>(group.GetPointNumbers());
+    }
+
+    throw new JsonRpcDispatchException("CIVIL3D.OBJECT_NOT_FOUND",
+      $"Point group '{groupName}' was not found. Available groups: {AvailablePointGroupNames(civilDoc, transaction)}.");
+  }
+
+  // 2026-10-23: a coordinate column must not follow the machine locale. On a German/French
+  // system double.Parse("1234.56") reads "." as a group separator and silently returns 123456,
+  // so every imported point lands 100x away. Always parse Invariant, and normalise a decimal
+  // comma explicitly instead of guessing.
+  private static double ParseCoord(string token, string line)
+  {
+    const System.Globalization.NumberStyles style = System.Globalization.NumberStyles.Float;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    double value;
+    if (double.TryParse(token, style, inv, out value)) return value;
+
+    var commas = 0;
+    var dots = 0;
+    foreach (var ch in token)
+    {
+      if (ch == ',') commas++;
+      else if (ch == '.') dots++;
+    }
+    if (commas == 1)
+    {
+      // "1234,56" or "1.234,56": the comma is the decimal point
+      var normalised = dots > 0 ? token.Replace(".", "").Replace(',', '.') : token.Replace(',', '.');
+      if (double.TryParse(normalised, style, inv, out value)) return value;
+    }
+    throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT",
+      $"Cannot read the coordinate '{token}' in line: {line}");
+  }
+
+  private static IEnumerable<(double X, double Y, double Z, string Description)> ParsePointImport(string data, string format)
+  {
+    foreach (var rawLine in data.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+    {
+      var line = rawLine.Trim();
+      if (line.Length == 0)
+      {
+        continue;
+      }
+
+      var tokens = line.Split(new[] { ',', ';', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+      yield return format switch
+      {
+        "pnezd" when tokens.Length >= 5 => (ParseCoord(tokens[1], line), ParseCoord(tokens[2], line), ParseCoord(tokens[3], line), tokens[4]),
+        "penz" when tokens.Length >= 5 => (ParseCoord(tokens[1], line), ParseCoord(tokens[3], line), ParseCoord(tokens[2], line), tokens[4]),
+        "xyzd" when tokens.Length >= 4 => (ParseCoord(tokens[0], line), ParseCoord(tokens[1], line), ParseCoord(tokens[2], line), tokens[3]),
+        "xyz" when tokens.Length >= 3 => (ParseCoord(tokens[0], line), ParseCoord(tokens[1], line), ParseCoord(tokens[2], line), string.Empty),
+        _ => throw new JsonRpcDispatchException("CIVIL3D.INVALID_INPUT", $"Unsupported point import line for format '{format}': {line}"),
+      };
+    }
+  }
+}
